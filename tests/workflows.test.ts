@@ -12,6 +12,7 @@ interface Step {
 }
 interface Job {
   needs?: string | string[];
+  permissions?: Record<string, string>;
   steps: Step[];
 }
 interface Workflow {
@@ -34,17 +35,23 @@ describe('ci.yml', () => {
     expect(indexes.every((i) => i >= 0)).toBe(true);
     expect([...indexes].sort((a, b) => a - b)).toEqual(indexes);
   });
+
+  it('only reads the repository', () => {
+    const ci = load('ci.yml');
+    expect(ci.permissions).toEqual({ contents: 'read' });
+    for (const job of Object.values(ci.jobs)) expect(job.permissions).toBeUndefined();
+  });
 });
 
 describe('pages.yml', () => {
   const pages = load('pages.yml');
 
-  it('has the Pages permissions', () => {
-    expect(pages.permissions).toEqual({
-      contents: 'read',
-      pages: 'write',
-      'id-token': 'write',
-    });
+  it('grants Pages and OIDC write only to the deploy job', () => {
+    expect(pages.permissions).toEqual({ contents: 'read' });
+    expect(pages.jobs.build.permissions).toBeUndefined();
+    expect(pages.jobs.deploy.permissions).toEqual({ pages: 'write', 'id-token': 'write' });
+    // The deploy job runs no project code: only actions, no `run` steps.
+    expect(pages.jobs.deploy.steps.every((s) => s.uses && !s.run)).toBe(true);
   });
 
   it('builds with the repo name as the base path', () => {

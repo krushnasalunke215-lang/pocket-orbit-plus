@@ -5,10 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# The build job runs npm ci (third-party install scripts), so it only reads
+# the repo. Only the deploy job, which runs no project code, may write Pages
+# and mint the OIDC token deploy-pages needs.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -26,7 +27,6 @@ jobs:
       - run: npm ci
       # The base path comes from the repo name, so renaming the repo needs no code change.
       - run: npm run build -- --base=/${{ github.event.repository.name }}/
-      - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
@@ -34,9 +34,13 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/configure-pages@v5
       - id: deployment
         uses: actions/deploy-pages@v4
