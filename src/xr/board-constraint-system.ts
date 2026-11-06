@@ -162,6 +162,9 @@ export class BoardConstraintSystem extends createSystem({
     const immersive = this.visibilityState.peek() !== VisibilityState.NonImmersive;
     if (!immersive) this.updateDesktopRaw(drag);
     const overBoard = drag.rawValid && isOverBoard([drag.rawX, 0, drag.rawZ]);
+    // Check the release frame itself too, so one slow frame (> 100 ms) with
+    // the hand still tracked does not count as lost tracking.
+    if (immersive) this.recordTracking(entity, drag);
     // The mouse has no tracking concept (null); a hand must be fresh.
     const msSinceTracked = immersive && drag.hand ? performance.now() - this.lastTracked[drag.hand] : null;
 

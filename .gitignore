@@ -48,3 +48,4 @@ pids/
 dist-e2e/
 test-results/
 playwright-report/
+e2e/iwer/.request.json

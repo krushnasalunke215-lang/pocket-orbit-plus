@@ -5,6 +5,7 @@ import type { Placements } from '../sim/level.js';
 import { BoardBody } from '../xr/components.js';
 import { getBoard, getGame, getHud, getRenderStats, getVisuals, type RenderCounts } from '../xr/runtime.js';
 import { currentSessionMode } from '../xr/session.js';
+import { createSpikeApi, type SpikeApi } from './spike.js';
 
 /*
  * Dev/e2e-only automation hooks on window.__game. index.ts imports this
@@ -86,6 +87,8 @@ export interface GameDebugApi {
   /** Per-frame renderer.info samples since the last reset (RenderStatsSystem). */
   renderStats(): RenderStatsSnapshot;
   resetRenderStats(): void;
+  /** Real-object gravity spike probes (room features, planes, meshes, hit-test). */
+  readonly spike: SpikeApi;
 }
 
 export interface RenderStatsSnapshot {
@@ -300,6 +303,8 @@ export function installDebugApi(world: World): GameDebugApi {
     resetRenderStats() {
       getRenderStats(world)?.reset();
     },
+
+    spike: createSpikeApi(world),
   };
 
   window.__game = api;
