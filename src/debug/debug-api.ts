@@ -3,7 +3,7 @@ import { APP_NAME } from '../config.js';
 import type { BodyKind, SimOutcome } from '../sim/bodies.js';
 import type { Placements } from '../sim/level.js';
 import { BoardBody } from '../xr/components.js';
-import { getBoard, getGame, getHud, getVisuals } from '../xr/runtime.js';
+import { getBoard, getGame, getHud, getRenderStats, getVisuals, type RenderCounts } from '../xr/runtime.js';
 import { currentSessionMode } from '../xr/session.js';
 
 /*
@@ -35,6 +35,8 @@ export interface GameSnapshot {
   lastOutcome: SimOutcome | null;
   attempts: number;
   flightTime: number;
+  /** Simulated length of the last launched flight in seconds (0 before any launch). */
+  flightDuration: number;
   solvedLevelIds: string[];
   placements: Placements;
   bodies: BodySnapshot[];
@@ -81,6 +83,19 @@ export interface GameDebugApi {
   screenPoint(boardPos: readonly number[]): ScreenPoint | null;
   /** Viewport CSS pixels of a HUD element's center (default the Launch button). */
   hudScreenPoint(elementId?: string): ScreenPoint | null;
+  /** Per-frame renderer.info samples since the last reset (RenderStatsSystem). */
+  renderStats(): RenderStatsSnapshot;
+  resetRenderStats(): void;
+}
+
+export interface RenderStatsSnapshot {
+  last: RenderCounts;
+  max: RenderCounts;
+  frames: number;
+  programs: number;
+  geometries: number;
+  textures: number;
+  autoReset: boolean;
 }
 
 declare global {
@@ -185,6 +200,7 @@ export function installDebugApi(world: World): GameDebugApi {
         lastOutcome: game.lastOutcome,
         attempts: game.attempts,
         flightTime: game.flightTime,
+        flightDuration: game.lastResult?.time ?? 0,
         solvedLevelIds: [...game.solvedLevelIds],
         placements: JSON.parse(JSON.stringify(game.placements)) as Placements,
         bodies: bodyList,
@@ -265,6 +281,24 @@ export function installDebugApi(world: World): GameDebugApi {
       if (!element) return null;
       element.updateWorldMatrix(true, false);
       return toScreen(new Vector3().setFromMatrixPosition(element.matrixWorld));
+    },
+
+    renderStats() {
+      const stats = getRenderStats(world);
+      if (!stats) throw new Error('RenderStatsSystem is not registered');
+      return {
+        last: { ...stats.last },
+        max: { ...stats.max },
+        frames: stats.frames,
+        programs: stats.programs,
+        geometries: stats.geometries,
+        textures: stats.textures,
+        autoReset: stats.autoReset,
+      };
+    },
+
+    resetRenderStats() {
+      getRenderStats(world)?.reset();
     },
   };
 

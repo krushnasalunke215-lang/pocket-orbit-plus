@@ -24,6 +24,7 @@ export const ROLE_COLORS = {
   blackHoleCore: PALETTE.black,
   blackHoleRing: PALETTE.vermillion,
   repulsor: PALETTE.white,
+  repulsorRing: PALETTE.blue,
   comet: PALETTE.white,
   cometTrail: PALETTE.orange,
   preview: PALETTE.white,

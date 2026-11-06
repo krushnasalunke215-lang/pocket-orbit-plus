@@ -1,6 +1,7 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { RENDER_BUDGET } from '../src/config';
 import type { GameSnapshot, ScreenPoint } from '../src/debug/debug-api';
 
 /*
@@ -72,9 +73,27 @@ test('solves levels 1-3 with the mouse', async ({ page }) => {
 
   for (let i = 0; i < 3; i++) {
     await page.evaluate((n) => window.__game!.loadLevel(n), i);
+    if (i === 0) {
+      // Art-direction capture before any move: tray planets, preview arc, target.
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: screenshotPath('desktop-l1-start.png') });
+    }
     for (const [id, p] of Object.entries(levels[i].solution)) {
       await waitUntilNotFlying(page);
       await dragBody(page, id, p);
+    }
+    if (i === 1) {
+      // Art-direction capture about 40% into the solving flight: comet tail and trail.
+      await expect
+        .poll(
+          async () => {
+            const s = await snapshot(page);
+            return s.phase === 'flying' && s.flightTime >= 0.4 * s.flightDuration;
+          },
+          { timeout: 30_000, intervals: [30] },
+        )
+        .toBe(true);
+      await page.screenshot({ path: screenshotPath('desktop-l2-midflight.png') });
     }
     await expect.poll(async () => (await snapshot(page)).solved, { timeout: 30_000 }).toBe(true);
     const solved = await snapshot(page);
@@ -89,6 +108,32 @@ test('solves levels 1-3 with the mouse', async ({ page }) => {
     );
   }
   expect(errors).toEqual([]);
+});
+
+test('render budget', async ({ page }) => {
+  await openGame(page);
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  await page.evaluate(() => window.__game!.resetRenderStats());
+  const levels = await page.evaluate(() => window.__game!.levels());
+  for (const [id, p] of Object.entries(levels[0].solution)) {
+    await waitUntilNotFlying(page);
+    await dragBody(page, id, p);
+  }
+  await expect.poll(async () => (await snapshot(page)).solved, { timeout: 30_000 }).toBe(true);
+  await page.waitForTimeout(500); // a few frames of the solved state (halo swell, full trail)
+
+  const stats = await page.evaluate(() => window.__game!.renderStats());
+  const report = { level: levels[0].id, budget: RENDER_BUDGET, ...stats };
+  const out = path.resolve(test.info().config.rootDir, '..', 'test-results', 'render-stats-desktop.json');
+  mkdirSync(path.dirname(out), { recursive: true });
+  writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`);
+  console.log('render stats (desktop)', JSON.stringify(report));
+
+  expect(stats.autoReset).toBe(true);
+  expect(stats.frames).toBeGreaterThan(30);
+  expect(stats.max.calls).toBeGreaterThan(0);
+  expect(stats.max.calls).toBeLessThanOrEqual(RENDER_BUDGET.maxDrawCalls);
+  expect(stats.max.triangles).toBeLessThanOrEqual(RENDER_BUDGET.maxTriangles);
 });
 
 test('release off the board snaps back without launching', async ({ page }) => {

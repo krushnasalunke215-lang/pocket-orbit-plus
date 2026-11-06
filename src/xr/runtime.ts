@@ -37,7 +37,35 @@ export interface HudRuntime {
   readonly entity: Entity;
 }
 
-const KEYS = { game: 'game', board: 'board', visuals: 'visuals', hud: 'hud' } as const;
+/** renderer.info.render counters of one frame. */
+export interface RenderCounts {
+  calls: number;
+  triangles: number;
+  points: number;
+  lines: number;
+}
+
+/** Written every frame by RenderStatsSystem. */
+export interface RenderStats {
+  readonly last: RenderCounts;
+  readonly max: RenderCounts;
+  frames: number;
+  programs: number;
+  geometries: number;
+  textures: number;
+  readonly autoReset: boolean;
+  /** Clears max and the frame counter. */
+  reset(): void;
+}
+
+const KEYS = { game: 'game', board: 'board', visuals: 'visuals', hud: 'hud', renderStats: 'renderStats' } as const;
+
+export function setRenderStats(world: World, stats: RenderStats): void {
+  world.globals[KEYS.renderStats] = stats;
+}
+export function getRenderStats(world: World): RenderStats | undefined {
+  return world.globals[KEYS.renderStats] as RenderStats | undefined;
+}
 
 export function setGame(world: World, game: GameController): void {
   world.globals[KEYS.game] = game;

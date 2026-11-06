@@ -1,36 +1,27 @@
-import { CircleGeometry, Group, Mesh, MeshBasicMaterial, RingGeometry } from '@iwsdk/core';
-import { ROLE_COLORS } from './palette.js';
+import { CircleGeometry, Group, Mesh } from '@iwsdk/core';
+import { HALOS, PULL_RINGS } from './halo-sprites.js';
+import { boardMaterial } from './shaders/board.js';
+import { setSharedTime } from './shaders/common.js';
 import type { BoardVisual } from './visual-types.js';
 
-// Placeholder look (FEAT-004 replaces the internals): a dark translucent
-// disc with a thin rim, lying in the board's XZ plane at radius 1.
-const discGeometry = new CircleGeometry(1, 64).rotateX(-Math.PI / 2);
-const rimGeometry = new RingGeometry(0.975, 1, 96).rotateX(-Math.PI / 2);
-const discMaterial = new MeshBasicMaterial({
-  color: ROLE_COLORS.board,
-  transparent: true,
-  opacity: 0.6,
-  depthWrite: false,
-  toneMapped: false,
-});
-const rimMaterial = new MeshBasicMaterial({
-  color: ROLE_COLORS.boardRim,
-  transparent: true,
-  opacity: 0.95,
-  depthWrite: false,
-  toneMapped: false,
-});
+// The holographic glass disc (radius 1 plus a margin for the rim glow) in
+// the board's XZ plane. The board visual also parents the shared halo and
+// pull-ring pools, so their slots live in board units.
+const discGeometry = new CircleGeometry(1.08, 128).rotateX(-Math.PI / 2);
 
 export function createBoardVisual(): BoardVisual {
   const root = new Group();
   root.name = 'BoardVisual';
-  const disc = new Mesh(discGeometry, discMaterial);
+  const disc = new Mesh(discGeometry, boardMaterial);
+  disc.name = 'BoardDisc';
   disc.renderOrder = -2;
-  const rim = new Mesh(rimGeometry, rimMaterial);
-  rim.renderOrder = -1;
-  root.add(disc, rim);
+  // Lift the pull rings a hair above the glass to avoid z-fighting.
+  PULL_RINGS.mesh.position.y = 0.003;
+  root.add(disc, PULL_RINGS.mesh, HALOS.mesh);
   return {
     root,
-    update() {},
+    update(t) {
+      setSharedTime(t);
+    },
   };
 }

@@ -11,6 +11,7 @@ import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
 import { GameSystem } from './xr/game-system.js';
 import { HudSystem } from './xr/hud-system.js';
+import { RenderStatsSystem } from './xr/render-stats-system.js';
 import { RenderSyncSystem } from './xr/render-sync-system.js';
 
 async function main(): Promise<void> {
@@ -27,7 +28,8 @@ async function main(): Promise<void> {
     .registerSystem(GameSystem, { priority: 10 })
     .registerSystem(BoardConstraintSystem, { priority: 0 })
     .registerSystem(RenderSyncSystem, { priority: 20 })
-    .registerSystem(HudSystem, { priority: 30 });
+    .registerSystem(HudSystem, { priority: 30 })
+    .registerSystem(RenderStatsSystem, { priority: 40 });
 
   if (import.meta.env.DEV || import.meta.env.MODE === 'e2e') {
     const { installDebugApi } = await import('./debug/debug-api.js');
