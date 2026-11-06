@@ -1,58 +1,64 @@
 <!--
   Game HUD. Panel, Button and ButtonLabel come from the bundled Horizon kit.
-  Sizes are UIKit units (centimetres). The title text is filled at runtime
-  from APP_NAME in src/config.ts; never write the app name here.
+  Authored in the kit's own pixel scale (its defaults, such as a 44 high
+  button with an 80 minimum width, assume it); HudSystem scales the entity
+  by 0.1, so 10 units = 1 cm and the panel is about 30 x 21 cm, small enough
+  for the Meta VR Glasses view beside the board. The "-" placeholders are
+  replaced at runtime (the title from APP_NAME in src/config.ts; never write
+  the app name here). All three buttons share one row to keep the panel short.
 -->
 <style>
   .hud-root {
     flex-direction: column;
-    width: 30;
-    padding-top: 1.5;
-    padding-bottom: 1.5;
-    padding-left: 1.5;
-    padding-right: 1.5;
-    gap: 1;
+    width: 300;
+    padding-top: 14;
+    padding-bottom: 14;
+    padding-left: 16;
+    padding-right: 16;
+    gap: 8;
   }
 
   .title {
     color: #fafaf7;
-    font-size: 3;
+    font-size: 28;
     font-weight: 700;
   }
 
   .info {
     color: #dddfe3;
-    font-size: 2.5;
+    font-size: 20;
   }
 
   .button-row {
     flex-direction: row;
-    gap: 1;
+    gap: 10;
+    margin-top: 4;
   }
 
   .button {
-    height: 7;
+    height: 70;
     flex-grow: 1;
     justify-content: center;
   }
 
   .button-label {
-    font-size: 2.8;
+    font-size: 24;
+    line-height: 30px;
   }
 </style>
 <Panel class="hud-root">
-  <div id="title-text" class="title"></div>
-  <div id="level-text" class="info"></div>
-  <div id="status-text" class="info"></div>
+  <div id="title-text" class="title">-</div>
+  <div id="level-text" class="info">-</div>
+  <div id="status-text" class="info">-</div>
   <div class="button-row">
     <Button id="launch-button" class="button">
-      <ButtonLabel class="button-label">Launch</ButtonLabel>
+      <ButtonLabel id="launch-label" class="button-label">Launch</ButtonLabel>
     </Button>
     <Button id="next-button" class="button" style="display: none">
       <ButtonLabel class="button-label">Next</ButtonLabel>
     </Button>
+    <Button id="xr-button" class="button" style="display: none">
+      <ButtonLabel id="xr-label" class="button-label">Enter AR</ButtonLabel>
+    </Button>
   </div>
-  <Button id="xr-button" class="button">
-    <ButtonLabel class="button-label">Enter AR</ButtonLabel>
-  </Button>
 </Panel>

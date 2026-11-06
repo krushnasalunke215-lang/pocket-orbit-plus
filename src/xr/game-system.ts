@@ -1,0 +1,95 @@
+import {
+  createSystem,
+  DistanceGrabbable,
+  MovementMode,
+  RayInteractable,
+  VisibilityState,
+} from '@iwsdk/core';
+import { colliderLocalRadius } from '../game/board-math.js';
+import { GameController } from '../game/controller.js';
+import { createBodyVisual } from '../render/body-visuals.js';
+import { createCometVisual } from '../render/comet-visual.js';
+import { createTargetVisual } from '../render/target-visual.js';
+import { createTrailVisual } from '../render/trail-visual.js';
+import { ALL_LEVELS } from '../sim/levels/index.js';
+import { BoardBody } from './components.js';
+import { getBoard, setGame, setVisuals, type BoardRuntime, type GameVisuals } from './runtime.js';
+
+/**
+ * Owns the GameController and the level's entities. Each body becomes an
+ * entity under the board root; movable ones are grabbed with the built-in
+ * ray / distance grab (RayInteractable + DistanceGrabbable MoveFromTarget),
+ * which serves hand rays, near pinches (via the oversized collider), gaze
+ * and the desktop mouse. Advances flight playback every frame, paused while
+ * the XR session is blurred or hidden.
+ */
+export class GameSystem extends createSystem({
+  bodies: { required: [BoardBody] },
+}) {
+  private game!: GameController;
+  private board!: BoardRuntime;
+  private visuals!: GameVisuals;
+  private builtRevision = -1;
+  private readonly tmp = [0, 0, 0];
+
+  init(): void {
+    const board = getBoard(this.world);
+    if (!board) throw new Error('GameSystem needs BoardPlacementSystem registered first');
+    this.board = board;
+    this.game = new GameController(ALL_LEVELS);
+    setGame(this.world, this.game);
+
+    const comet = createCometVisual();
+    const target = createTargetVisual();
+    const trail = createTrailVisual();
+    for (const visual of [trail, target, comet]) {
+      this.world.createTransformEntity(visual.root, { parent: board.entity });
+    }
+    this.visuals = { bodies: new Map(), builtRevision: -1, comet, target, trail };
+    setVisuals(this.world, this.visuals);
+    this.buildLevel();
+  }
+
+  update(delta: number): void {
+    if (this.game.levelRevision !== this.builtRevision) this.buildLevel();
+    const visibility = this.visibilityState.peek();
+    if (visibility === VisibilityState.VisibleBlurred || visibility === VisibilityState.Hidden) return;
+    this.game.tick(delta);
+  }
+
+  /** Replaces the body entities with the current level's bodies. */
+  private buildLevel(): void {
+    // Body geometry and materials are shared module resources, so keep them.
+    for (const entity of [...this.queries.bodies.entities]) entity.dispose({ disposeResources: false });
+    for (const visual of this.visuals.bodies.values()) visual.dispose();
+    this.visuals.bodies.clear();
+
+    const level = this.game.level;
+    const colliderRadius = colliderLocalRadius(this.board.pose.radius);
+    for (const def of level.bodies) {
+      const visual = createBodyVisual(def);
+      this.game.bodyBoardPosition(def.id, this.tmp);
+      visual.root.position.set(this.tmp[0], this.tmp[1], this.tmp[2]);
+      visual.collider?.scale.setScalar(colliderRadius);
+      const entity = this.world.createTransformEntity(visual.root, { parent: this.board.entity });
+      entity.addComponent(BoardBody, { bodyId: def.id, movable: Boolean(def.movable) });
+      if (def.movable) {
+        entity.addComponent(RayInteractable);
+        entity.addComponent(DistanceGrabbable, {
+          movementMode: MovementMode.MoveFromTarget,
+          translate: true,
+          rotate: false,
+          scale: false,
+          returnToOrigin: false,
+        });
+      }
+      this.visuals.bodies.set(def.id, visual);
+    }
+
+    const { target } = level;
+    this.visuals.target.root.position.set(target.position[0], target.height ?? 0, target.position[1]);
+    this.visuals.target.root.scale.setScalar(target.radius);
+    this.builtRevision = this.game.levelRevision;
+    this.visuals.builtRevision = this.builtRevision;
+  }
+}

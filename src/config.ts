@@ -41,9 +41,14 @@ export const BOARD = {
   minColliderRadiusM: 0.035,
 } as const;
 
-/** Fixed camera and board pose for non-immersive (desktop) play. */
+/**
+ * Fixed camera and board pose for non-immersive (desktop) play. The camera
+ * aims a little beyond the board center so the HUD above the far rim stays
+ * in frame.
+ */
 export const DESKTOP_VIEW = {
   cameraPosition: [0, 1.45, -0.05],
+  cameraLookAt: [0, 1.0, -0.57],
   boardCenter: [0, 1.0, -0.45],
   boardRadius: 0.2,
 } as const;
