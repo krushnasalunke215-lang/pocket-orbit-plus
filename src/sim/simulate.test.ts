@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { SIM_DT } from './constants.js';
 import type { LevelDef } from './level.js';
-import { bodyPositionAt, createSimBodies, simulate } from './simulate.js';
+import { bodyPositionAt, createSimBodies, fullSampleCount, simulate } from './simulate.js';
+import { WORMHOLE_EXIT, WORMHOLE_LEVEL, withStubWormhole } from './test-fixtures.js';
 
 /** Comet from the left heading +x straight at a target on the center line. */
 const STRAIGHT: LevelDef = {
@@ -110,6 +112,41 @@ describe('simulate', () => {
     expect(withWell.flybys).toContainEqual(
       expect.objectContaining({ bodyId: 'mug', source: 'real-object' }),
     );
+  });
+
+  it('records both sides of a teleport and no sample in between', () => {
+    const [a, b] = withStubWormhole(() => [simulate(WORMHOLE_LEVEL), simulate(WORMHOLE_LEVEL)]);
+    expect(a.outcome).toBe('solved');
+    expect(a.teleports).toHaveLength(1);
+    const [jump] = a.teleports;
+    expect(jump.bodyId).toBe('gate');
+    expect(jump.time).toBeCloseTo(jump.step * SIM_DT, 12);
+    // Contact fires on the first step inside the 0.05 entry radius.
+    expect(jump.entry[0]).toBeGreaterThan(-0.35);
+    expect(jump.entry[0]).toBeLessThan(-0.34);
+    expect(jump.exit).toEqual(WORMHOLE_EXIT);
+    for (let i = 0; i < a.sampleCount; i++) {
+      const x = a.samples[i * 3];
+      expect(x <= jump.entry[0] + 1e-6 || x >= WORMHOLE_EXIT[0] - 1e-6, `sample ${i} x=${x}`).toBe(true);
+    }
+    expect(b.pathHash).toBe(a.pathHash);
+    expect(b.teleports).toEqual(a.teleports);
+    expect(simulate(STRAIGHT).teleports).toEqual([]);
+  });
+
+  it('caps recorded samples and writes them into a given buffer without changing the flight', () => {
+    const full = simulate(BENT);
+    const buffer = new Float32Array(30);
+    const capped = simulate(BENT, {}, { maxSamples: 10, sampleBuffer: buffer });
+    expect(capped.sampleCount).toBe(10);
+    expect(capped.samples.buffer).toBe(buffer.buffer);
+    expect(Array.from(capped.samples)).toEqual(Array.from(full.samples.subarray(0, 30)));
+    expect(capped.steps).toBe(full.steps);
+    expect(capped.outcome).toBe(full.outcome);
+    expect(capped.pathHash).toBe(full.pathHash);
+    expect(capped.flybys).toEqual(full.flybys);
+    expect(fullSampleCount(full.steps, full.sampleEvery)).toBe(full.sampleCount);
+    expect(() => simulate(BENT, {}, { maxSamples: 11, sampleBuffer: buffer })).toThrow();
   });
 
   it('rejects an external well with neither mass nor radius', () => {

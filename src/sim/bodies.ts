@@ -74,9 +74,14 @@ const SWALLOWED: ContactResult = { type: 'end', outcome: 'swallowed' };
  * its KIND_DEFAULTS entry, and register a behavior whose contact() returns
  * `{ type: 'teleport', position, velocity }` (the exit point and velocity in
  * board space, typically from level data such as a paired exit body). The
- * stepper in simulate.ts already applies teleports: it moves the comet,
+ * stepper in simulate.ts applies teleports: it records a TeleportEvent with
+ * the entry and exit positions in SimResult.teleports, moves the comet,
  * replaces its velocity, recomputes the acceleration and restarts flyby
- * tracking. No stepper change is needed.
+ * tracking. GameController playback jumps at each teleport and
+ * RenderSyncSystem breaks the trail there. Still to build with the wormhole
+ * itself: its visuals and an exit body in the level schema. The exit must
+ * lie outside the entry's contact radius, or contact() fires again on the
+ * next step.
  */
 export const BODY_BEHAVIORS: Readonly<Record<BodyKind, BodyBehavior>> = {
   planet: {

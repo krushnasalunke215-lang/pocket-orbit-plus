@@ -15,7 +15,7 @@ import {
 } from './constants.js';
 import { fnvHex, fnvInit, fnvInt32, fnvString } from './hash.js';
 import type { LevelDef, Placements } from './level.js';
-import { isFiniteVec } from './vec.js';
+import { isFiniteVec, type Vec3 } from './vec.js';
 import { WELL_INFLUENCE_RADIUS, wellMass, wellRadius, type ExternalWell } from './wells.js';
 
 /** Source tag of bodies that come from the level itself. */
@@ -60,10 +60,38 @@ export interface FlybyEvent {
   readonly closestDistance: number;
 }
 
+/**
+ * A jump of the comet on a `teleport` contact (a future wormhole). The path
+ * is discontinuous here: playback jumps from `entry` to `exit` and the trail
+ * breaks instead of drawing a line between them.
+ */
+export interface TeleportEvent {
+  readonly bodyId: string;
+  /** Step on which the comet jumped; samples at this step or later are past the exit. */
+  readonly step: number;
+  readonly time: number;
+  /** Comet xyz on the entry side (end of the step, before the jump). */
+  readonly entry: Vec3;
+  /** Comet xyz on the exit side (right after the jump). */
+  readonly exit: Vec3;
+}
+
 export interface SimOptions {
   readonly externalWells?: readonly ExternalWell[];
   /** Record a playback sample every this many steps (default 2). */
   readonly recordEvery?: number;
+  /**
+   * Record at most this many samples (default: all). The flight still runs
+   * to its end, so outcome, steps, flybys and pathHash are unchanged; only
+   * the samples after the first `maxSamples` are dropped.
+   */
+  readonly maxSamples?: number;
+  /**
+   * Write samples into this buffer (it must hold the recorded samples) and
+   * return a view of it instead of a fresh copy. Lets a caller that
+   * simulates every frame, such as the preview, reuse one buffer.
+   */
+  readonly sampleBuffer?: Float32Array;
 }
 
 export interface SimResult {
@@ -75,12 +103,15 @@ export interface SimResult {
   readonly time: number;
   /**
    * Comet xyz per recorded sample. Sample i was taken at step
-   * min(i * sampleEvery, steps): step 0 and the final step are always present.
+   * min(i * sampleEvery, steps): step 0 and the final step are always present
+   * (unless SimOptions.maxSamples cut the recording short).
    */
   readonly samples: Float32Array;
   readonly sampleCount: number;
   readonly sampleEvery: number;
   readonly flybys: FlybyEvent[];
+  /** Teleport jumps in step order (empty without teleporting bodies). */
+  readonly teleports: TeleportEvent[];
   /** FNV-1a over every step's rounded comet position, then the outcome. */
   readonly pathHash: string;
 }
@@ -215,6 +246,21 @@ export function bodyPositionAt(
   return out;
 }
 
+/** Steps after which a flight of `level` times out. */
+function maxStepsOf(level: LevelDef): number {
+  return Math.max(1, Math.ceil((level.maxTime ?? DEFAULT_MAX_TIME) / SIM_DT - 1e-9));
+}
+
+/** Upper bound on the samples a flight of `level` records. */
+export function maxSampleCount(level: LevelDef, recordEvery = DEFAULT_RECORD_EVERY): number {
+  return Math.floor(maxStepsOf(level) / recordEvery) + 2;
+}
+
+/** Samples a complete recording of a `steps`-step flight holds (step 0, every recordEvery-th step, the last). */
+export function fullSampleCount(steps: number, recordEvery: number): number {
+  return Math.ceil(steps / recordEvery) + 1;
+}
+
 function hashPosition(h: number, x: number, y: number, z: number): number {
   h = fnvInt32(h, Math.round(x * 1e5));
   h = fnvInt32(h, Math.round(y * 1e5));
@@ -247,10 +293,9 @@ export function simulate(
   for (let i = 0; i < n; i++) if (bodies.orbitParent[i] >= 0) orbitingList.push(i);
   const orbiting = Int32Array.from(orbitingList);
 
-  const maxTime = level.maxTime ?? DEFAULT_MAX_TIME;
   const bounds = level.boundsRadius ?? DEFAULT_BOUNDS_RADIUS;
   const bounds2 = bounds * bounds;
-  const maxSteps = Math.max(1, Math.ceil(maxTime / SIM_DT - 1e-9));
+  const maxSteps = maxStepsOf(level);
   const eps2 = EPS * EPS;
   const dt = SIM_DT;
   const halfDt2 = 0.5 * dt * dt;
@@ -261,16 +306,25 @@ export function simulate(
   const targetRadius = level.target.radius;
 
   // Preallocated per flight; the step loop below allocates nothing except
-  // the (rare) flyby events.
+  // the (rare) flyby and teleport events.
   const bodyPos = new Float64Array(n * 3);
   for (let i = 0; i < n; i++) bodyPositionAt(bodies, i, 0, bodyPos, i * 3);
   const dist = new Float64Array(n);
   const prev1 = new Float64Array(n).fill(NaN);
   const prev2 = new Float64Array(n).fill(NaN);
   const acc = new Float64Array(3);
-  const capacity = Math.floor(maxSteps / recordEvery) + 2;
-  const samples = new Float32Array(capacity * 3);
+  const maxSamples = options.maxSamples;
+  if (maxSamples !== undefined && (!Number.isInteger(maxSamples) || maxSamples < 1)) {
+    throw new Error('maxSamples must be a positive integer');
+  }
+  const capacity = Math.min(Math.floor(maxSteps / recordEvery) + 2, maxSamples ?? Infinity);
+  const buffer = options.sampleBuffer;
+  if (buffer && buffer.length < capacity * 3) {
+    throw new Error(`sampleBuffer needs room for ${capacity} samples`);
+  }
+  const samples = buffer ?? new Float32Array(capacity * 3);
   const flybys: FlybyEvent[] = [];
+  const teleports: TeleportEvent[] = [];
 
   let px = level.comet.position[0];
   let py = level.comet.height ?? 0;
@@ -323,6 +377,7 @@ export function simulate(
 
   let sampleCount = 0;
   const record = (): void => {
+    if (sampleCount >= capacity) return;
     samples[sampleCount * 3] = px;
     samples[sampleCount * 3 + 1] = py;
     samples[sampleCount * 3 + 2] = pz;
@@ -374,6 +429,15 @@ export function simulate(
         outcome = contact.outcome;
         endBodyId = bodies.ids[i];
       } else {
+        // Teleport: remember both sides so playback can jump and the trail
+        // can break. The step's regular sample (if any) is the exit side.
+        teleports.push({
+          bodyId: bodies.ids[i],
+          step,
+          time: t,
+          entry: [px, py, pz],
+          exit: [contact.position[0], contact.position[1], contact.position[2]],
+        });
         px = contact.position[0];
         py = contact.position[1];
         pz = contact.position[2];
@@ -408,10 +472,11 @@ export function simulate(
     outcome,
     steps: step,
     time: step * dt,
-    samples: samples.slice(0, sampleCount * 3),
+    samples: buffer ? buffer.subarray(0, sampleCount * 3) : samples.slice(0, sampleCount * 3),
     sampleCount,
     sampleEvery: recordEvery,
     flybys,
+    teleports,
     pathHash: fnvHex(h),
   };
   return endBodyId === undefined ? result : { ...result, endBodyId };

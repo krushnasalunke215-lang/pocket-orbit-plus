@@ -1,15 +1,27 @@
 import { PREVIEW_FRACTION } from '../config.js';
 import type { SimOutcome } from '../sim/bodies.js';
 import { SIM_DT } from '../sim/constants.js';
-import { startPlacements, type LevelDef, type Placements } from '../sim/level.js';
-import { bodyPositionAt, createSimBodies, simulate, type SimBodies, type SimResult } from '../sim/simulate.js';
+import { startPlacements, type LevelDef } from '../sim/level.js';
+import {
+  bodyPositionAt,
+  createSimBodies,
+  fullSampleCount,
+  maxSampleCount,
+  simulate,
+  type SimBodies,
+  type SimResult,
+} from '../sim/simulate.js';
 import { isFiniteVec, type Vec2 } from '../sim/vec.js';
 import type { ExternalWell } from '../sim/wells.js';
 import type { GameState } from './state.js';
 
 export type GamePhase = 'placing' | 'flying' | 'solved' | 'failed';
 
-/** The first PREVIEW_FRACTION of a flight: xyz samples, read the first `count`. */
+/**
+ * The first PREVIEW_FRACTION of a flight: xyz samples, read the first
+ * `count`. The samples live in a buffer the controller reuses, so read them
+ * before the next preview() call.
+ */
 export interface PreviewPath {
   readonly samples: Float32Array;
   readonly count: number;
@@ -17,17 +29,6 @@ export interface PreviewPath {
 
 /** Writable xyz target for position queries (no allocation). */
 export type XYZ = { [index: number]: number };
-
-function samePlacements(a: Placements, b: Placements): boolean {
-  const keys = Object.keys(a);
-  if (keys.length !== Object.keys(b).length) return false;
-  for (const key of keys) {
-    const p = a[key];
-    const q = b[key];
-    if (!q || p[0] !== q[0] || p[1] !== q[1]) return false;
-  }
-  return true;
-}
 
 /**
  * Pure game flow for one board: level selection, committed planet placements,
@@ -55,12 +56,14 @@ export class GameController {
   /** Increments when the previewed placements (draft, committed or wells) change. */
   placementRevision = 0;
 
-  private draft: Record<string, Vec2> | null = null;
+  /** Uncommitted drag placements; its tuples are owned here and written in place. */
+  private draft: Record<string, [number, number]> | null = null;
   private wells: readonly ExternalWell[] = [];
   private simBodies!: SimBodies;
   private bodyIndex = new Map<string, number>();
-  private previewFor: Placements | null = null;
+  private previewRevision = -1;
   private previewValue: PreviewPath | null = null;
+  private previewBuffer = new Float32Array(0);
   private readonly scratch = new Float64Array(3);
 
   constructor(levels: readonly LevelDef[]) {
@@ -81,16 +84,21 @@ export class GameController {
     if (!Number.isInteger(index) || index < 0 || index >= this.levels.length) {
       throw new RangeError(`No level at index ${index}`);
     }
+    const level = this.levels[index];
+    const placements = startPlacements(level);
+    // Built before any state changes, so a throw leaves the old level loaded.
+    const simBodies = createSimBodies(level, placements, this.wells);
     this.levelIndex = index;
-    this.placements = startPlacements(this.level);
+    this.placements = placements;
+    this.simBodies = simBodies;
+    this.bodyIndex = new Map(level.bodies.map((b, i) => [b.id, i]));
     this.phase = 'placing';
     this.attempts = 0;
     this.lastResult = null;
     this.lastOutcome = null;
     this.flightTime = 0;
     this.draft = null;
-    this.bodyIndex = new Map(this.level.bodies.map((b, i) => [b.id, i]));
-    this.rebuildBodies();
+    this.placementRevision++;
     this.levelRevision++;
   }
 
@@ -108,10 +116,21 @@ export class GameController {
     this.rebuildBodies();
   }
 
-  /** Shows an uncommitted drag position in the preview. */
+  /** Shows an uncommitted drag position in the preview (allocates only on a drag's first call). */
   setDraft(id: string, p: Vec2): void {
     this.requireMovable(id, p);
-    this.draft = { ...this.placements, [id]: [p[0], p[1]] };
+    let draft = this.draft;
+    if (!draft) {
+      draft = {};
+      for (const key of Object.keys(this.placements)) {
+        const q = this.placements[key];
+        draft[key] = [q[0], q[1]];
+      }
+      this.draft = draft;
+    }
+    const d = draft[id];
+    d[0] = p[0];
+    d[1] = p[1];
     this.placementRevision++;
   }
 
@@ -121,12 +140,15 @@ export class GameController {
     this.placementRevision++;
   }
 
-  /** Real-object seam: extra gravity wells for every later flight. */
+  /**
+   * Real-object seam: extra gravity wells for every later flight, on every
+   * level. Throws, changing nothing, when a well is invalid or its id is
+   * used by a body of any level, so a later loadLevel cannot fail on it.
+   */
   setExternalWells(wells: readonly ExternalWell[]): void {
     const copy = [...wells];
-    createSimBodies(this.level, this.placements, copy); // validates
+    for (const level of this.levels) createSimBodies(level, {}, copy); // validates
     this.wells = copy;
-    this.previewFor = null;
     this.rebuildBodies();
   }
 
@@ -135,18 +157,26 @@ export class GameController {
   }
 
   /**
-   * The start of the flight for the given placements (default: the drag
-   * draft, else the committed placements). Memoized on the placements.
+   * The start of the flight for the drag draft, else the committed
+   * placements. Memoized until placementRevision changes. The whole flight
+   * still runs (its length sets how much is shown), but only the shown
+   * samples are recorded, into a buffer reused across calls.
    */
-  preview(placements?: Placements): PreviewPath {
-    const target = placements ?? this.draft ?? this.placements;
-    if (this.previewValue && this.previewFor && samePlacements(this.previewFor, target)) {
-      return this.previewValue;
-    }
-    const result = simulate(this.level, target, { externalWells: this.wells });
-    const count = Math.min(result.sampleCount, Math.max(2, Math.ceil(result.sampleCount * PREVIEW_FRACTION)));
-    this.previewFor = { ...target };
-    this.previewValue = { samples: result.samples, count };
+  preview(): PreviewPath {
+    if (this.previewValue && this.previewRevision === this.placementRevision) return this.previewValue;
+    const level = this.level;
+    const capacity = Math.max(2, Math.ceil(maxSampleCount(level) * PREVIEW_FRACTION));
+    if (this.previewBuffer.length < capacity * 3) this.previewBuffer = new Float32Array(capacity * 3);
+    const result = simulate(level, this.draft ?? this.placements, {
+      externalWells: this.wells,
+      maxSamples: capacity,
+      sampleBuffer: this.previewBuffer,
+    });
+    // As many samples as PREVIEW_FRACTION of the complete recording holds.
+    const full = fullSampleCount(result.steps, result.sampleEvery);
+    const count = Math.min(result.sampleCount, Math.max(2, Math.ceil(full * PREVIEW_FRACTION)));
+    this.previewRevision = this.placementRevision;
+    this.previewValue = { samples: this.previewBuffer, count };
     return this.previewValue;
   }
 
@@ -157,7 +187,7 @@ export class GameController {
     this.lastResult = result;
     this.phase = 'flying';
     this.flightTime = 0;
-    this.draft = null;
+    this.clearDraft();
     this.flightId++;
     return result;
   }
@@ -204,14 +234,50 @@ export class GameController {
       out[2] = s[k + 2];
       return out;
     }
-    const step0 = i0 * result.sampleEvery;
-    const step1 = Math.min(step0 + result.sampleEvery, result.steps);
-    const a = step1 > step0 ? Math.min(1, Math.max(0, (stepF - step0) / (step1 - step0))) : 0;
     const k = i0 * 3;
-    out[0] = s[k] + (s[k + 3] - s[k]) * a;
-    out[1] = s[k + 1] + (s[k + 4] - s[k + 1]) * a;
-    out[2] = s[k + 2] + (s[k + 5] - s[k + 2]) * a;
+    let fromStep = i0 * result.sampleEvery;
+    let toStep = Math.min(fromStep + result.sampleEvery, result.steps);
+    let ax = s[k];
+    let ay = s[k + 1];
+    let az = s[k + 2];
+    let bx = s[k + 3];
+    let by = s[k + 4];
+    let bz = s[k + 5];
+    // A teleport between the two samples splits the interval: before the jump
+    // the comet moves toward the entry point, after it away from the exit.
+    const teleports = result.teleports;
+    for (let j = 0; j < teleports.length; j++) {
+      const tp = teleports[j];
+      if (tp.step <= fromStep || tp.step > toStep) continue;
+      if (stepF < tp.step) {
+        bx = tp.entry[0];
+        by = tp.entry[1];
+        bz = tp.entry[2];
+        toStep = tp.step;
+      } else {
+        ax = tp.exit[0];
+        ay = tp.exit[1];
+        az = tp.exit[2];
+        fromStep = tp.step;
+      }
+    }
+    const a = toStep > fromStep ? Math.min(1, Math.max(0, (stepF - fromStep) / (toStep - fromStep))) : 0;
+    out[0] = ax + (bx - ax) * a;
+    out[1] = ay + (by - ay) * a;
+    out[2] = az + (bz - az) * a;
     return out;
+  }
+
+  /** Teleport jumps the playback has passed in the current flight (0 while placing). */
+  get teleportsPassed(): number {
+    const result = this.lastResult;
+    if (this.phase === 'placing' || !result) return 0;
+    const stepF = this.flightTime / SIM_DT;
+    let passed = 0;
+    for (let j = 0; j < result.teleports.length; j++) {
+      if (result.teleports[j].step <= stepF) passed++;
+    }
+    return passed;
   }
 
   /**
@@ -256,8 +322,10 @@ export class GameController {
   }
 
   private requireMovable(id: string, p: Vec2): void {
-    const body = this.level.bodies.find((b) => b.id === id);
-    if (!body || !body.movable) throw new Error(`${this.level.id}: ${id} is not a movable body`);
+    const index = this.bodyIndex.get(id);
+    if (index === undefined || !this.level.bodies[index].movable) {
+      throw new Error(`${this.level.id}: ${id} is not a movable body`);
+    }
     if (!Array.isArray(p) || p.length !== 2 || !isFiniteVec(p)) {
       throw new Error(`${this.level.id}: placement for ${id} must be a finite [x, z]`);
     }
@@ -265,7 +333,6 @@ export class GameController {
 
   private rebuildBodies(): void {
     this.simBodies = createSimBodies(this.level, this.placements, this.wells);
-    this.previewFor = null;
     this.placementRevision++;
   }
 }

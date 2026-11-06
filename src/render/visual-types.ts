@@ -34,6 +34,8 @@ export interface TrailVisual {
   showPreview(samples: Float32Array, count: number): void;
   beginFlight(): void;
   pushPoint(p: XYZLike): void;
+  /** Starts a new line within the flight (a teleport jump): the next point does not connect. */
+  breakLine(): void;
   endFlight(): void;
   clear(): void;
 }

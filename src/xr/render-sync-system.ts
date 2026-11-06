@@ -26,6 +26,7 @@ export class RenderSyncSystem extends createSystem({
   private lastBoardVersion = -1;
   private lastFlightId = -1;
   private lastPlacementRevision = -1;
+  private lastTeleportsPassed = 0;
   private lastPhase: GamePhase | null = null;
   private previewShown = false;
 
@@ -72,9 +73,17 @@ export class RenderSyncSystem extends createSystem({
     if (game.flightId !== this.lastFlightId) {
       trail.beginFlight();
       this.lastFlightId = game.flightId;
+      this.lastTeleportsPassed = 0;
     }
-    if (game.phase === 'flying') trail.pushPoint(this.comet);
-    else if (this.lastPhase === 'flying') trail.endFlight();
+    if (game.phase === 'flying') {
+      // A teleport jump starts a new line, so no streak joins entry and exit.
+      const passed = game.teleportsPassed;
+      if (passed !== this.lastTeleportsPassed) {
+        trail.breakLine();
+        this.lastTeleportsPassed = passed;
+      }
+      trail.pushPoint(this.comet);
+    } else if (this.lastPhase === 'flying') trail.endFlight();
 
     if (game.phase === 'placing') {
       if (game.placementRevision !== this.lastPlacementRevision || !this.previewShown) {

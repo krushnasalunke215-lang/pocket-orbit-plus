@@ -132,6 +132,9 @@ export function createTrailVisual(): TrailVisual {
       last[2] = p[2];
       hasLast = true;
     },
+    breakLine() {
+      hasLast = false;
+    },
     endFlight() {
       hasLast = false;
     },

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { PREVIEW_FRACTION } from '../config.js';
+import { SIM_DT } from '../sim/constants.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
 import { simulate } from '../sim/simulate.js';
+import { WORMHOLE_EXIT, WORMHOLE_LEVEL, withStubWormhole } from '../sim/test-fixtures.js';
 import { GameController } from './controller.js';
 import { deserializeGameState, serializeGameState } from './state.js';
 
@@ -89,31 +91,88 @@ describe('GameController', () => {
     const game = new GameController(ALL_LEVELS);
     game.loadLevel(2);
     game.setPlacement('p1', game.level.solution.p1);
+    const core = game.level.bodies.find((b) => b.id === 'core')!.position;
+    const orbit = game.level.bodies.find((b) => b.id === 'moon')!.orbit!;
+    const phase = orbit.phase ?? 0;
     const atRest = [0, 0, 0];
     game.bodyBoardPosition('moon', atRest);
-    expect(atRest[0]).toBeCloseTo(0.3, 12);
-    expect(atRest[2]).toBeCloseTo(-0.15, 12);
+    expect(atRest[0]).toBeCloseTo(core[0] + orbit.radius * Math.cos(phase), 12);
+    expect(atRest[2]).toBeCloseTo(core[1] + orbit.radius * Math.sin(phase), 12);
     game.launch();
-    game.tick(1.5); // a quarter of the 6 s orbit
+    game.tick(orbit.period / 4); // a quarter orbit
     const flying = [0, 0, 0];
     game.bodyBoardPosition('moon', flying);
-    expect(flying[0]).toBeCloseTo(0, 6);
-    expect(flying[2]).toBeCloseTo(0.15, 6);
+    expect(flying[0]).toBeCloseTo(core[0] + orbit.radius * Math.cos(phase + Math.PI / 2), 6);
+    expect(flying[2]).toBeCloseTo(core[1] + orbit.radius * Math.sin(phase + Math.PI / 2), 6);
     expect(game.bodyBoardPosition('missing', flying)).toBe(false);
   });
 
   it('previews the first part of the flight and memoizes it', () => {
     const game = new GameController(ALL_LEVELS);
+    const head = (samples: Float32Array, count: number) => Array.from(samples.subarray(0, count * 3));
     const full = simulate(game.level, game.placements);
     const preview = game.preview();
     expect(preview.count).toBe(Math.ceil(full.sampleCount * PREVIEW_FRACTION));
+    expect(head(preview.samples, preview.count)).toEqual(head(full.samples, preview.count));
     expect(game.preview()).toBe(preview);
-    game.setDraft('p1', [-0.075, -0.4]);
+
+    // The draft copies the point, so the caller may reuse its tuple.
+    const point: [number, number] = [-0.075, -0.4];
+    game.setDraft('p1', point);
+    point[0] = 0.5;
     const drafted = game.preview();
     expect(drafted).not.toBe(preview);
-    expect(Array.from(drafted.samples)).toEqual(Array.from(simulate(game.level, game.level.solution).samples));
+    expect(drafted.samples).toBe(preview.samples); // one reused buffer
+    const solved = simulate(game.level, { p1: [-0.075, -0.4] });
+    expect(drafted.count).toBe(Math.ceil(solved.sampleCount * PREVIEW_FRACTION));
+    expect(head(drafted.samples, drafted.count)).toEqual(head(solved.samples, drafted.count));
+    expect(game.placements.p1).toEqual(game.level.bodies[0].position);
+
     game.clearDraft();
     expect(game.preview().count).toBe(preview.count);
+  });
+
+  it('plays a teleport back as a jump, never through the skipped middle', () => {
+    const game = new GameController([WORMHOLE_LEVEL]);
+    const result = withStubWormhole(() => game.launch());
+    const [jump] = result.teleports;
+    const out = [0, 0, 0];
+    let lastBefore = -Infinity;
+    for (let i = 0; game.phase === 'flying' && i < 2000; i++) {
+      game.tick(1 / 90);
+      game.cometBoardPosition(out);
+      const passed = game.flightTime / SIM_DT >= jump.step;
+      expect(game.teleportsPassed).toBe(passed ? 1 : 0);
+      if (passed) expect(out[0]).toBeGreaterThanOrEqual(WORMHOLE_EXIT[0] - 1e-6);
+      else {
+        expect(out[0]).toBeLessThanOrEqual(jump.entry[0] + 1e-6);
+        lastBefore = out[0];
+      }
+    }
+    expect(game.phase).toBe('solved');
+    expect(lastBefore).toBeGreaterThan(jump.entry[0] - 0.01);
+  });
+
+  it('keeps external wells across level loads and refuses ids any level uses', () => {
+    const game = new GameController(ALL_LEVELS);
+    const plain = new GameController(ALL_LEVELS);
+    const mug = { id: 'mug', position: [-0.3, 0, 0.15], radius: 0.06, source: 'real-object' } as const;
+    game.setExternalWells([mug]);
+    for (let i = 0; i < ALL_LEVELS.length; i++) {
+      game.loadLevel(i);
+      plain.loadLevel(i);
+      expect(game.externalWells).toEqual([mug]);
+      expect(game.launch().pathHash, game.level.id).not.toBe(plain.launch().pathHash);
+    }
+
+    // 'moon' is a body of c1-l3 only: refused while c1-l1 is loaded, and nothing changes.
+    game.loadLevel(0);
+    const revision = game.levelRevision;
+    expect(() => game.setExternalWells([{ ...mug, id: 'moon' }])).toThrow(/moon/);
+    expect(game.externalWells).toEqual([mug]);
+    expect(game.levelRevision).toBe(revision);
+    game.loadLevel(ALL_LEVELS.findIndex((l) => l.id === 'c1-l3'));
+    expect(game.level.id).toBe('c1-l3');
   });
 
   it('round-trips through GameState JSON', () => {
