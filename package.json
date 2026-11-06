@@ -14,7 +14,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "solve": "tsx scripts/solve.ts"
   },
   "dependencies": {
     "@iwsdk/core": "1.1.0-rc.2",
@@ -29,6 +30,7 @@
     "@iwsdk/vite-plugin-dev": "1.1.0-rc.2",
     "@meta-quest/metavr": "^1.8.1",
     "@types/three": "^0.185.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.5.0",
     "vite": "^7.1.4",
     "vitest": "^4.1.12",
