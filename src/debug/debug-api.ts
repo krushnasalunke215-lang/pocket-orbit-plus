@@ -4,7 +4,7 @@ import type { BodyKind, SimOutcome } from '../sim/bodies.js';
 import type { Placements } from '../sim/level.js';
 import { BoardBody } from '../xr/components.js';
 import { getBoard, getGame, getHud, getRenderStats, getVisuals, type RenderCounts } from '../xr/runtime.js';
-import { currentSessionMode } from '../xr/session.js';
+import { currentSessionMode, enterXR } from '../xr/session.js';
 import { createSpikeApi, type SpikeApi } from './spike.js';
 
 /*
@@ -49,8 +49,14 @@ export interface GameSnapshot {
     center: Triple;
     quaternion: [number, number, number, number];
     radius: number;
+    /** World position of the board's grab handle (meters). */
+    handle: Triple;
+    handleHeld: boolean;
+    handleHovered: boolean;
   };
   session: { mode: string; blendMode: string | null; enabledFeatures: string[]; visibility: string };
+  /** The VR / desktop starfield is drawn (never over passthrough). */
+  starfieldVisible: boolean;
   /** HUD world position and size (meters, from the UIKit layout). */
   hud: { ready: boolean; position: Triple | null; size: [number, number] | null };
   /** renderer.info of the last rendered frame. */
@@ -80,6 +86,8 @@ export interface GameDebugApi {
   nextLevel(): Promise<void>;
   launch(): void;
   placeBoard(): void;
+  /** Requests the immersive-vr (starfield) fallback session, as enterXR does without AR. */
+  enterVR(): void;
   /** Viewport CSS pixels of a board point ([x, z] or [x, y, z]); null if off screen. */
   screenPoint(boardPos: readonly number[]): ScreenPoint | null;
   /** Viewport CSS pixels of a HUD element's center (default the Launch button). */
@@ -219,7 +227,11 @@ export function installDebugApi(world: World): GameDebugApi {
           center: [...pose.center] as Triple,
           quaternion: [...pose.quaternion] as [number, number, number, number],
           radius: pose.radius,
+          handle: triple(board.handleEntity.object3D!.getWorldPosition(v)),
+          handleHeld: board.handleEntity.hasComponent(Grabbed),
+          handleHovered: board.handleEntity.hasComponent(Hovered),
         },
+        starfieldVisible: Boolean(world.scene.getObjectByName('Starfield')?.visible),
         session: {
           mode: currentSessionMode(world),
           blendMode: session?.environmentBlendMode ?? null,
@@ -268,6 +280,10 @@ export function installDebugApi(world: World): GameDebugApi {
 
     placeBoard() {
       core().board.placeBoard();
+    },
+
+    enterVR() {
+      enterXR(world, { ar: false, vr: true });
     },
 
     screenPoint(boardPos) {

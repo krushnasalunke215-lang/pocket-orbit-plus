@@ -1,0 +1,209 @@
+// Shared helpers for driving the IWER managed runtime: XR device calls,
+// whitelisted window.__game calls, polling, and hand-ray grab/drag steps.
+import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { tsImport } from 'tsx/esm/api';
+import { call, root, sleep } from './cli.mjs';
+
+const { boardToWorld } = await tsImport('../../src/game/board-math.ts', import.meta.url);
+
+export const SHOTS = path.join(root, '.agents', 'tasks', 'screenshots', 'phase1');
+export const RESULTS = path.join(root, 'test-results');
+const REQUEST = path.join(root, 'e2e', 'iwer', '.request.json');
+
+export const xr = (action, input = {}, options) => call(['xr', action], { input, ...options }).result;
+export const vec = (p) => ({ x: p[0], y: p[1], z: p[2] });
+export const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+export const round = (v, n = 4) => (Array.isArray(v) ? v.map((x) => round(x, n)) : Number(v.toFixed(n)));
+/** Board-normalized point → world meters with the board pose from a snapshot. */
+export const toWorld = (board, p) => boardToWorld(board, p);
+
+/** One whitelisted window.__game call through `browser run`; returns { value, perfNow }. */
+export function game(method, ...args) {
+  writeFileSync(REQUEST, JSON.stringify({ method, args }));
+  const result = call(['browser', 'run', 'e2e/iwer/read-game.mjs', '--timeout', '30000']).result;
+  if (result?.error) throw new Error(`__game.${method}: ${result.error}`);
+  return result;
+}
+export const snapshot = () => game('snapshot').value;
+export const bodyOf = (snap, id) => snap.bodies.find((b) => b.id === id);
+
+export async function waitFor(label, fn, timeoutMs, intervalMs = 500) {
+  const started = Date.now();
+  let last;
+  for (;;) {
+    try {
+      last = await fn();
+      if (last) return last;
+    } catch (error) {
+      last = error;
+    }
+    if (Date.now() - started > timeoutMs) throw new Error(`timed out waiting for ${label}: ${String(last?.message ?? last)}`);
+    await sleep(intervalMs);
+  }
+}
+
+export function screenshot(name, summary) {
+  const file = path.join(SHOTS, name);
+  call(['browser', 'screenshot', '--output-file', file]);
+  if (summary) summary.data.screenshots = [...(summary.data.screenshots ?? []), file];
+  return file;
+}
+
+export async function enterXR() {
+  xr('enter');
+  const status = await waitFor('an active XR session', () => {
+    const s = xr('status');
+    return s.sessionActive ? s : null;
+  }, 20_000);
+  xr('set-input-mode', { mode: 'hand' });
+  await sleep(4000);
+  return status;
+}
+
+export async function exitXR() {
+  xr('exit');
+  await waitFor('session end', () => !xr('status').sessionActive, 10_000);
+}
+
+export const hoveredNames = () => call(['ecs', 'find'], { input: { withComponents: ['Hovered'] } }).result.entities.map((e) => e.name);
+
+/** Puts the hand's ray origin in front of the chest, between the head and the board. */
+export function handAtChest(device) {
+  const head = xr('get-transform', { device: 'headset' }).position;
+  const hand = [head.x + 0.15, head.y - 0.2, head.z - 0.15];
+  xr('set-transform', { device, position: vec(hand) });
+  return hand;
+}
+
+/**
+ * Aims `device`'s ray from the chest at `target` (world), records what is
+ * hovered, then selects (pinch). Returns the ray length to the target and
+ * whether `isHeld(snapshot)` became true.
+ */
+export async function rayGrab(device, target, isHeld) {
+  const hand = handAtChest(device);
+  xr('look-at', { device, target: vec(target) });
+  await sleep(500);
+  const hovered = hoveredNames();
+  xr('set-select-value', { device, value: 1 });
+  await sleep(600);
+  return { hand, distance: dist(target, hand), hovered, held: Boolean(isHeld(snapshot())) };
+}
+
+/** Swings the held ray so its end (at `distance`) lies toward `target` (world). */
+export async function rayMoveTo(device, target, distance) {
+  xr('look-at', { device, target: vec(target), moveToDistance: distance });
+  await sleep(800);
+}
+
+export async function letGo(device) {
+  xr('set-select-value', { device, value: 0 });
+  await sleep(600);
+}
+
+export const waitNotFlying = (timeoutMs = 20_000) =>
+  waitFor('flight end', () => {
+    const s = snapshot();
+    return s.phase !== 'flying' ? s : null;
+  }, timeoutMs);
+
+/**
+ * Hovers planet `body` with `device`, grabs it, moves the ray end to
+ * `solution` (board [x, z]) and releases. With `expectSolve`, waits up to
+ * 20 s for the solved state; otherwise waits for the flight to end.
+ */
+export async function rayDrag(device, body, solution, { expectSolve = true } = {}) {
+  const isHand = device.startsWith('hand');
+  xr('set-input-mode', { mode: isHand ? 'hand' : 'controller' });
+  let snap = snapshot();
+  const board = snap.board;
+  const planet = bodyOf(snap, body).world;
+  const hand = handAtChest(device);
+
+  // Aim beside the visible sphere (0.12 board units off the center,
+  // perpendicular to the ray): only the invisible collider can be hit there.
+  const toPlanet = [planet[0] - hand[0], planet[1] - hand[1], planet[2] - hand[2]];
+  const len = Math.hypot(...toPlanet);
+  const side = [-toPlanet[2] / len, 0, toPlanet[0] / len];
+  const sideLen = Math.hypot(side[0], side[2]);
+  const offset = 0.12 * board.radius;
+  const beside = [planet[0] + (side[0] / sideLen) * offset, planet[1], planet[2] + (side[2] / sideLen) * offset];
+  xr('look-at', { device, target: vec(beside) });
+  await sleep(600);
+  const hovered = hoveredNames();
+  const colliderHover = hovered.includes(`Body ${body}`);
+  // Distance from the ray line to the planet center, in board units.
+  const u = [beside[0] - hand[0], beside[1] - hand[1], beside[2] - hand[2]];
+  const ul = Math.hypot(...u);
+  const cx = toPlanet[1] * u[2] - toPlanet[2] * u[1];
+  const cy = toPlanet[2] * u[0] - toPlanet[0] * u[2];
+  const cz = toPlanet[0] * u[1] - toPlanet[1] * u[0];
+  const rayMissBoard = Math.hypot(cx, cy, cz) / ul / board.radius;
+
+  // Grab at the center so the planet lands where the ray end goes.
+  xr('look-at', { device, target: vec(planet) });
+  await sleep(400);
+  xr('set-select-value', { device, value: 1 });
+  await sleep(600);
+  snap = snapshot();
+  const heldAfterSelect = Boolean(bodyOf(snap, body)?.held);
+  if (!heldAfterSelect) {
+    xr('set-select-value', { device, value: 0 });
+    return { device, body, colliderHover, rayMissBoard, heldAfterSelect, hovered };
+  }
+
+  // MoveFromTarget keeps the ray length to the hit point on the collider
+  // surface, so the first move lands a few mm short; correct like a person
+  // watching the planet would (at most 4 times).
+  const d = dist(planet, hand);
+  const goal = [solution[0], 0, solution[1]];
+  const correction = [0, 0, 0];
+  let reached = null;
+  let heldWhileMoving = false;
+  for (let i = 0; i < 5; i++) {
+    const target = toWorld(board, [goal[0] + correction[0], 0, goal[2] + correction[2]]);
+    xr('look-at', { device, target: vec(target), moveToDistance: d });
+    await sleep(800);
+    snap = snapshot();
+    const b = bodyOf(snap, body);
+    heldWhileMoving = b.held;
+    reached = b.board;
+    const ex = goal[0] - reached[0];
+    const ez = goal[2] - reached[2];
+    if (Math.hypot(ex, ez) <= 0.005) break;
+    correction[0] += ex;
+    correction[2] += ez;
+  }
+  const error = Math.hypot(goal[0] - reached[0], goal[2] - reached[2]);
+  const attemptsBefore = snap.attempts;
+  xr('set-select-value', { device, value: 0 });
+  const released = Date.now();
+  let solvedSnap = null;
+  let endSnap;
+  if (expectSolve) {
+    solvedSnap = await waitFor('solved', () => {
+      const s = snapshot();
+      return s.solved ? s : null;
+    }, 20_000).catch(() => null);
+    endSnap = solvedSnap ?? snapshot();
+  } else {
+    await sleep(600);
+    endSnap = await waitNotFlying().catch(() => snapshot());
+  }
+  return {
+    device,
+    body,
+    colliderHover,
+    rayMissBoard: round(rayMissBoard),
+    heldAfterSelect,
+    heldWhileMoving,
+    rayDistance: round(d),
+    reached: round(reached),
+    error: round(error),
+    launched: endSnap.attempts > attemptsBefore,
+    solved: Boolean(solvedSnap),
+    solvedAfterMs: solvedSnap ? Date.now() - released : null,
+    lastOutcome: endSnap.lastOutcome,
+  };
+}

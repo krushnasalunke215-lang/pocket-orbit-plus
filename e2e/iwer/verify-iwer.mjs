@@ -1,20 +1,34 @@
 // IWER (emulated Quest 3) verification through the IWSDK CLI managed runtime:
 // fallback placement, table-plane placement in the sunlit_living_room SEM room,
 // a hand-ray grab of planet 1 to the level-1 solution, a poke on Launch, XR
-// render stats and the real-object spike probes. Always stops the runtime.
+// render stats, the real-object spike probes, then the release gate's
+// off-board snap-back, a near pinch, hand tracking lost mid-hold, levels 2-3
+// by hand, the board handle and the immersive-vr starfield fallback.
+// Always stops the runtime.
 // Usage: npm run verify:iwer
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { tsImport } from 'tsx/esm/api';
-import { call, root, run, sleep } from './cli.mjs';
+import { call, run, sleep } from './cli.mjs';
+import {
+  enterXR,
+  exitXR,
+  game,
+  RESULTS,
+  rayDrag,
+  round,
+  screenshot as saveScreenshot,
+  SHOTS,
+  snapshot,
+  vec,
+  waitFor,
+  xr,
+} from './xr-helpers.mjs';
+import { handleDrag, nearPinch, offBoardRelease, solveLevelsByHand, trackingLoss, vrStarfield } from './xr-scenarios.mjs';
 
-const { boardToWorld } = await tsImport('../../src/game/board-math.ts', import.meta.url);
 const { boardRadiusForTable } = await tsImport('../../src/game/placement.ts', import.meta.url);
 const { BOARD, RENDER_BUDGET } = await tsImport('../../src/config.ts', import.meta.url);
 
-const SHOTS = path.join(root, '.agents', 'tasks', 'screenshots', 'phase1');
-const RESULTS = path.join(root, 'test-results');
-const REQUEST = path.join(root, 'e2e', 'iwer', '.request.json');
 const TABLE_HEAD = { x: 0, y: 1.15, z: -1.2 };
 // The cup on the sunlit_living_room coffee table: group at z = -1.95, cup at
 // local [0.08, 0.512, 0.17], a 0.15 m tall cylinder (radius 0.035-0.045).
@@ -30,146 +44,7 @@ const check = (name, pass, detail) => {
 const require_ = (name, pass, detail) => {
   if (!check(name, pass, detail)) throw new Error(`required check failed: ${name}`);
 };
-
-const xr = (action, input = {}, options) => call(['xr', action], { input, ...options }).result;
-const vec = (p) => ({ x: p[0], y: p[1], z: p[2] });
-const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-const round = (v, n = 4) => (Array.isArray(v) ? v.map((x) => round(x, n)) : Number(v.toFixed(n)));
-
-/** One whitelisted window.__game call through `browser run`; returns { value, perfNow }. */
-function game(method, ...args) {
-  writeFileSync(REQUEST, JSON.stringify({ method, args }));
-  const result = call(['browser', 'run', 'e2e/iwer/read-game.mjs', '--timeout', '30000']).result;
-  if (result?.error) throw new Error(`__game.${method}: ${result.error}`);
-  return result;
-}
-const snapshot = () => game('snapshot').value;
-
-async function waitFor(label, fn, timeoutMs, intervalMs = 500) {
-  const started = Date.now();
-  let last;
-  for (;;) {
-    try {
-      last = await fn();
-      if (last) return last;
-    } catch (error) {
-      last = error;
-    }
-    if (Date.now() - started > timeoutMs) throw new Error(`timed out waiting for ${label}: ${String(last?.message ?? last)}`);
-    await sleep(intervalMs);
-  }
-}
-
-function screenshot(name) {
-  const file = path.join(SHOTS, name);
-  call(['browser', 'screenshot', '--output-file', file]);
-  summary.data.screenshots = [...(summary.data.screenshots ?? []), file];
-}
-
-async function enterXR() {
-  xr('enter');
-  const status = await waitFor('an active XR session', () => {
-    const s = xr('status');
-    return s.sessionActive ? s : null;
-  }, 20_000);
-  xr('set-input-mode', { mode: 'hand' });
-  await sleep(4000);
-  return status;
-}
-
-/** Board-normalized point → world meters with the board pose from a snapshot. */
-const toWorld = (board, p) => boardToWorld(board, p);
-
-/**
- * Hover planet `body` with `device`, grab it, move the ray end to `solution`
- * (board [x, z]) and release. Returns the measured result.
- */
-async function rayDrag(device, body, solution) {
-  const isHand = device.startsWith('hand');
-  xr('set-input-mode', { mode: isHand ? 'hand' : 'controller' });
-  let snap = snapshot();
-  const board = snap.board;
-  const planet = snap.bodies.find((b) => b.id === body).world;
-  // Hold the hand in front of the chest, between the head and the board.
-  const head = xr('get-transform', { device: 'headset' }).position;
-  const hand = [head.x + 0.15, head.y - 0.2, head.z - 0.15];
-  xr('set-transform', { device, position: vec(hand) });
-
-  // C5: aim beside the visible sphere (0.12 board units off the center,
-  // perpendicular to the ray): only the invisible collider can be hit there.
-  const toPlanet = [planet[0] - hand[0], planet[1] - hand[1], planet[2] - hand[2]];
-  const len = Math.hypot(...toPlanet);
-  const side = [-toPlanet[2] / len, 0, toPlanet[0] / len];
-  const sideLen = Math.hypot(side[0], side[2]);
-  const offset = 0.12 * board.radius;
-  const beside = [planet[0] + (side[0] / sideLen) * offset, planet[1], planet[2] + (side[2] / sideLen) * offset];
-  xr('look-at', { device, target: vec(beside) });
-  await sleep(600);
-  const hovered = call(['ecs', 'find'], { input: { withComponents: ['Hovered'] } }).result.entities;
-  const colliderHover = hovered.some((e) => e.name === `Body ${body}`);
-  // Distance from the ray line to the planet center, in board units.
-  const u = [beside[0] - hand[0], beside[1] - hand[1], beside[2] - hand[2]];
-  const ul = Math.hypot(...u);
-  const cx = toPlanet[1] * u[2] - toPlanet[2] * u[1];
-  const cy = toPlanet[2] * u[0] - toPlanet[0] * u[2];
-  const cz = toPlanet[0] * u[1] - toPlanet[1] * u[0];
-  const rayMissBoard = Math.hypot(cx, cy, cz) / ul / board.radius;
-
-  // Grab at the center so the planet lands where the ray end goes.
-  xr('look-at', { device, target: vec(planet) });
-  await sleep(400);
-  xr('set-select-value', { device, value: 1 });
-  await sleep(600);
-  snap = snapshot();
-  const heldAfterSelect = Boolean(snap.bodies.find((b) => b.id === body)?.held);
-  if (!heldAfterSelect) {
-    xr('set-select-value', { device, value: 0 });
-    return { device, colliderHover, rayMissBoard, heldAfterSelect, hovered: hovered.map((e) => e.name) };
-  }
-
-  // MoveFromTarget keeps the ray length to the hit point on the collider
-  // surface, so the first move lands a few mm short; correct like a person
-  // watching the planet would (at most 4 times).
-  const d = dist(planet, hand);
-  const goal = [solution[0], 0, solution[1]];
-  const correction = [0, 0, 0];
-  let reached = null;
-  let heldWhileMoving = false;
-  for (let i = 0; i < 5; i++) {
-    const target = toWorld(board, [goal[0] + correction[0], 0, goal[2] + correction[2]]);
-    xr('look-at', { device, target: vec(target), moveToDistance: d });
-    await sleep(800);
-    snap = snapshot();
-    const b = snap.bodies.find((x) => x.id === body);
-    heldWhileMoving = b.held;
-    reached = b.board;
-    const ex = goal[0] - reached[0];
-    const ez = goal[2] - reached[2];
-    if (Math.hypot(ex, ez) <= 0.005) break;
-    correction[0] += ex;
-    correction[2] += ez;
-  }
-  const error = Math.hypot(goal[0] - reached[0], goal[2] - reached[2]);
-  xr('set-select-value', { device, value: 0 });
-  const released = Date.now();
-  const solvedSnap = await waitFor('solved', () => {
-    const s = snapshot();
-    return s.solved ? s : null;
-  }, 20_000).catch(() => null);
-  return {
-    device,
-    colliderHover,
-    rayMissBoard: round(rayMissBoard),
-    heldAfterSelect,
-    heldWhileMoving,
-    rayDistance: round(d),
-    reached: round(reached),
-    error: round(error),
-    solved: Boolean(solvedSnap),
-    solvedAfterMs: solvedSnap ? Date.now() - released : null,
-    lastOutcome: (solvedSnap ?? snapshot()).lastOutcome,
-  };
-}
+const screenshot = (name) => saveScreenshot(name, summary);
 
 async function main() {
   mkdirSync(SHOTS, { recursive: true });
@@ -209,8 +84,7 @@ async function main() {
 
   // 3. Seated at the coffee table → the board lands on the 'table' plane.
   xr('set-transform', { device: 'headset', position: TABLE_HEAD, orientation: { x: 0, y: 0, z: 0, w: 1 } });
-  xr('exit');
-  await waitFor('session end', () => !xr('status').sessionActive, 10_000);
+  await exitXR();
   await enterXR();
   snap = snapshot();
   const planes = game('spike.planes').value;
@@ -237,7 +111,8 @@ async function main() {
   screenshot('iwer-table.png');
 
   // 4. Hand ray: grab planet 1 and drag it to the level-1 solution.
-  const level = game('levels').value[0];
+  const levels = game('levels').value;
+  const level = levels[0];
   const movable = snap.bodies.find((x) => x.movable);
   const solution = level.solution[movable.id];
   let drag = await rayDrag('hand-right', movable.id, solution);
@@ -336,6 +211,79 @@ async function main() {
   check('spike: viewer hit-test returned hits', hitTest.hits.length > 0, hitTest.hits.length);
   console.log(`spike: cup hit ${cupHit}, height above board ${spike.cupHeightAboveBoardM} m`);
 
+  // Back to the seated pose looking ahead for the interaction checks below.
+  xr('set-transform', { device: 'headset', position: TABLE_HEAD, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  await sleep(300);
+
+  // 8. Release gate: a hand release off the board snaps back without a launch.
+  const off = await offBoardRelease();
+  summary.data.offBoardRelease = off;
+  check('off-board: hand ray grabbed planet 1', off.held && off.heldWhileOff, off.hovered);
+  check('off-board: held planet clamped to the 0.92 disc', off.clampedRadiusWhileHeld <= 0.9201, off.clampedRadiusWhileHeld);
+  check(
+    'off-board: release snaps back with no launch',
+    off.attemptsAfter === off.attemptsBefore && off.phase === 'placing' && off.placementsUnchanged && off.snapBackError < 1e-4,
+    { attempts: [off.attemptsBefore, off.attemptsAfter], phase: off.phase, snapBackError: off.snapBackError },
+  );
+
+  // 9. Near pinch: the ray origin inside the invisible collider, the ray beside the visible sphere.
+  const near = await nearPinch();
+  summary.data.nearPinch = near;
+  const g = near.geometry;
+  check(
+    'near pinch: hand 3.6 cm from the planet, ray outside the visible sphere, inside the collider',
+    g.handToCenterM < g.colliderRadiusM && g.rayMissM > g.visibleRadiusM,
+    g,
+  );
+  check('near pinch: planet hovered and grabbed', near.hovered.includes('Body p1') && near.held && near.heldWhileCarried, near.hovered);
+  check(
+    'near pinch: carried 8 cm and launched on release',
+    near.movedBoardUnits > 0.2 && near.attemptsAfter === near.attemptsBefore + 1,
+    { movedBoardUnits: near.movedBoardUnits, attempts: [near.attemptsBefore, near.attemptsAfter], committed: near.committed },
+  );
+
+  // 10. Hand tracking lost mid-hold (IWER: the hand input source disconnects).
+  // Informational: IWER ends the hold in the same frame, so the gate sees a
+  // hand tracked a frame ago and launches; a release more than 100 ms after
+  // tracking stopped cannot be produced here (see progress.md known issues).
+  const lost = await trackingLoss();
+  summary.data.trackingLoss = lost;
+  check('tracking loss: disconnecting the hand ends the hold', lost.held && lost.heldWhileDisconnected === false, lost);
+
+  // 11. Levels 2 and 3 by hand ray.
+  const byHand = await solveLevelsByHand(levels);
+  summary.data.levelsByHand = byHand;
+  for (const result of byHand) {
+    const worst = Math.max(...result.drags.map((d) => d.error ?? Infinity));
+    check(`${result.level} solved by hand-ray drags`, result.solved && result.drags.every((d) => d.colliderHover && d.heldAfterSelect), {
+      attempts: result.attempts,
+      worstError: worst,
+      solvedAfterMs: result.drags.at(-1).solvedAfterMs,
+    });
+  }
+  xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+  await sleep(500);
+  screenshot('iwer-l3-hand-solved.png');
+  xr('set-transform', { device: 'headset', position: TABLE_HEAD, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  await sleep(300);
+
+  // 12. The board handle: grab with the hand ray and move the board 10 cm right.
+  const handle = await handleDrag();
+  summary.data.handleDrag = handle;
+  check('handle: hand ray hovers and grabs the board handle', handle.hovered?.includes('BoardHandle') && handle.held && handle.heldWhileMoving, handle.hovered);
+  check(
+    'handle: board follows ~10 cm to the right, keeps its height and size',
+    handle.releasedAfter && Math.abs(handle.delta[0] - 0.1) < 0.03 && Math.abs(handle.delta[1]) < 0.01 && Math.abs(handle.delta[2]) < 0.03 && handle.radiusUnchanged,
+    { delta: handle.delta },
+  );
+
+  // 13. The immersive-vr fallback: opaque session with the starfield.
+  const vr = await vrStarfield(() => screenshot('iwer-vr-starfield.png'));
+  summary.data.vr = vr;
+  check('immersive-vr session starts (the HUD fallback when AR is missing)', vr.sessionMode === 'immersive-vr' && vr.appMode === 'immersive-vr', vr.sessionMode);
+  check('immersive-vr: opaque blend and the starfield is drawn', vr.blendMode === 'opaque' && vr.starfieldVisible, { blendMode: vr.blendMode, starfieldVisible: vr.starfieldVisible });
+  check('immersive-vr: draw calls and triangles within budget', vr.renderer.calls <= BUDGET.calls && vr.renderer.triangles <= BUDGET.triangles, vr.renderer);
+
   summary.ok = summary.checks.every((c) => c.pass);
 }
 
@@ -363,6 +311,7 @@ try {
   if (stillRunning) exitCode = 1;
   writeFileSync(path.join(RESULTS, 'verify-iwer-summary.json'), JSON.stringify(summary, null, 2));
   const { planes: _planes, ...printed } = summary.data; // full list stays in the summary file
-  console.log(JSON.stringify({ ok: summary.ok && exitCode === 0, failed: summary.checks.filter((c) => !c.pass).map((c) => c.name), data: printed, runtimeStopped: summary.runtimeStopped, error: summary.error }, null, 2));
+  console.log(JSON.stringify({ ok: summary.ok && exitCode === 0, checks: summary.checks.length, failed: summary.checks.filter((c) => !c.pass).map((c) => c.name), runtimeStopped: summary.runtimeStopped, error: summary.error }, null, 2));
+  console.log(JSON.stringify(printed));
   process.exit(exitCode);
 }

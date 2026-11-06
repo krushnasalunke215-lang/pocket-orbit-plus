@@ -11,6 +11,7 @@ const METHODS = new Set([
   'loadLevel',
   'launch',
   'placeBoard',
+  'enterVR',
   'renderStats',
   'resetRenderStats',
   'spike.enabledFeatures',
