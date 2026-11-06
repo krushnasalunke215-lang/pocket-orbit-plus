@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isOverBoard, shouldLaunch } from './launch-gate.js';
+import { isOverBoard, shouldLaunch, trackingAge } from './launch-gate.js';
 
 describe('isOverBoard', () => {
   it('accepts releases up to radius 1.05 and ignores height', () => {
@@ -28,5 +28,19 @@ describe('shouldLaunch', () => {
 
   it('treats inputs without tracking (mouse) as fresh', () => {
     expect(shouldLaunch({ overBoard: true, msSinceTracked: null })).toBe(true);
+  });
+});
+
+describe('trackingAge', () => {
+  it('is null for the mouse and the age of the last tracked pose in XR', () => {
+    expect(trackingAge(false, null, 1000)).toBeNull();
+    expect(trackingAge(false, 900, 1000)).toBeNull();
+    expect(trackingAge(true, 940, 1000)).toBe(60);
+  });
+
+  it('fails closed in XR when the hold never reported a hand', () => {
+    const age = trackingAge(true, null, 1000);
+    expect(age).toBe(Infinity);
+    expect(shouldLaunch({ overBoard: true, msSinceTracked: age })).toBe(false);
   });
 });

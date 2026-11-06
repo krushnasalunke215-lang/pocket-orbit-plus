@@ -16,6 +16,17 @@ export interface ReleaseInfo {
 }
 
 /**
+ * The msSinceTracked value for a release. Mouse input (not immersive) has no
+ * tracking concept: null. In XR, `lastTrackedMs` is when the holding hand's
+ * pose was last seen, or null when the hold never reported a hand; that
+ * cannot prove tracking, so it counts as never tracked (Infinity).
+ */
+export function trackingAge(immersive: boolean, lastTrackedMs: number | null, nowMs: number): number | null {
+  if (!immersive) return null;
+  return lastTrackedMs === null ? Infinity : nowMs - lastTrackedMs;
+}
+
+/**
  * A release launches the comet only if it happened over the board and the
  * hand was tracked moments before; otherwise the planet snaps back. This
  * stops lost hand tracking (which also ends the pinch) from firing a launch.

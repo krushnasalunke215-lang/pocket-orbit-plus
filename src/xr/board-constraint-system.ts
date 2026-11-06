@@ -9,7 +9,7 @@ import {
 } from '@iwsdk/core';
 import { PLACE_RADIUS } from '../config.js';
 import { clampToDisc, intersectRayWithBoardPlane } from '../game/board-math.js';
-import { isOverBoard, shouldLaunch } from '../game/launch-gate.js';
+import { isOverBoard, shouldLaunch, trackingAge } from '../game/launch-gate.js';
 import type { Vec2 } from '../sim/vec.js';
 import { BoardBody } from './components.js';
 import { getBoard, getGame } from './runtime.js';
@@ -62,6 +62,7 @@ export class BoardConstraintSystem extends createSystem({
   private readonly throughTuple: [number, number, number] = [0, 0, 0];
   private readonly hit: [number, number] = [0, 0];
   private readonly bodyPos = [0, 0, 0];
+  private readonly draftPoint: [number, number] = [0, 0];
   private grab: GrabSystem | undefined;
 
   init(): void {
@@ -120,7 +121,9 @@ export class BoardConstraintSystem extends createSystem({
       if (Math.hypot(x - drag.previewX, z - drag.previewZ) > PREVIEW_STEP) {
         drag.previewX = x;
         drag.previewZ = z;
-        game.setDraft(drag.bodyId, [x, z]);
+        this.draftPoint[0] = x;
+        this.draftPoint[1] = z;
+        game.setDraft(drag.bodyId, this.draftPoint);
       }
     }
   }
@@ -165,8 +168,10 @@ export class BoardConstraintSystem extends createSystem({
     // Check the release frame itself too, so one slow frame (> 100 ms) with
     // the hand still tracked does not count as lost tracking.
     if (immersive) this.recordTracking(entity, drag);
-    // The mouse has no tracking concept (null); a hand must be fresh.
-    const msSinceTracked = immersive && drag.hand ? performance.now() - this.lastTracked[drag.hand] : null;
+    // The mouse has no tracking concept; a hand must be fresh, and an XR hold
+    // that never reported its hand counts as untracked (see trackingAge).
+    const lastTracked = drag.hand ? this.lastTracked[drag.hand] : null;
+    const msSinceTracked = trackingAge(immersive, lastTracked, performance.now());
 
     if (shouldLaunch({ overBoard, msSinceTracked })) {
       game.setPlacement(drag.bodyId, clampToDisc([drag.rawX, drag.rawZ]));

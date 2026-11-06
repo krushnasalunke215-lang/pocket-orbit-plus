@@ -35,6 +35,8 @@ export const BOARD = {
   maxRadius: 0.45,
   tableFill: 0.45,
   reach: 0.8,
+  /** On a plane, the board's near rim sits at least this far ahead of the head. */
+  headGap: 0.05,
   minPlaneSide: 0.25,
   planeWaitMs: 3000,
   lift: 0.004,

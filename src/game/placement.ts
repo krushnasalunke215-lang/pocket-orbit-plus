@@ -49,6 +49,14 @@ const MAX_TILT_RAD = (25 * Math.PI) / 180;
 const MAX_BELOW_EYE = 1.0;
 const MIN_BELOW_EYE = 0.1;
 const EXCLUDED_LABELS = new Set(['floor', 'ceiling']);
+/**
+ * A plane whose nearest point is closer than this (meters, horizontally) lies
+ * under the head, as when a seated player leans over a desk. It counts as in
+ * front even though the nearest point is the head's own projection.
+ */
+const UNDER_HEAD = 0.05;
+/** The board center may sit at most this far behind the head (meters). */
+const MAX_CENTER_BEHIND = 0.01;
 
 /** Unit horizontal view direction; -Z when the head looks straight up or down. */
 function flatForward(head: HeadPose): [number, number] {
@@ -120,9 +128,9 @@ interface Candidate {
   /** Horizontal distance from the head to the plane's nearest point. */
   readonly distance: number;
   readonly area: number;
-  readonly minSide: number;
-  /** Head position in plane-local x/z. */
-  readonly headLocal: readonly [number, number];
+  readonly radius: number;
+  /** World position of the board center on this plane. */
+  readonly center: Vec3;
 }
 
 function evaluatePlane(plane: PlaneInfo, head: HeadPose): Candidate | null {
@@ -153,15 +161,35 @@ function evaluatePlane(plane: PlaneInfo, head: HeadPose): Candidate | null {
   const distance = Math.hypot(dx, dz);
   if (distance > BOARD.reach) return null;
   const [fx, fz] = flatForward(head);
-  if (dx * fx + dz * fz <= 0) return null;
+  if (distance >= UNDER_HEAD && dx * fx + dz * fz <= 0) return null;
+
+  // Seed the center one radius plus a gap ahead of the head, so a plane under
+  // the head gets the board in front of the player rather than under the
+  // chin, then shift it so the whole disc stays on the plane.
+  const radius = boardRadiusForTable(minSide);
+  const fLocal = quatRotate(quatConjugate(plane.quaternion), [fx, 0, fz]);
+  const fLen = Math.hypot(fLocal[0], fLocal[2]) || 1;
+  const ahead = radius + BOARD.headGap;
+  const seedX = rel[0] + (fLocal[0] / fLen) * ahead;
+  const seedZ = rel[2] + (fLocal[2] / fLen) * ahead;
+  const lx = minX + radius <= maxX - radius ? clamp(seedX, minX + radius, maxX - radius) : (minX + maxX) / 2;
+  const lz = minZ + radius <= maxZ - radius ? clamp(seedZ, minZ + radius, maxZ - radius) : (minZ + maxZ) / 2;
+  const centerOffset = quatRotate(plane.quaternion, [lx, 0, lz]);
+  const center: Vec3 = [
+    plane.center[0] + centerOffset[0],
+    plane.center[1] + centerOffset[1] + BOARD.lift,
+    plane.center[2] + centerOffset[2],
+  ];
+  const centerAhead = (center[0] - head.position[0]) * fx + (center[2] - head.position[2]) * fz;
+  if (centerAhead < -MAX_CENTER_BEHIND) return null;
 
   return {
     plane,
     isTable: label === 'table',
     distance,
     area: (maxX - minX) * (maxZ - minZ),
-    minSide,
-    headLocal: [rel[0], rel[2]],
+    radius,
+    center,
   };
 }
 
@@ -174,10 +202,10 @@ function compareCandidates(a: Candidate, b: Candidate): number {
 
 /**
  * Picks the best plane for the board: a reachable horizontal plane in front
- * of the user, preferring one labeled 'table'. The board fills part of the
- * table, sits at the spot nearest the user that keeps the whole disc on the
- * plane, and faces the user. Returns the fallback placement when no plane
- * qualifies.
+ * of the user or under the head, preferring one labeled 'table'. The board
+ * fills part of the table, sits as close as it can to one radius plus
+ * BOARD.headGap ahead of the head while the whole disc stays on the plane,
+ * and faces the user. Returns the fallback placement when no plane qualifies.
  */
 export function chooseBoardPlacement(planes: readonly PlaneInfo[], head: HeadPose): BoardPlacement {
   let best: Candidate | null = null;
@@ -187,17 +215,7 @@ export function chooseBoardPlacement(planes: readonly PlaneInfo[], head: HeadPos
   }
   if (!best) return fallbackPlacement(head);
 
-  const { plane, minSide, headLocal } = best;
-  const radius = boardRadiusForTable(minSide);
-  const { minX, maxX, minZ, maxZ } = plane.extents;
-  const lx = minX + radius <= maxX - radius ? clamp(headLocal[0], minX + radius, maxX - radius) : (minX + maxX) / 2;
-  const lz = minZ + radius <= maxZ - radius ? clamp(headLocal[1], minZ + radius, maxZ - radius) : (minZ + maxZ) / 2;
-  const offset = quatRotate(plane.quaternion, [lx, 0, lz]);
-  const center: Vec3 = [
-    plane.center[0] + offset[0],
-    plane.center[1] + offset[1] + BOARD.lift,
-    plane.center[2] + offset[2],
-  ];
+  const { plane, radius, center } = best;
   return {
     pose: { center, quaternion: yawQuaternion(yawFacing(center, head)), radius },
     source: best.isTable ? 'table-plane' : 'horizontal-plane',

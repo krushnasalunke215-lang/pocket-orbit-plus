@@ -137,6 +137,59 @@ describe('chooseBoardPlacement', () => {
     expect(chooseBoardPlacement([slight], HEAD).planeId).toBe('slight');
   });
 
+  /** How far the board center lies ahead of the head along its flat view direction. */
+  function centerAhead(head: HeadPose, center: Vec3): number {
+    const len = Math.hypot(head.forward[0], head.forward[2]);
+    return (
+      ((center[0] - head.position[0]) * head.forward[0] + (center[2] - head.position[2]) * head.forward[2]) / len
+    );
+  }
+
+  it('uses a table whose near edge is under the head and puts the board ahead', () => {
+    // A seated player leaning over a desk: the desk reaches 10 cm behind the eyes.
+    const desk = plane('desk', [0, 0.74, -0.25], 1.2, 0.7, { label: 'table' });
+    for (const head of [
+      HEAD,
+      { position: [0.02, 1.2, 1e-9], forward: [0.05, -0.9, -0.4] } as HeadPose,
+    ]) {
+      const p = chooseBoardPlacement([desk], head);
+      expect(p.source).toBe('table-plane');
+      expect(p.planeId).toBe('desk');
+      expect(discInside(desk, p.pose.center, p.pose.radius)).toBe(true);
+      expect(centerAhead(head, p.pose.center)).toBeGreaterThan(0.2);
+      expect(boardFacing(p.pose.quaternion)[2]).toBeGreaterThan(0.9);
+    }
+  });
+
+  it('uses a table under the middle of the head and puts the board ahead', () => {
+    const big = plane('big', [0, 0.74, 0], 1.6, 1.2, { label: 'table' });
+    const p = chooseBoardPlacement([big], HEAD);
+    expect(p.source).toBe('table-plane');
+    expect(discInside(big, p.pose.center, p.pose.radius)).toBe(true);
+    expect(centerAhead(HEAD, p.pose.center)).toBeGreaterThan(0.1);
+
+    // Turned to face +X over the same table: the board moves ahead along +X.
+    const turned: HeadPose = { position: [0, 1.2, 0], forward: [1, 0, 0] };
+    const q = chooseBoardPlacement([big], turned);
+    expect(q.source).toBe('table-plane');
+    expect(discInside(big, q.pose.center, q.pose.radius)).toBe(true);
+    expect(centerAhead(turned, q.pose.center)).toBeGreaterThan(0.1);
+
+    // A slight tilt (floating-point noise in real plane poses) changes nothing.
+    const tilted = plane('tilted', [0, 0.74, 0], 1.6, 1.2, {
+      label: 'table',
+      quaternion: [1e-4, 0, -1e-4, 1],
+    });
+    const r = chooseBoardPlacement([tilted], HEAD);
+    expect(r.source).toBe('table-plane');
+    expect(centerAhead(HEAD, r.pose.center)).toBeGreaterThan(0.1);
+  });
+
+  it('ignores a table that starts just behind the head', () => {
+    const behind = plane('behind', [0, 0.74, 0.33], 1.0, 0.6, { label: 'table' });
+    expect(chooseBoardPlacement([behind], HEAD).source).toBe('fallback');
+  });
+
   it('grows the board with the table and keeps the disc on a yawed table', () => {
     let last = 0;
     for (const size of [0.3, 0.45, 0.6, 0.8, 1.0, 1.2]) {
