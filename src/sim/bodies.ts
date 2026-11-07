@@ -28,7 +28,9 @@ export const KIND_DEFAULTS: Readonly<Record<BodyKind, KindDefaults>> = {
   },
   moon: { mass: 0.008, radius: 0.035, influenceRadius: 0.25 },
   'black-hole': { mass: 0.06, radius: 0.05, influenceRadius: 0.4 },
-  repulsor: { mass: 0.025, radius: 0.05, influenceRadius: 0.35 },
+  // A push keeps the comet farther away than a pull does, so the white star
+  // counts flybys out to 0.5: at 0.35 most White Star solves never rang it.
+  repulsor: { mass: 0.025, radius: 0.05, influenceRadius: 0.5 },
 };
 
 /** How a flight ends. */
