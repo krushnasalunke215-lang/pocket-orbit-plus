@@ -25,7 +25,18 @@ export type GamePhase = 'placing' | 'flying' | 'solved' | 'failed';
 export interface PreviewPath {
   readonly samples: Float32Array;
   readonly count: number;
+  /**
+   * For each teleport jump among the recorded samples, the index of the
+   * first sample at or past its exit: no line may join a sample before it to
+   * one at or after it (see segmentCrossesBreak). Read the first
+   * `breakCount` entries; the array is reused like `samples`.
+   */
+  readonly breaks: Int32Array;
+  readonly breakCount: number;
 }
+
+/** Teleport breaks a preview records at most. */
+const MAX_PREVIEW_BREAKS = 8;
 
 /** Writable xyz target for position queries (no allocation). */
 export type XYZ = { [index: number]: number };
@@ -64,6 +75,7 @@ export class GameController {
   private previewRevision = -1;
   private previewValue: PreviewPath | null = null;
   private previewBuffer = new Float32Array(0);
+  private readonly previewBreaks = new Int32Array(MAX_PREVIEW_BREAKS);
   private readonly scratch = new Float64Array(3);
 
   constructor(levels: readonly LevelDef[]) {
@@ -175,8 +187,15 @@ export class GameController {
     // As many samples as PREVIEW_FRACTION of the complete recording holds.
     const full = fullSampleCount(result.steps, result.sampleEvery);
     const count = Math.min(result.sampleCount, Math.max(2, Math.ceil(full * PREVIEW_FRACTION)));
+    // Sample i was taken at step i * sampleEvery; the first one at or past a
+    // jump's step lies beyond its exit.
+    let breakCount = 0;
+    for (let j = 0; j < result.teleports.length && breakCount < MAX_PREVIEW_BREAKS; j++) {
+      const index = Math.ceil(result.teleports[j].step / result.sampleEvery);
+      if (index < result.sampleCount) this.previewBreaks[breakCount++] = index;
+    }
     this.previewRevision = this.placementRevision;
-    this.previewValue = { samples: this.previewBuffer, count };
+    this.previewValue = { samples: this.previewBuffer, count, breaks: this.previewBreaks, breakCount };
     return this.previewValue;
   }
 

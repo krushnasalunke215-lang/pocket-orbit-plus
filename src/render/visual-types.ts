@@ -30,8 +30,12 @@ export interface CometVisual {
 
 export interface TrailVisual {
   readonly root: Object3D;
-  /** Shows the first `count` xyz samples as the preview arc; 0 hides it. */
-  showPreview(samples: Float32Array, count: number): void;
+  /**
+   * Shows the first `count` xyz samples as the preview arc; 0 hides it. No
+   * segment is drawn across any of the first `breakCount` entries of
+   * `breaks` (teleport jumps, see PreviewPath.breaks).
+   */
+  showPreview(samples: Float32Array, count: number, breaks?: Int32Array, breakCount?: number): void;
   beginFlight(): void;
   pushPoint(p: XYZLike): void;
   /** Starts a new line within the flight (a teleport jump): the next point does not connect. */

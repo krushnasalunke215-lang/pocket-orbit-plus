@@ -88,7 +88,7 @@ export class RenderSyncSystem extends createSystem({
     if (game.phase === 'placing') {
       if (game.placementRevision !== this.lastPlacementRevision || !this.previewShown) {
         const preview = game.preview();
-        trail.showPreview(preview.samples, preview.count);
+        trail.showPreview(preview.samples, preview.count, preview.breaks, preview.breakCount);
         this.previewShown = true;
         this.lastPlacementRevision = game.placementRevision;
       }

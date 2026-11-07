@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { PREVIEW_FRACTION } from '../config.js';
 import { SIM_DT } from '../sim/constants.js';
+import type { LevelDef } from '../sim/level.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
 import { simulate } from '../sim/simulate.js';
 import { WORMHOLE_EXIT, WORMHOLE_LEVEL, withStubWormhole } from '../sim/test-fixtures.js';
 import { GameController } from './controller.js';
+import { segmentCrossesBreak } from './path-breaks.js';
 import { deserializeGameState, serializeGameState } from './state.js';
 
 function flyToEnd(game: GameController): void {
@@ -151,6 +153,42 @@ describe('GameController', () => {
     }
     expect(game.phase).toBe('solved');
     expect(lastBefore).toBeGreaterThan(jump.entry[0] - 0.01);
+  });
+
+  it('breaks the preview arc at a teleport jump', () => {
+    // The fixture as is (the jump lies in the recorded part), and starting just
+    // before the gate so the shown 20% of the flight spans the jump.
+    const nearGate: LevelDef = {
+      ...WORMHOLE_LEVEL,
+      comet: { position: [-0.4, 0], velocity: [0.5, 0] },
+      target: { position: [0.9, 0], radius: 0.05 },
+    };
+    for (const level of [WORMHOLE_LEVEL, nearGate]) {
+      withStubWormhole(() => {
+        const game = new GameController([level]);
+        const flight = simulate(level, {});
+        const [jump] = flight.teleports;
+        const preview = game.preview();
+        expect(preview.breakCount, level.id).toBe(1);
+        expect(preview.breaks[0]).toBe(Math.ceil(jump.step / flight.sampleEvery));
+        if (level === nearGate) expect(preview.breaks[0]).toBeLessThan(preview.count);
+
+        // Every segment the arc may draw keeps both ends on one side of the jump.
+        const s = preview.samples;
+        const end = level === nearGate ? preview.count : flight.sampleCount;
+        let drawn = 0;
+        for (let i = 0; i + 1 < end; i++) {
+          if (segmentCrossesBreak(i, i + 1, preview.breaks, preview.breakCount)) continue;
+          drawn++;
+          const before = s[i * 3] <= jump.entry[0] + 1e-6 && s[(i + 1) * 3] <= jump.entry[0] + 1e-6;
+          const after = s[i * 3] >= WORMHOLE_EXIT[0] - 1e-6 && s[(i + 1) * 3] >= WORMHOLE_EXIT[0] - 1e-6;
+          expect(before || after, `segment ${i}-${i + 1}`).toBe(true);
+        }
+        expect(drawn).toBe(end - 2);
+      });
+    }
+    // A flight without teleports has no breaks.
+    expect(new GameController(ALL_LEVELS).preview().breakCount).toBe(0);
   });
 
   it('keeps external wells across level loads and refuses ids any level uses', () => {

@@ -1,4 +1,5 @@
 import { Group } from '@iwsdk/core';
+import { segmentCrossesBreak } from '../game/path-breaks.js';
 import { ROLE_COLORS } from './palette.js';
 import { markRange, SHARED_TIME } from './shaders/common.js';
 import { createRibbon, createRibbonMaterial, type Ribbon } from './shaders/ribbon.js';
@@ -18,6 +19,7 @@ const FLIGHT_DECAY = 0.5;
 /** Alpha below this hides a segment, so only the last three flights show. */
 const MIN_FLIGHT_ALPHA = 0.2;
 const PREVIEW_ALPHA = 0.5;
+const NO_BREAKS = new Int32Array(0);
 
 const flightMaterial = createRibbonMaterial({
   color: ROLE_COLORS.cometTrail,
@@ -77,17 +79,22 @@ export function createTrailVisual(): TrailVisual {
 
   return {
     root,
-    showPreview(samples, count) {
+    showPreview(samples, count, breaks = NO_BREAKS, breakCount = 0) {
       const points = Math.min(count, Math.floor(samples.length / 3));
       const wanted = Math.max(0, points - 1);
       const stride = Math.max(1, Math.ceil(wanted / PREVIEW_CAPACITY));
       const segments = Math.floor(wanted / stride);
+      let written = 0;
       for (let i = 0; i < segments; i++) {
-        const a = i * stride * 3;
-        const b = (i + 1) * stride * 3;
+        const from = i * stride;
+        const to = (i + 1) * stride;
+        // A teleport jump: leave a gap instead of a line through the skipped middle.
+        if (segmentCrossesBreak(from, to, breaks, breakCount)) continue;
+        const a = from * 3;
+        const b = to * 3;
         writeSegment(
           preview,
-          i,
+          written++,
           samples[a],
           samples[a + 1],
           samples[a + 2],
@@ -98,13 +105,13 @@ export function createTrailVisual(): TrailVisual {
           PREVIEW_ALPHA,
         );
       }
-      if (segments > 0) {
-        markRange(preview.start, 0, segments);
-        markRange(preview.end, 0, segments);
-        markRange(preview.age, 0, segments);
-        markRange(preview.alpha, 0, segments);
+      if (written > 0) {
+        markRange(preview.start, 0, written);
+        markRange(preview.end, 0, written);
+        markRange(preview.age, 0, written);
+        markRange(preview.alpha, 0, written);
       }
-      preview.mesh.count = segments;
+      preview.mesh.count = written;
     },
     beginFlight() {
       const used = Math.min(written, FLIGHT_CAPACITY);
