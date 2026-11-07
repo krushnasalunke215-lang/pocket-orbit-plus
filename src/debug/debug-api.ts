@@ -11,12 +11,15 @@ import {
   getBoard,
   getGame,
   getHud,
+  getPause,
   getRenderStats,
   getRimButton,
+  getSave,
   getVisuals,
   setSettings,
   type AppSettings,
   type HudRuntime,
+  type PauseReason,
   type RenderCounts,
   type RimButtonRuntime,
 } from '../xr/runtime.js';
@@ -81,6 +84,10 @@ export interface GameSnapshot {
   handVisuals: { left: boolean; right: boolean };
   /** Stars of the current flight (0 until solved), best per level id, and the solving flight's rung order. */
   stars: { last: number; best: Record<string, number>; rung: string[] };
+  /** The Pause record (LifecycleSystem). */
+  pause: { paused: boolean; reason: PauseReason };
+  /** SaveSystem: page clock (performance.now) of the last write, and the load or write problem. */
+  save: { lastSavedAt: number | null; problem: string | null };
   /** renderer.info of the last rendered frame. */
   renderer: {
     calls: number;
@@ -154,6 +161,10 @@ export interface GameDebugApi {
   /** Per-frame renderer.info samples since the last reset (RenderStatsSystem). */
   renderStats(): RenderStatsSnapshot;
   resetRenderStats(): void;
+  /** Writes the save now; false when storage refused it. */
+  saveNow(): boolean;
+  /** Removes the stored save (the running game is unchanged; the next change saves again). */
+  clearSave(): boolean;
   /** Real-object gravity spike probes (room features, planes, meshes, hit-test). */
   readonly spike: SpikeApi;
   /** The game audio engine: state, event log, expected notes, settings and offline renders. */
@@ -277,6 +288,8 @@ export function installDebugApi(world: World): GameDebugApi {
       const info = world.renderer.info;
       const session = world.session;
       const pose = board.pose;
+      const pause = getPause(world);
+      const save = getSave(world);
       return {
         level: { id: game.level.id, index: game.levelIndex, title: game.level.title, count: game.levels.length },
         levelBuilt: visuals?.builtRevision === game.levelRevision,
@@ -325,6 +338,8 @@ export function installDebugApi(world: World): GameDebugApi {
         },
         handVisuals: { left: handVisualLoaded('left'), right: handVisualLoaded('right') },
         stars: { last: game.lastStars, best: Object.fromEntries(game.bestStars), rung: [...game.lastRung] },
+        pause: { paused: pause.paused, reason: pause.reason },
+        save: { lastSavedAt: save?.lastSavedAt ?? null, problem: save?.problem ?? null },
         renderer: {
           calls: info.render.calls,
           triangles: info.render.triangles,
@@ -407,6 +422,18 @@ export function installDebugApi(world: World): GameDebugApi {
 
     resetRenderStats() {
       getRenderStats(world)?.reset();
+    },
+
+    saveNow() {
+      const save = getSave(world);
+      if (!save) throw new Error('SaveSystem is not registered');
+      return save.saveNow();
+    },
+
+    clearSave() {
+      const save = getSave(world);
+      if (!save) throw new Error('SaveSystem is not registered');
+      return save.clear();
     },
 
     spike: createSpikeApi(world),

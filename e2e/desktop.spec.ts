@@ -212,6 +212,102 @@ test('3-star melody run', async ({ page }) => {
   await page.screenshot({ path: screenshotPath('desktop-3-stars.png') });
 });
 
+test('resumes at the current level after a reload', async ({ page }) => {
+  test.setTimeout(240_000);
+  await openGame(page);
+  const levels = await page.evaluate(() => window.__game!.levels());
+  for (const i of [0, 1]) {
+    await page.evaluate((n) => window.__game!.loadLevel(n), i);
+    const solved = await solveWith(page, levels[i].solution);
+    expect(solved.level.id).toBe(levels[i].id);
+  }
+  await page.evaluate(() => window.__game!.loadLevel(2));
+  const before = await snapshot(page);
+  expect(before.save.lastSavedAt).not.toBeNull();
+  expect(before.save.problem).toBeNull();
+
+  await page.reload();
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 60_000 });
+  await expect.poll(async () => (await snapshot(page)).levelBuilt, { timeout: 10_000 }).toBe(true);
+  const after = await snapshot(page);
+  console.log('resumed', JSON.stringify({ level: after.level, solved: after.solvedLevelIds, stars: after.stars.best }));
+  expect(after.level.index).toBe(2);
+  expect(after.level.id).toBe(levels[2].id);
+  expect(after.phase).toBe('placing');
+  expect(after.solvedLevelIds).toEqual(expect.arrayContaining(['c1-l1', 'c1-l2']));
+  for (const id of ['c1-l1', 'c1-l2']) {
+    expect(after.stars.best[id], `${id} stars`).toBe(before.stars.best[id]);
+    expect(after.stars.best[id]).toBeGreaterThanOrEqual(1);
+  }
+  expect(after.save.problem).toBeNull();
+});
+
+test('corrupt save starts fresh', async ({ page }) => {
+  test.setTimeout(180_000);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  await page.addInitScript(() => localStorage.setItem('orbit-puzzle.save', '{not json'));
+  await openGame(page);
+  const fresh = await snapshot(page);
+  expect(fresh.level.index).toBe(0);
+  expect(fresh.attempts).toBe(0);
+  expect(fresh.solvedLevelIds).toEqual([]);
+  expect(fresh.save.problem).toMatch(/corrupt save/);
+  expect(await page.evaluate(() => localStorage.getItem('orbit-puzzle.save.corrupt'))).toBe('{not json');
+
+  // Still playable: a solve works and is saved over the corrupt text.
+  const levels = await page.evaluate(() => window.__game!.levels());
+  const solved = await solveWith(page, levels[0].solution);
+  expect(solved.level.index).toBe(0);
+  const saved = await page.evaluate(() => localStorage.getItem('orbit-puzzle.save'));
+  expect(JSON.parse(saved!).solvedLevelIds).toContain('c1-l1');
+  expect(errors).toEqual([]);
+});
+
+test('page hide pauses the flight and the audio', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openGame(page);
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  const levels = await page.evaluate(() => window.__game!.levels());
+  // The drag's pointerdown is the unlock gesture.
+  await solveWith(page, levels[0].solution);
+  await expect.poll(async () => (await audioState(page)).contextState, { timeout: 10_000 }).toBe('running');
+
+  // Replay and hide the page in the same call, so the flight is surely running.
+  const hidden = await page.evaluate(() => {
+    window.__game!.launch();
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    return window.__game!.snapshot();
+  });
+  expect(hidden.phase).toBe('flying');
+  expect(hidden.pause).toEqual({ paused: true, reason: 'page-hidden' });
+  const attempts = hidden.attempts;
+  await expect.poll(async () => (await audioState(page)).contextState, { timeout: 5_000 }).toBe('suspended');
+  const frozen = (await snapshot(page)).flightTime;
+  await page.waitForTimeout(1000);
+  const later = await snapshot(page);
+  expect(later.phase).toBe('flying');
+  expect(later.flightTime).toBe(frozen);
+  expect(later.pause.paused).toBe(true);
+
+  await page.evaluate(() => {
+    // Drop the override: the prototype getter reports the real 'visible'.
+    delete (document as unknown as { visibilityState?: string }).visibilityState;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(async () => (await snapshot(page)).pause.paused, { timeout: 5_000 }).toBe(false);
+  await expect.poll(async () => (await snapshot(page)).flightTime, { timeout: 10_000 }).toBeGreaterThan(frozen);
+  await expect.poll(async () => (await snapshot(page)).solved, { timeout: 30_000 }).toBe(true);
+  const end = await snapshot(page);
+  expect(end.attempts).toBe(attempts);
+  expect(end.flightTime).toBeCloseTo(end.flightDuration, 6);
+  await expect.poll(async () => (await audioState(page)).contextState, { timeout: 5_000 }).toBe('running');
+});
+
 test('render budget', async ({ page }) => {
   await openGame(page);
   await page.evaluate(() => window.__game!.loadLevel(0));

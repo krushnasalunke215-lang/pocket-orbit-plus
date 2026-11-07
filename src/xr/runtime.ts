@@ -2,6 +2,11 @@ import type { Entity, UIKitMLAsset, World } from '@iwsdk/core';
 import type { AudioEngine } from '../audio/engine.js';
 import type { BoardPose } from '../game/board-math.js';
 import type { GameController } from '../game/controller.js';
+import {
+  DEFAULT_ONBOARDING,
+  DEFAULT_SETTINGS as SAVED_DEFAULT_SETTINGS,
+  type OnboardingFlags,
+} from '../game/state.js';
 import type { BoardPlacement } from '../game/placement.js';
 import type { BodyVisual, CometVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
 
@@ -67,7 +72,7 @@ export interface RenderStats {
   reset(): void;
 }
 
-/** User audio settings (FEAT-004 persists them, FEAT-005 adds panel controls). */
+/** User audio settings (SaveSystem persists them, FEAT-005 adds panel controls). */
 export interface AppSettings {
   readonly muted: boolean;
   /** 0..1. */
@@ -76,7 +81,36 @@ export interface AppSettings {
   readonly quiet: boolean;
 }
 
-export const DEFAULT_SETTINGS: AppSettings = { muted: false, volume: 0.8, quiet: false };
+/** The saved defaults (src/game/state.ts), so a fresh game and a migrated save agree. */
+export const DEFAULT_SETTINGS: AppSettings = SAVED_DEFAULT_SETTINGS;
+
+/** Why the game is paused. */
+export type PauseReason = 'none' | 'xr-blurred' | 'xr-hidden' | 'page-hidden';
+
+/** Written by LifecycleSystem; read by the game, input and audio systems. */
+export interface PauseState {
+  paused: boolean;
+  reason: PauseReason;
+  /** Increments whenever paused or reason changes. */
+  revision: number;
+}
+
+/** SaveSystem status and actions (the debug API exposes them). */
+export interface SaveRuntime {
+  /** performance.now() of the last successful write (null before one). */
+  lastSavedAt: number | null;
+  /** Why the save could not be loaded or written (null when fine). */
+  problem: string | null;
+  /** Writes the current state now; false when storage refused it. */
+  saveNow(): boolean;
+  /** Removes the stored save (the running game is unchanged). */
+  clear(): boolean;
+}
+
+interface OnboardingStore {
+  value: Readonly<OnboardingFlags>;
+  revision: number;
+}
 
 interface SettingsStore {
   value: AppSettings;
@@ -93,7 +127,84 @@ const KEYS = {
   renderStats: 'renderStats',
   audio: 'audio',
   settings: 'settings',
+  onboarding: 'onboarding',
+  pause: 'pause',
+  pauseListeners: 'pauseListeners',
+  save: 'save',
 } as const;
+
+function onboardingStore(world: World): OnboardingStore {
+  let store = world.globals[KEYS.onboarding] as OnboardingStore | undefined;
+  if (!store) {
+    store = { value: DEFAULT_ONBOARDING, revision: 0 };
+    world.globals[KEYS.onboarding] = store;
+  }
+  return store;
+}
+
+export function getOnboarding(world: World): Readonly<OnboardingFlags> {
+  return onboardingStore(world).value;
+}
+export function getOnboardingRevision(world: World): number {
+  return onboardingStore(world).revision;
+}
+/** Merges `partial` into the onboarding flags and bumps the revision; throws on a non-boolean. */
+export function setOnboarding(world: World, partial: Partial<OnboardingFlags>): Readonly<OnboardingFlags> {
+  const store = onboardingStore(world);
+  const next: OnboardingFlags = { ...store.value };
+  if (partial.ghostHandDone !== undefined) {
+    if (typeof partial.ghostHandDone !== 'boolean') throw new TypeError('onboarding.ghostHandDone must be a boolean');
+    next.ghostHandDone = partial.ghostHandDone;
+  }
+  store.value = next;
+  store.revision++;
+  return next;
+}
+
+type PauseListener = (pause: Readonly<PauseState>) => void;
+
+function pauseListeners(world: World): Set<PauseListener> {
+  let listeners = world.globals[KEYS.pauseListeners] as Set<PauseListener> | undefined;
+  if (!listeners) {
+    listeners = new Set();
+    world.globals[KEYS.pauseListeners] = listeners;
+  }
+  return listeners;
+}
+
+export function getPause(world: World): Readonly<PauseState> {
+  let pause = world.globals[KEYS.pause] as PauseState | undefined;
+  if (!pause) {
+    pause = { paused: false, reason: 'none', revision: 0 };
+    world.globals[KEYS.pause] = pause;
+  }
+  return pause;
+}
+/**
+ * Sets the pause reason ('none' resumes). Writes in place and notifies
+ * listeners only when it changes (no allocation, so it may run per frame).
+ */
+export function setPause(world: World, reason: PauseReason): void {
+  const pause = getPause(world) as PauseState;
+  if (pause.reason === reason) return;
+  pause.reason = reason;
+  pause.paused = reason !== 'none';
+  pause.revision++;
+  for (const listener of pauseListeners(world)) listener(pause);
+}
+/** Calls `listener` on every pause change; returns the teardown. */
+export function onPauseChange(world: World, listener: PauseListener): () => void {
+  const listeners = pauseListeners(world);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function setSave(world: World, save: SaveRuntime): void {
+  world.globals[KEYS.save] = save;
+}
+export function getSave(world: World): SaveRuntime | undefined {
+  return world.globals[KEYS.save] as SaveRuntime | undefined;
+}
 
 function settingsStore(world: World): SettingsStore {
   let store = world.globals[KEYS.settings] as SettingsStore | undefined;

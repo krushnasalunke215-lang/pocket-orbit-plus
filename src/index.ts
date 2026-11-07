@@ -13,9 +13,11 @@ import { GameAudioSystem } from './xr/game-audio-system.js';
 import { GameSystem } from './xr/game-system.js';
 import { installLocalHandVisuals } from './xr/hand-visuals.js';
 import { HudSystem } from './xr/hud-system.js';
+import { LifecycleSystem } from './xr/lifecycle-system.js';
 import { RenderStatsSystem } from './xr/render-stats-system.js';
 import { RenderSyncSystem } from './xr/render-sync-system.js';
 import { RimButtonSystem } from './xr/rim-button-system.js';
+import { SaveSystem } from './xr/save-system.js';
 
 async function main(): Promise<void> {
   const world = await World.create(
@@ -29,8 +31,13 @@ async function main(): Promise<void> {
   // priorities set the per-frame order. Built-ins run first: Input -4,
   // GrabSystem -3, SceneUnderstanding -1.
   world
+    // First every frame (before Input and Grab), so a release and the game
+    // tick see this frame's pause state.
+    .registerSystem(LifecycleSystem, { priority: -5 })
     .registerSystem(BoardPlacementSystem, { priority: 5 })
     .registerSystem(GameSystem, { priority: 10 })
+    // Right after GameSystem: restores the save before other systems read state.
+    .registerSystem(SaveSystem, { priority: 11 })
     .registerSystem(BoardConstraintSystem, { priority: 0 })
     .registerSystem(RenderSyncSystem, { priority: 20 })
     // After RenderSync, so flyby notes ring from this frame's body positions.
