@@ -10,15 +10,19 @@ import projectOptions from 'virtual:iwsdk-project';
 import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
 import { GameSystem } from './xr/game-system.js';
+import { installLocalHandVisuals } from './xr/hand-visuals.js';
 import { HudSystem } from './xr/hud-system.js';
 import { RenderStatsSystem } from './xr/render-stats-system.js';
 import { RenderSyncSystem } from './xr/render-sync-system.js';
+import { RimButtonSystem } from './xr/rim-button-system.js';
 
 async function main(): Promise<void> {
   const world = await World.create(
     document.getElementById('scene-container') as HTMLDivElement,
     projectOptions,
   );
+  // Before any system and any XR session, so hand models never load from the CDN.
+  installLocalHandVisuals(world);
 
   // Registration order matters (each init reads what the previous created);
   // priorities set the per-frame order. Built-ins run first: Input -4,
@@ -29,6 +33,7 @@ async function main(): Promise<void> {
     .registerSystem(BoardConstraintSystem, { priority: 0 })
     .registerSystem(RenderSyncSystem, { priority: 20 })
     .registerSystem(HudSystem, { priority: 30 })
+    .registerSystem(RimButtonSystem, { priority: 31 })
     .registerSystem(RenderStatsSystem, { priority: 40 });
 
   if (import.meta.env.DEV || import.meta.env.MODE === 'e2e') {

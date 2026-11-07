@@ -37,6 +37,14 @@ export interface HudRuntime {
   readonly entity: Entity;
 }
 
+/** The near-rim Launch/Replay button panel (RimButtonSystem). */
+export interface RimButtonRuntime {
+  readonly panel: UIKitMLAsset;
+  readonly entity: Entity;
+  /** The label text last written ('Launch' or 'Replay'). */
+  label: string;
+}
+
 /** renderer.info.render counters of one frame. */
 export interface RenderCounts {
   calls: number;
@@ -58,7 +66,14 @@ export interface RenderStats {
   reset(): void;
 }
 
-const KEYS = { game: 'game', board: 'board', visuals: 'visuals', hud: 'hud', renderStats: 'renderStats' } as const;
+const KEYS = {
+  game: 'game',
+  board: 'board',
+  visuals: 'visuals',
+  hud: 'hud',
+  rimButton: 'rimButton',
+  renderStats: 'renderStats',
+} as const;
 
 export function setRenderStats(world: World, stats: RenderStats): void {
   world.globals[KEYS.renderStats] = stats;
@@ -93,4 +108,11 @@ export function setHud(world: World, hud: HudRuntime): void {
 }
 export function getHud(world: World): HudRuntime | undefined {
   return world.globals[KEYS.hud] as HudRuntime | undefined;
+}
+
+export function setRimButton(world: World, rim: RimButtonRuntime): void {
+  world.globals[KEYS.rimButton] = rim;
+}
+export function getRimButton(world: World): RimButtonRuntime | undefined {
+  return world.globals[KEYS.rimButton] as RimButtonRuntime | undefined;
 }

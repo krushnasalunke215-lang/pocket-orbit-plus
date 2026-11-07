@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import type { Placements } from '../sim/level.js';
+import { ALL_LEVELS } from '../sim/levels/index.js';
 import type { Vec3 } from '../sim/vec.js';
-import { boardToWorld, colliderLocalRadius, quatRotate } from './board-math.js';
-import { HUD_SIZE, hudPose } from './hud-layout.js';
+import {
+  boardToWorld,
+  colliderLocalRadius,
+  IDENTITY_QUAT,
+  quatConjugate,
+  quatRotate,
+  type BoardPose,
+  type Quat,
+} from './board-math.js';
+import { boardHandlePose, HUD_SIZE, hudPose, RIM_BUTTON_SIZE, rimButtonPose } from './hud-layout.js';
 import { fallbackPlacement, type HeadPose } from './placement.js';
 
 /*
@@ -59,6 +69,139 @@ describe('Meta VR Glasses field of view', () => {
     const hudBottom = Math.min(...corners.map((p) => angles(p).v));
     expect(hudBottom).toBeGreaterThan(farRim);
   });
+});
+
+/*
+ * The near-rim Launch/Replay button (D2), at two poses:
+ * - FALLBACK: the default head pose above, the fallback board, a level gaze.
+ * - TABLE: seated at the emulator room's coffee table. With a level gaze the
+ *   table board itself lies 45-58° down, below the glasses' 43° limit, so a
+ *   seated player looks down at it: the gaze points from the head at the
+ *   board center, and the view is measured in a frame aligned with it.
+ */
+const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const length = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
+const unit = (a: Vec3): Vec3 => scale(a, 1 / length(a));
+const cross = (a: Vec3, b: Vec3): Vec3 => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+
+interface RimCase {
+  readonly name: string;
+  readonly head: HeadPose;
+  readonly board: BoardPose;
+  readonly gaze: Vec3;
+}
+
+const TABLE_HEAD: HeadPose = { position: [0, 1.15, -1.2], forward: [0, 0, -1] };
+const TABLE_BOARD: BoardPose = { center: [0, 0.424, -1.92], quaternion: IDENTITY_QUAT, radius: 0.27 };
+const RIM_CASES: readonly RimCase[] = [
+  { name: 'fallback', head: HEAD, board: fallbackPlacement(HEAD).pose, gaze: [0, 0, -1] },
+  { name: 'table', head: TABLE_HEAD, board: TABLE_BOARD, gaze: sub(TABLE_BOARD.center, TABLE_HEAD.position) },
+];
+
+/** Board handle collider: CapsuleGeometry(0.025, 0.08) along board-local X (board-placement-system.ts). */
+const HANDLE_COLLIDER = { radius: 0.025, length: 0.08 } as const;
+const POKE_GAP = 0.015;
+
+/** Distance from p to the button rectangle (local XY plane, centered, facing local +Z). */
+function rectDistance(center: Vec3, q: Quat, p: Vec3): number {
+  const local = quatRotate(quatConjugate(q), sub(p, center));
+  const hw = RIM_BUTTON_SIZE.width / 2;
+  const hh = RIM_BUTTON_SIZE.height / 2;
+  const cx = Math.max(-hw, Math.min(hw, local[0]));
+  const cy = Math.max(-hh, Math.min(hh, local[1]));
+  return Math.hypot(local[0] - cx, local[1] - cy, local[2]);
+}
+
+/** Every movable body's board position (x, height, z) at its start, stored solution and melody solution. */
+function planetPoints(): { label: string; board: Vec3 }[] {
+  const points: { label: string; board: Vec3 }[] = [];
+  for (const level of ALL_LEVELS) {
+    const melody = (level as { readonly melodySolution?: Placements }).melodySolution;
+    for (const body of level.bodies) {
+      if (!body.movable) continue;
+      const sets: [string, Placements | undefined][] = [
+        ['start', { [body.id]: body.position }],
+        ['solution', level.solution],
+        ['melody', melody],
+      ];
+      for (const [kind, set] of sets) {
+        const p = set?.[body.id];
+        if (p) points.push({ label: `${level.id} ${body.id} ${kind}`, board: [p[0], body.height ?? 0, p[1]] });
+      }
+    }
+  }
+  return points;
+}
+
+describe('near-rim Launch button', () => {
+  const planets = planetPoints();
+
+  for (const c of RIM_CASES) {
+    const button = rimButtonPose(c.board, c.head);
+    const head = c.head.position;
+    const distance = length(sub(button.position, head));
+
+    it(`${c.name}: is within 0.55 m of the head`, () => {
+      expect(distance).toBeLessThanOrEqual(0.55);
+    });
+
+    it(`${c.name}: all 4 corners fit the Meta VR Glasses view`, () => {
+      const f = unit(c.gaze);
+      const right = unit(cross(f, [0, 1, 0]));
+      const up = cross(right, f);
+      const hw = RIM_BUTTON_SIZE.width / 2;
+      const hh = RIM_BUTTON_SIZE.height / 2;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const corner = add(button.position, quatRotate(button.quaternion, [sx * hw, sy * hh, 0]));
+        const d = sub(corner, head);
+        const z = dot(d, f);
+        const h = Math.atan2(dot(d, right), z) * DEG;
+        const v = Math.atan2(dot(d, up), z) * DEG;
+        expect(Math.abs(h), `corner ${sx},${sy} horizontal ${h.toFixed(1)}°`).toBeLessThanOrEqual(37);
+        expect(v, `corner ${sx},${sy} vertical ${v.toFixed(1)}°`).toBeGreaterThanOrEqual(-43);
+        expect(v, `corner ${sx},${sy} vertical ${v.toFixed(1)}°`).toBeLessThanOrEqual(25);
+      }
+    });
+
+    it(`${c.name}: keeps a poke gap to the handle collider`, () => {
+      const handle = boardHandlePose(c.board);
+      const axis = quatRotate(handle.quaternion, [1, 0, 0]);
+      let nearest = Infinity;
+      for (let i = 0; i <= 200; i++) {
+        const s = (i / 200 - 0.5) * HANDLE_COLLIDER.length;
+        nearest = Math.min(nearest, rectDistance(button.position, button.quaternion, add(handle.position, scale(axis, s))));
+      }
+      expect(nearest - HANDLE_COLLIDER.radius).toBeGreaterThanOrEqual(POKE_GAP);
+    });
+
+    it(`${c.name}: keeps a poke gap to every level's planet colliders`, () => {
+      const collider = colliderLocalRadius(c.board.radius) * c.board.radius;
+      for (const p of planets) {
+        const world = boardToWorld(c.board, p.board);
+        const gap = rectDistance(button.position, button.quaternion, world) - collider;
+        expect(gap, p.label).toBeGreaterThanOrEqual(POKE_GAP);
+      }
+    });
+
+    it(`${c.name}: a gaze or ray aimed at a planet cannot land on the button`, () => {
+      const collider = colliderLocalRadius(c.board.radius) * c.board.radius;
+      const halfDiagonal = Math.atan(Math.hypot(RIM_BUTTON_SIZE.width / 2, RIM_BUTTON_SIZE.height / 2) / distance);
+      const toButton = unit(sub(button.position, head));
+      for (const p of planets) {
+        const toPlanet = sub(boardToWorld(c.board, p.board), head);
+        const separation = Math.acos(Math.min(1, dot(unit(toPlanet), toButton)));
+        const needed = halfDiagonal + Math.asin(collider / length(toPlanet));
+        expect(separation * DEG, p.label).toBeGreaterThan(needed * DEG);
+      }
+    });
+  }
 });
 
 describe('grab collider size', () => {

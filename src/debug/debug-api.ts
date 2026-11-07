@@ -3,7 +3,17 @@ import { APP_NAME } from '../config.js';
 import type { BodyKind, SimOutcome } from '../sim/bodies.js';
 import type { Placements } from '../sim/level.js';
 import { BoardBody } from '../xr/components.js';
-import { getBoard, getGame, getHud, getRenderStats, getVisuals, type RenderCounts } from '../xr/runtime.js';
+import {
+  getBoard,
+  getGame,
+  getHud,
+  getRenderStats,
+  getRimButton,
+  getVisuals,
+  type HudRuntime,
+  type RenderCounts,
+  type RimButtonRuntime,
+} from '../xr/runtime.js';
 import { currentSessionMode, enterXR } from '../xr/session.js';
 import { createSpikeApi, type SpikeApi } from './spike.js';
 
@@ -59,6 +69,10 @@ export interface GameSnapshot {
   starfieldVisible: boolean;
   /** HUD world position and size (meters, from the UIKit layout). */
   hud: { ready: boolean; position: Triple | null; size: [number, number] | null };
+  /** Near-rim Launch/Replay button: world position, size (meters) and label. */
+  rimButton: { ready: boolean; position: Triple | null; size: [number, number] | null; label: string | null };
+  /** Whether each hand adapter has a loaded visual whose model is in the scene. */
+  handVisuals: { left: boolean; right: boolean };
   /** renderer.info of the last rendered frame. */
   renderer: {
     calls: number;
@@ -90,8 +104,13 @@ export interface GameDebugApi {
   enterVR(): void;
   /** Viewport CSS pixels of a board point ([x, z] or [x, y, z]); null if off screen. */
   screenPoint(boardPos: readonly number[]): ScreenPoint | null;
-  /** Viewport CSS pixels of a HUD element's center (default the Launch button). */
+  /**
+   * Viewport CSS pixels of a HUD or near-rim button element's center
+   * (default the HUD Launch button).
+   */
   hudScreenPoint(elementId?: string): ScreenPoint | null;
+  /** Names (URLs) of every resource the page has loaded (Resource Timing). */
+  resourceUrls(): string[];
   /** Per-frame renderer.info samples since the last reset (RenderStatsSystem). */
   renderStats(): RenderStatsSnapshot;
   resetRenderStats(): void;
@@ -122,6 +141,9 @@ function triple(v: Vector3): Triple {
 export function installDebugApi(world: World): GameDebugApi {
   const bodies = world.queryManager.registerQuery({ required: [BoardBody] });
   const v = new Vector3();
+  // The default 250-entry Resource Timing buffer fills with dev modules before
+  // XR starts; keep room so resourceUrls() sees what a session loads.
+  performance.setResourceTimingBufferSize(10_000);
 
   const core = () => {
     const game = getGame(world);
@@ -143,13 +165,22 @@ export function installDebugApi(world: World): GameDebugApi {
     };
   };
 
-  /** UIKit units are centimeters before the HUD entity's own scale. */
-  const hudSize = (): [number, number] | null => {
-    const hud = getHud(world);
-    const size = hud?.panel.document.computedSize;
-    if (!hud || !size) return null;
-    const s = hud.entity.object3D!.getWorldScale(new Vector3()).x * 0.01;
+  /** UIKit units are centimeters before the panel entity's own scale. */
+  const panelSize = (panel: HudRuntime | RimButtonRuntime | undefined): [number, number] | null => {
+    const size = panel?.panel.document.computedSize;
+    if (!panel || !size) return null;
+    const s = panel.entity.object3D!.getWorldScale(new Vector3()).x * 0.01;
     return [size.width * s, size.height * s];
+  };
+
+  /** A hand visual is loaded when its adapter has one whose model hangs under the scene. */
+  const handVisualLoaded = (hand: 'left' | 'right'): boolean => {
+    let node = world.input.xr.visualAdapters.hand[hand].visual?.model ?? null;
+    while (node) {
+      if (node === world.scene) return true;
+      node = node.parent;
+    }
+    return false;
   };
 
   /** Polls with timers (rAF does not run on the window during XR). */
@@ -167,7 +198,7 @@ export function installDebugApi(world: World): GameDebugApi {
 
   const api: GameDebugApi = {
     get ready() {
-      return Boolean(getGame(world) && getBoard(world) && getVisuals(world) && getHud(world));
+      return Boolean(getGame(world) && getBoard(world) && getVisuals(world) && getHud(world) && getRimButton(world));
     },
     appName: APP_NAME,
 
@@ -175,6 +206,7 @@ export function installDebugApi(world: World): GameDebugApi {
       const { game, board } = core();
       const visuals = getVisuals(world);
       const hud = getHud(world);
+      const rim = getRimButton(world);
       const root = board.entity.object3D!;
       root.updateWorldMatrix(true, true);
 
@@ -241,8 +273,15 @@ export function installDebugApi(world: World): GameDebugApi {
         hud: {
           ready: Boolean(hud),
           position: hud ? triple(hud.entity.object3D!.getWorldPosition(v)) : null,
-          size: hudSize(),
+          size: panelSize(hud),
         },
+        rimButton: {
+          ready: Boolean(rim),
+          position: rim ? triple(rim.entity.object3D!.getWorldPosition(v)) : null,
+          size: panelSize(rim),
+          label: rim?.label ?? null,
+        },
+        handVisuals: { left: handVisualLoaded('left'), right: handVisualLoaded('right') },
         renderer: {
           calls: info.render.calls,
           triangles: info.render.triangles,
@@ -295,11 +334,15 @@ export function installDebugApi(world: World): GameDebugApi {
     },
 
     hudScreenPoint(elementId = 'launch-button') {
-      const hud = getHud(world);
-      const element = hud?.panel.getElementById(elementId);
+      const element =
+        getHud(world)?.panel.getElementById(elementId) ?? getRimButton(world)?.panel.getElementById(elementId);
       if (!element) return null;
       element.updateWorldMatrix(true, false);
       return toScreen(new Vector3().setFromMatrixPosition(element.matrixWorld));
+    },
+
+    resourceUrls() {
+      return performance.getEntriesByType('resource').map((entry) => entry.name);
     },
 
     renderStats() {

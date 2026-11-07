@@ -16,4 +16,9 @@ export default defineAssets({
     type: AssetType.UIKitML,
     name: 'HUD Panel',
   },
+  'rim-button': {
+    url: publicAssetUrl('ui/rim-button.uikitml'),
+    type: AssetType.UIKitML,
+    name: 'Near-rim Launch Button',
+  },
 });

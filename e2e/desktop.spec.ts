@@ -11,7 +11,7 @@ import type { GameSnapshot, ScreenPoint } from '../src/debug/debug-api';
  */
 
 function screenshotPath(name: string): string {
-  const dir = path.resolve(test.info().config.rootDir, '..', '.agents', 'tasks', 'screenshots', 'phase1');
+  const dir = path.resolve(test.info().config.rootDir, '..', '.agents', 'tasks', 'screenshots', 'phase2');
   mkdirSync(dir, { recursive: true });
   return path.join(dir, name);
 }
@@ -166,6 +166,27 @@ test('Launch button replays', async ({ page }) => {
   await page.mouse.click(button!.x, button!.y);
   await expect.poll(async () => (await snapshot(page)).phase, { timeout: 5_000 }).toBe('flying');
   expect((await snapshot(page)).attempts).toBe(2);
+});
+
+test('near-rim button launches', async ({ page }) => {
+  await openGame(page);
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  await page.waitForTimeout(300); // the button is posed on the frame after it loads
+  const before = await snapshot(page);
+  expect(before.rimButton.ready).toBe(true);
+  expect(before.rimButton.label).toBe('Launch');
+  expect(before.attempts).toBe(0);
+
+  const button = await page.evaluate(() => window.__game!.hudScreenPoint('rim-launch-button'));
+  expect(button).not.toBeNull();
+  // The first pointer move into a fresh page never registers; arrive with two.
+  await page.mouse.move(button!.x - 2, button!.y);
+  await page.mouse.move(button!.x, button!.y);
+  await page.mouse.click(button!.x, button!.y);
+  await expect.poll(async () => (await snapshot(page)).phase, { timeout: 5_000 }).toBe('flying');
+  expect((await snapshot(page)).attempts).toBe(1);
+  await expect.poll(async () => (await snapshot(page)).rimButton.label, { timeout: 5_000 }).toBe('Replay');
+  await page.screenshot({ path: screenshotPath('desktop-rim-button.png') });
 });
 
 test('makes no external requests', async ({ page, baseURL }) => {
