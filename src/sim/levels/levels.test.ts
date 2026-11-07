@@ -32,6 +32,49 @@ function axisNeighbors(placements: Placements, delta: number): Placements[] {
   return out;
 }
 
+/** Parking spots on the rim for the one-body guard. */
+const RIM_PARK_RADIUS = 0.9;
+const RIM_PARK_PATH_CLEARANCE = 0.15;
+const RIM_PARK_MIN_SEPARATION_DEG = 30;
+
+/**
+ * Four rim points at radius 0.9 for parking the unused body: outside the
+ * reserved sector, at least 0.15 from every sample of the stored solution's
+ * flight, picked farthest from that flight first and at least 30° apart.
+ */
+function rimParkingPoints(level: LevelDef): Vec2[] {
+  const path = simulate(level, level.solution, { recordEvery: 1 });
+  const pathDistance = ([x, z]: Vec2) => {
+    let best = Infinity;
+    for (let i = 0; i < path.sampleCount; i++) {
+      best = Math.min(best, Math.hypot(path.samples[i * 3] - x, path.samples[i * 3 + 2] - z));
+    }
+    return best;
+  };
+  const candidates: { deg: number; p: Vec2; d: number }[] = [];
+  for (let deg = -175; deg <= 180; deg += 5) {
+    const a = (deg * Math.PI) / 180;
+    const p: Vec2 = [RIM_PARK_RADIUS * Math.sin(a), RIM_PARK_RADIUS * Math.cos(a)];
+    const d = pathDistance(p);
+    if (!inReservedSector(p) && d >= RIM_PARK_PATH_CLEARANCE) candidates.push({ deg, p, d });
+  }
+  candidates.sort((a, b) => b.d - a.d || a.deg - b.deg);
+  const picked: typeof candidates = [];
+  const apart = (a: number, b: number) => {
+    const diff = Math.abs(a - b) % 360;
+    return Math.min(diff, 360 - diff) >= RIM_PARK_MIN_SEPARATION_DEG;
+  };
+  for (const c of candidates) {
+    if (picked.length < 4 && picked.every((q) => apart(q.deg, c.deg))) picked.push(c);
+  }
+  return picked.map((c) => c.p);
+}
+
+const MULTI_BODY_LEVELS = ALL_LEVELS.filter((l) => Object.keys(startPlacements(l)).length >= 2);
+
+/** Levels with two movable bodies where one body alone may solve (see the guard below). */
+const ONE_BODY_SOLVE_EXCEPTIONS = new Set(['c1-l6']);
+
 describe('shipped levels', () => {
   it('have unique ids ordered by chapter, then order', () => {
     const ids = ALL_LEVELS.map((l) => l.id);
@@ -195,6 +238,68 @@ describe('shipped levels', () => {
       expect(Object.keys(fixed)).toHaveLength(1);
       const found = solveLevel(level, { step: 0.01, fixed, requireRobust: false, maxSolutions: 1 });
       expect(found.map((s) => s.placements[moved])).toEqual([]);
+    },
+    60_000,
+  );
+
+  it.each(MULTI_BODY_LEVELS.map((l) => l.id))('%s has four rim parking points for the one-body guard', (id) => {
+    expect(rimParkingPoints(getLevel(id)!)).toHaveLength(4);
+  });
+
+  // One-body guard: with every other movable body parked at its tray start or
+  // on the rim out of the flight's way, moving one body alone never solves.
+  // c1-l2's tray-start case is the finer 0.01-grid test above.
+  //
+  // Documented exception: c1-l6 "Light and Dark" gets only the tray-start
+  // guard. Once the white star is moved out of the way, the planet alone can
+  // reach the target, so a 1-star solve may use the planet alone; 3 stars
+  // (the melody p1, w1, hole) need both bodies, which the test after this
+  // one checks.
+  const guardCases = MULTI_BODY_LEVELS.flatMap((level) => {
+    const start = startPlacements(level);
+    const ids = Object.keys(start);
+    const parkings: [string, Vec2 | null][] = [
+      ...(level.id === 'c1-l2' ? [] : [['its tray start', null] as [string, null]]),
+      ...(ONE_BODY_SOLVE_EXCEPTIONS.has(level.id) ? [] : rimParkingPoints(level))
+        .map((p): [string, Vec2] => [`rim [${p[0].toFixed(3)}, ${p[1].toFixed(3)}]`, p]),
+    ];
+    return ids.flatMap((moved) =>
+      ids
+        .filter((other) => other !== moved)
+        .flatMap((other) =>
+          parkings.map(([label, p]) => [level.id, moved, other, label, p] as const),
+        ),
+    );
+  });
+  it.each(guardCases)(
+    '%s: no solution moving only %s with %s parked at %s (0.02 grid)',
+    (levelId, moved, other, _label, park) => {
+      const level = getLevel(levelId)!;
+      const start = startPlacements(level);
+      const fixed: Record<string, Vec2> = {};
+      for (const id of Object.keys(start)) if (id !== moved) fixed[id] = start[id];
+      if (park) fixed[other] = park;
+      const found = solveLevel(level, { step: 0.02, fixed, requireRobust: false, maxSolutions: 1 });
+      expect(found.map((s) => s.placements[moved])).toEqual([]);
+    },
+    60_000,
+  );
+
+  // The exception's promise: no planet-only placement earns 3 stars. With the
+  // white star in its tray or parked on the rim (same grid and parking points
+  // as the guard), no solving planet placement rings the melody.
+  const c1l6 = getLevel('c1-l6')!;
+  const c1l6Parkings: [string, Vec2][] = [
+    ['its tray start', startPlacements(c1l6).w1],
+    ...rimParkingPoints(c1l6).map((p): [string, Vec2] => [`rim [${p[0].toFixed(3)}, ${p[1].toFixed(3)}]`, p]),
+  ];
+  it.each(c1l6Parkings)(
+    'c1-l6: no planet-only solve rings the 3-star melody with w1 parked at %s (0.02 grid)',
+    (_label, park) => {
+      expect(c1l6.melody).toEqual(['p1', 'w1', 'hole']);
+      const found = solveLevel(c1l6, { step: 0.02, fixed: { w1: park }, requireRobust: false });
+      const threeStar = found.filter((s) => matchesMelody(c1l6, s.result.flybys)).map((s) => s.placements.p1);
+      expect(threeStar).toEqual([]);
     },
     60_000,
   );
