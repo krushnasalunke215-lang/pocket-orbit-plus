@@ -9,6 +9,7 @@ import { World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
 import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
+import { GameAudioSystem } from './xr/game-audio-system.js';
 import { GameSystem } from './xr/game-system.js';
 import { installLocalHandVisuals } from './xr/hand-visuals.js';
 import { HudSystem } from './xr/hud-system.js';
@@ -32,6 +33,8 @@ async function main(): Promise<void> {
     .registerSystem(GameSystem, { priority: 10 })
     .registerSystem(BoardConstraintSystem, { priority: 0 })
     .registerSystem(RenderSyncSystem, { priority: 20 })
+    // After RenderSync, so flyby notes ring from this frame's body positions.
+    .registerSystem(GameAudioSystem, { priority: 21 })
     .registerSystem(HudSystem, { priority: 30 })
     .registerSystem(RimButtonSystem, { priority: 31 })
     .registerSystem(RenderStatsSystem, { priority: 40 });

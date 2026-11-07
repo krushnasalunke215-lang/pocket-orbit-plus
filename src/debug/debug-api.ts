@@ -1,15 +1,21 @@
 import { Grabbed, Hovered, Vector3, type World } from '@iwsdk/core';
+import type { AudioEngineState, AudioEvent } from '../audio/engine.js';
+import { renderVoiceOffline, type OfflineRender, type OfflineVoice } from '../audio/voices.js';
 import { APP_NAME } from '../config.js';
+import { DEFAULT_PAR } from '../game/song.js';
 import type { BodyKind, SimOutcome } from '../sim/bodies.js';
 import type { Placements } from '../sim/level.js';
 import { BoardBody } from '../xr/components.js';
 import {
+  getAudio,
   getBoard,
   getGame,
   getHud,
   getRenderStats,
   getRimButton,
   getVisuals,
+  setSettings,
+  type AppSettings,
   type HudRuntime,
   type RenderCounts,
   type RimButtonRuntime,
@@ -73,6 +79,8 @@ export interface GameSnapshot {
   rimButton: { ready: boolean; position: Triple | null; size: [number, number] | null; label: string | null };
   /** Whether each hand adapter has a loaded visual whose model is in the scene. */
   handVisuals: { left: boolean; right: boolean };
+  /** Stars of the current flight (0 until solved), best per level id, and the solving flight's rung order. */
+  stars: { last: number; best: Record<string, number>; rung: string[] };
   /** renderer.info of the last rendered frame. */
   renderer: {
     calls: number;
@@ -90,11 +98,43 @@ export interface ScreenPoint {
   y: number;
 }
 
+export interface LevelSummary {
+  id: string;
+  title: string;
+  solution: Placements;
+  /** Ring order that earns 3 stars (null without one). */
+  melody: string[] | null;
+  /** Placements that ring the melody when the stored solution does not (else null). */
+  melodySolution: Placements | null;
+  par: number;
+}
+
+/** One note of the last launched flight, as the audio system should ring it. */
+export interface ExpectedNote {
+  bodyId: string;
+  source: string;
+  /** Flight time of the flyby (seconds). */
+  time: number;
+  midi: number;
+  /** GameController.flightId of that flight. */
+  flightId: number;
+}
+
+export interface AudioDebugApi {
+  state(): AudioEngineState;
+  /** The event log (last 64 sounds), oldest first. */
+  events(): AudioEvent[];
+  expectedNotes(): ExpectedNote[];
+  setSettings(partial: Partial<AppSettings>): AppSettings;
+  /** Renders a voice through the real reverb and limiter offline and measures it. */
+  renderOffline(voice: OfflineVoice, seconds?: number): Promise<OfflineRender>;
+}
+
 export interface GameDebugApi {
   readonly ready: boolean;
   readonly appName: string;
   snapshot(): GameSnapshot;
-  levels(): { id: string; title: string; solution: Placements }[];
+  levels(): LevelSummary[];
   /** Resolves once the level's entities are built. */
   loadLevel(index: number): Promise<void>;
   nextLevel(): Promise<void>;
@@ -116,6 +156,8 @@ export interface GameDebugApi {
   resetRenderStats(): void;
   /** Real-object gravity spike probes (room features, planes, meshes, hit-test). */
   readonly spike: SpikeApi;
+  /** The game audio engine: state, event log, expected notes, settings and offline renders. */
+  readonly audio: AudioDebugApi;
 }
 
 export interface RenderStatsSnapshot {
@@ -282,6 +324,7 @@ export function installDebugApi(world: World): GameDebugApi {
           label: rim?.label ?? null,
         },
         handVisuals: { left: handVisualLoaded('left'), right: handVisualLoaded('right') },
+        stars: { last: game.lastStars, best: Object.fromEntries(game.bestStars), rung: [...game.lastRung] },
         renderer: {
           calls: info.render.calls,
           triangles: info.render.triangles,
@@ -300,6 +343,9 @@ export function installDebugApi(world: World): GameDebugApi {
         id: l.id,
         title: l.title,
         solution: JSON.parse(JSON.stringify(l.solution)) as Placements,
+        melody: l.melody ? [...l.melody] : null,
+        melodySolution: l.melodySolution ? (JSON.parse(JSON.stringify(l.melodySolution)) as Placements) : null,
+        par: l.par ?? DEFAULT_PAR,
       }));
     },
 
@@ -364,6 +410,33 @@ export function installDebugApi(world: World): GameDebugApi {
     },
 
     spike: createSpikeApi(world),
+
+    audio: {
+      state() {
+        const engine = getAudio(world);
+        if (!engine) throw new Error('GameAudioSystem is not registered');
+        return engine.state();
+      },
+      events() {
+        return getAudio(world)?.log.toArray() ?? [];
+      },
+      expectedNotes() {
+        const { game } = core();
+        return game.lastNotes.map((n) => ({
+          bodyId: n.bodyId,
+          source: n.source,
+          time: n.time,
+          midi: n.midi,
+          flightId: game.flightId,
+        }));
+      },
+      setSettings(partial) {
+        return setSettings(world, partial);
+      },
+      renderOffline(voice, seconds = 2) {
+        return renderVoiceOffline(voice, seconds);
+      },
+    },
   };
 
   window.__game = api;
