@@ -87,6 +87,42 @@ export function rimButtonPose(board: BoardPose, head: HeadPose): Pose {
   return { position, quaternion: quatLookAt(position, head.position) };
 }
 
+/**
+ * World size of the level-select panel (meters): the UIKitML root is 46 cm
+ * wide and about 27 cm tall at the 10 units = 1 cm scale (height rounded up).
+ */
+export const LEVEL_SELECT_SIZE = { width: 0.46, height: 0.28 } as const;
+/** Distance of the level-select panel from the head (meters): a fingertip reaches it. */
+export const LEVEL_SELECT_DISTANCE = 0.45;
+
+/**
+ * The level-select panel: LEVEL_SELECT_DISTANCE from the head along the line
+ * from the head to the board center, facing the head. It sits where the
+ * player is already looking (the board) and within poke reach; while open it
+ * may cover the board.
+ */
+export function levelSelectPose(board: BoardPose, head: HeadPose): Pose {
+  const [hx, hy, hz] = head.position;
+  let dx = board.center[0] - hx;
+  let dy = board.center[1] - hy;
+  let dz = board.center[2] - hz;
+  const d = Math.hypot(dx, dy, dz);
+  if (d < 1e-6) {
+    // Head at the board center: fall back to the head's forward direction.
+    [dx, dy, dz] = head.forward;
+  } else {
+    dx /= d;
+    dy /= d;
+    dz /= d;
+  }
+  const position: Vec3 = [
+    hx + dx * LEVEL_SELECT_DISTANCE,
+    hy + dy * LEVEL_SELECT_DISTANCE,
+    hz + dz * LEVEL_SELECT_DISTANCE,
+  ];
+  return { position, quaternion: quatLookAt(position, head.position) };
+}
+
 function handleOffset(board: BoardPose): Vec3 {
   return quatRotate(board.quaternion, [0, HANDLE_RISE, board.radius + HANDLE_GAP]);
 }

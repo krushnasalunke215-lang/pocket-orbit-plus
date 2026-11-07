@@ -1,0 +1,171 @@
+<!--
+  Level select and audio settings (LevelSelectSystem). Horizon kit, authored
+  in kit pixel units and scaled by 0.1 like the HUD (10 units = 1 cm), so the
+  panel is 46 cm wide and about 27 cm tall (LEVEL_SELECT_SIZE in
+  src/game/hud-layout.ts); it opens 0.45 m from the head, within poke reach.
+  Level buttons level-1 .. level-6 hold a label (the system writes
+  "n  Title") and three Star icons, hidden until that level is solved and
+  lit by its best stars. The Your Table button stays hidden until the
+  sandbox exists (FEAT-006).
+-->
+<style>
+  .levels-root {
+    flex-direction: column;
+    width: 460;
+    padding-top: 12;
+    padding-bottom: 12;
+    padding-left: 14;
+    padding-right: 14;
+    gap: 8;
+  }
+
+  .header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .title {
+    color: #fafaf7;
+    font-size: 26;
+    font-weight: 700;
+  }
+
+  .grid-row {
+    flex-direction: row;
+    gap: 8;
+  }
+
+  .level-button {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 66;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 3;
+  }
+
+  .level-label {
+    font-size: 17;
+    line-height: 1.2;
+  }
+
+  .stars {
+    flex-direction: row;
+    gap: 4;
+  }
+
+  .star {
+    width: 16;
+    height: 16;
+    color: #5b6170;
+  }
+
+  .settings-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 8;
+  }
+
+  .small-button {
+    height: 44;
+    justify-content: center;
+  }
+
+  .wide-button {
+    height: 44;
+    flex-grow: 1;
+    justify-content: center;
+  }
+
+  .small-label {
+    font-size: 17;
+    line-height: 1.2;
+  }
+
+  .value {
+    color: #dddfe3;
+    font-size: 18;
+    width: 52;
+    text-align: center;
+  }
+</style>
+<Panel id="levels-root" class="levels-root">
+  <div class="header">
+    <div id="levels-title" class="title">Chapter 1</div>
+    <Button id="close-levels" class="small-button">
+      <ButtonLabel class="small-label">Close</ButtonLabel>
+    </Button>
+  </div>
+  <div class="grid-row">
+    <Button id="level-1" class="level-button">
+      <ButtonLabel id="level-1-label" class="level-label">1</ButtonLabel>
+      <div id="level-1-stars" class="stars" style="display: none">
+        <Star id="level-1-star-1" class="star" />
+        <Star id="level-1-star-2" class="star" />
+        <Star id="level-1-star-3" class="star" />
+      </div>
+    </Button>
+    <Button id="level-2" class="level-button">
+      <ButtonLabel id="level-2-label" class="level-label">2</ButtonLabel>
+      <div id="level-2-stars" class="stars" style="display: none">
+        <Star id="level-2-star-1" class="star" />
+        <Star id="level-2-star-2" class="star" />
+        <Star id="level-2-star-3" class="star" />
+      </div>
+    </Button>
+    <Button id="level-3" class="level-button">
+      <ButtonLabel id="level-3-label" class="level-label">3</ButtonLabel>
+      <div id="level-3-stars" class="stars" style="display: none">
+        <Star id="level-3-star-1" class="star" />
+        <Star id="level-3-star-2" class="star" />
+        <Star id="level-3-star-3" class="star" />
+      </div>
+    </Button>
+  </div>
+  <div class="grid-row">
+    <Button id="level-4" class="level-button">
+      <ButtonLabel id="level-4-label" class="level-label">4</ButtonLabel>
+      <div id="level-4-stars" class="stars" style="display: none">
+        <Star id="level-4-star-1" class="star" />
+        <Star id="level-4-star-2" class="star" />
+        <Star id="level-4-star-3" class="star" />
+      </div>
+    </Button>
+    <Button id="level-5" class="level-button">
+      <ButtonLabel id="level-5-label" class="level-label">5</ButtonLabel>
+      <div id="level-5-stars" class="stars" style="display: none">
+        <Star id="level-5-star-1" class="star" />
+        <Star id="level-5-star-2" class="star" />
+        <Star id="level-5-star-3" class="star" />
+      </div>
+    </Button>
+    <Button id="level-6" class="level-button">
+      <ButtonLabel id="level-6-label" class="level-label">6</ButtonLabel>
+      <div id="level-6-stars" class="stars" style="display: none">
+        <Star id="level-6-star-1" class="star" />
+        <Star id="level-6-star-2" class="star" />
+        <Star id="level-6-star-3" class="star" />
+      </div>
+    </Button>
+  </div>
+  <Button id="sandbox-button" class="wide-button" style="display: none">
+    <ButtonLabel class="small-label">Your Table</ButtonLabel>
+  </Button>
+  <div class="settings-row">
+    <Button id="mute-button" class="small-button">
+      <ButtonLabel id="mute-label" class="small-label">Mute</ButtonLabel>
+    </Button>
+    <Button id="volume-down" class="small-button">
+      <ButtonLabel class="small-label">-</ButtonLabel>
+    </Button>
+    <div id="volume-label" class="value">80%</div>
+    <Button id="volume-up" class="small-button">
+      <ButtonLabel class="small-label">+</ButtonLabel>
+    </Button>
+    <Button id="quiet-button" class="wide-button">
+      <ButtonLabel id="quiet-label" class="small-label">Quiet: off</ButtonLabel>
+    </Button>
+  </div>
+</Panel>

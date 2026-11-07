@@ -21,4 +21,9 @@ export default defineAssets({
     type: AssetType.UIKitML,
     name: 'Near-rim Launch Button',
   },
+  'level-select': {
+    url: publicAssetUrl('ui/level-select.uikitml'),
+    type: AssetType.UIKitML,
+    name: 'Level Select',
+  },
 });

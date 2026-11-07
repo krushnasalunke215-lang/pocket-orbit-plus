@@ -11,7 +11,15 @@ import {
   type BoardPose,
   type Quat,
 } from './board-math.js';
-import { boardHandlePose, HUD_SIZE, hudPose, RIM_BUTTON_SIZE, rimButtonPose } from './hud-layout.js';
+import {
+  boardHandlePose,
+  HUD_SIZE,
+  hudPose,
+  LEVEL_SELECT_SIZE,
+  levelSelectPose,
+  RIM_BUTTON_SIZE,
+  rimButtonPose,
+} from './hud-layout.js';
 import { fallbackPlacement, type HeadPose } from './placement.js';
 
 /*
@@ -200,6 +208,45 @@ describe('near-rim Launch button', () => {
         const needed = halfDiagonal + Math.asin(collider / length(toPlanet));
         expect(separation * DEG, p.label).toBeGreaterThan(needed * DEG);
       }
+    });
+  }
+});
+
+/*
+ * The level-select panel (F3) at the same two poses and gaze rules as the
+ * rim button: the whole panel inside the Meta VR Glasses view while open,
+ * and close enough for a fingertip.
+ */
+describe('level-select panel', () => {
+  for (const c of RIM_CASES) {
+    const panel = levelSelectPose(c.board, c.head);
+    const head = c.head.position;
+
+    it(`${c.name}: its center is within 0.55 m of the head`, () => {
+      expect(length(sub(panel.position, head))).toBeLessThanOrEqual(0.55);
+    });
+
+    it(`${c.name}: all 4 corners fit the Meta VR Glasses view`, () => {
+      const f = unit(c.gaze);
+      const right = unit(cross(f, [0, 1, 0]));
+      const up = cross(right, f);
+      const hw = LEVEL_SELECT_SIZE.width / 2;
+      const hh = LEVEL_SELECT_SIZE.height / 2;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const corner = add(panel.position, quatRotate(panel.quaternion, [sx * hw, sy * hh, 0]));
+        const d = sub(corner, head);
+        const z = dot(d, f);
+        const h = Math.atan2(dot(d, right), z) * DEG;
+        const v = Math.atan2(dot(d, up), z) * DEG;
+        expect(Math.abs(h), `corner ${sx},${sy} horizontal ${h.toFixed(1)}°`).toBeLessThanOrEqual(37);
+        expect(v, `corner ${sx},${sy} vertical ${v.toFixed(1)}°`).toBeGreaterThanOrEqual(-43);
+        expect(v, `corner ${sx},${sy} vertical ${v.toFixed(1)}°`).toBeLessThanOrEqual(25);
+      }
+    });
+
+    it(`${c.name}: faces the head`, () => {
+      const normal = quatRotate(panel.quaternion, [0, 0, 1]);
+      expect(dot(normal, unit(sub(head, panel.position)))).toBeGreaterThan(0.999);
     });
   }
 });
