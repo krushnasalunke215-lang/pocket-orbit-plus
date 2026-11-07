@@ -37,6 +37,12 @@ export interface BodyDef {
   /** Overrides KIND_DEFAULTS[kind].radius. */
   readonly radius?: number;
   readonly orbit?: OrbitDef;
+  /**
+   * Scale degree of the note this body rings on a flyby (an integer;
+   * negative degrees and degrees past the scale length wrap octaves).
+   * Default: chosen by body index and kind in src/game/song.ts.
+   */
+  readonly note?: number;
 }
 
 /** Board positions of movable bodies, keyed by body id. */
@@ -64,6 +70,18 @@ export interface LevelDef {
   readonly boundsRadius?: number;
   /** Stored, solver-verified placements for every movable body. */
   readonly solution: Placements;
+  /**
+   * Level body ids in the order their flyby notes should ring (consecutive
+   * repeats collapsed) for a 3-star solve.
+   */
+  readonly melody?: readonly string[];
+  /**
+   * Solver-verified placements that solve and ring `melody`. Omitted when
+   * `solution` already rings it.
+   */
+  readonly melodySolution?: Placements;
+  /** A solve within this many attempts earns 2 stars (default 3). */
+  readonly par?: number;
 }
 
 /** Movable body id → its start position. */
@@ -131,6 +149,7 @@ export function validateLevel(level: LevelDef): string[] {
     checkHeight(label, body.height);
     if (body.mass !== undefined && !isPositive(body.mass)) problems.push(where(`${label} mass must be > 0`));
     if (body.radius !== undefined && !isPositive(body.radius)) problems.push(where(`${label} radius must be > 0`));
+    if (body.note !== undefined && !Number.isInteger(body.note)) problems.push(where(`${label} note is not an integer`));
 
     const orbit = body.orbit;
     if (!orbit) continue;
@@ -151,13 +170,27 @@ export function validateLevel(level: LevelDef): string[] {
   }
 
   const movableIds = level.bodies.filter((b) => b.movable).map((b) => b.id);
-  const solutionIds = Object.keys(level.solution);
-  for (const id of movableIds) {
-    if (!solutionIds.includes(id)) problems.push(where(`solution is missing movable body ${id}`));
+  const checkPlacements = (label: string, placements: Placements) => {
+    const ids = Object.keys(placements);
+    for (const id of movableIds) {
+      if (!ids.includes(id)) problems.push(where(`${label} is missing movable body ${id}`));
+    }
+    for (const id of ids) {
+      if (!movableIds.includes(id)) problems.push(where(`${label} names non-movable or unknown body ${id}`));
+      else checkBoardPoint(`${label} ${id}`, placements[id]);
+    }
+  };
+  checkPlacements('solution', level.solution);
+  if (level.melodySolution !== undefined) checkPlacements('melodySolution', level.melodySolution);
+
+  if (level.melody !== undefined) {
+    if (level.melody.length === 0) problems.push(where('melody is empty'));
+    for (const id of level.melody) {
+      if (!byId.has(id)) problems.push(where(`melody names unknown body ${id}`));
+    }
   }
-  for (const id of solutionIds) {
-    if (!movableIds.includes(id)) problems.push(where(`solution names non-movable or unknown body ${id}`));
-    else checkBoardPoint(`solution ${id}`, level.solution[id]);
+  if (level.par !== undefined && !(Number.isInteger(level.par) && level.par > 0)) {
+    problems.push(where('par must be a positive integer'));
   }
 
   return problems;
