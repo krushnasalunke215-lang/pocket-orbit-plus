@@ -22,6 +22,11 @@ const METHODS = new Set([
   'watchLaunch.start',
   'watchLaunch.read',
   'iwer.setPrimaryInputMode',
+  'audio.state',
+  'audio.events',
+  'audio.expectedNotes',
+  'audio.setSettings',
+  'audio.renderOffline',
 ]);
 
 export default async function run({ frame, page, workspaceRoot }) {

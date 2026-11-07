@@ -1,8 +1,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import type { AudioEngineState } from '../src/audio/engine';
 import { RENDER_BUDGET } from '../src/config';
 import type { GameSnapshot, ScreenPoint } from '../src/debug/debug-api';
+import type { Placements } from '../src/sim/level';
 
 /*
  * Desktop mouse play through the dev/e2e debug API (window.__game): the
@@ -60,7 +62,23 @@ async function dragBody(page: Page, bodyId: string, to: readonly number[] | Scre
   await expect.poll(async () => (await snapshot(page)).bodies[index].held, { message: `${bodyId} released` }).toBe(false);
 }
 
-test('solves levels 1-3 with the mouse', async ({ page }) => {
+function audioState(page: Page): Promise<AudioEngineState> {
+  return page.evaluate(() => window.__game!.audio.state());
+}
+
+/** Drags every movable body to `placements` (one launch per drag) and waits for the solve. */
+async function solveWith(page: Page, placements: Placements): Promise<GameSnapshot> {
+  for (const [id, p] of Object.entries(placements)) {
+    await waitUntilNotFlying(page);
+    await dragBody(page, id, p);
+  }
+  await expect.poll(async () => (await snapshot(page)).solved, { timeout: 30_000 }).toBe(true);
+  return snapshot(page);
+}
+
+test('solves all six levels with the mouse', async ({ page }) => {
+  // Eight drags and about 35 s of flights at SwiftShader's 6-8 fps.
+  test.setTimeout(300_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -69,9 +87,9 @@ test('solves levels 1-3 with the mouse', async ({ page }) => {
 
   await openGame(page);
   const levels = await page.evaluate(() => window.__game!.levels());
-  expect(levels.length).toBeGreaterThanOrEqual(3);
+  expect(levels.length).toBe(6);
 
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < levels.length; i++) {
     await page.evaluate((n) => window.__game!.loadLevel(n), i);
     if (i === 0) {
       // Art-direction capture before any move: tray planets, preview arc, target.
@@ -101,13 +119,97 @@ test('solves levels 1-3 with the mouse', async ({ page }) => {
     for (const [id, p] of Object.entries(levels[i].solution)) {
       expect(Math.hypot(solved.placements[id][0] - p[0], solved.placements[id][1] - p[1]), id).toBeLessThan(0.01);
     }
+    expect(solved.stars.last, `${levels[i].id} stars`).toBeGreaterThanOrEqual(1);
     await page.screenshot({ path: screenshotPath(`desktop-l${i + 1}-solved.png`) });
     console.log(
-      `level ${i + 1}: attempts ${solved.attempts}, hud ${JSON.stringify(solved.hud.size)} m, renderer`,
+      `level ${i + 1}: attempts ${solved.attempts}, stars ${solved.stars.last}, rung ${solved.stars.rung.join(',')}, hud ${JSON.stringify(solved.hud.size)} m, renderer`,
       JSON.stringify(solved.renderer),
     );
   }
   expect(errors).toEqual([]);
+});
+
+test('audio: unlock, note order and offline renders', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openGame(page);
+  const locked = await audioState(page);
+  expect(locked.unlocked, 'no sound before a gesture').toBe(false);
+
+  // The first click anywhere on the canvas unlocks audio (an empty corner here).
+  const canvas = await page.locator('canvas').first().boundingBox();
+  expect(canvas).not.toBeNull();
+  await page.mouse.click(canvas!.x + 30, canvas!.y + 30);
+  await expect.poll(async () => (await audioState(page)).contextState, { timeout: 10_000 }).toBe('running');
+  expect((await audioState(page)).unlocked).toBe(true);
+
+  // Moonrise's stored solution rings moon, core, p1.
+  const levels = await page.evaluate(() => window.__game!.levels());
+  const index = levels.findIndex((l) => l.id === 'c1-l3');
+  await page.evaluate((n) => window.__game!.loadLevel(n), index);
+  const solved = await solveWith(page, levels[index].solution);
+
+  const expected = await page.evaluate(() => window.__game!.audio.expectedNotes());
+  expect(expected.length).toBeGreaterThanOrEqual(2);
+  const flightId = expected[0].flightId;
+  await expect
+    .poll(async () => (await page.evaluate(() => window.__game!.audio.events())).some((e) => e.kind === 'chord' && e.flightId === flightId))
+    .toBe(true);
+  const events = (await page.evaluate(() => window.__game!.audio.events())).filter((e) => e.flightId === flightId);
+  console.log('audio expected', JSON.stringify(expected));
+  console.log('audio events', JSON.stringify(events));
+
+  // Flyby notes: the same bodies in the same order, each at most 0.35 s late.
+  const flybys = events.filter((e) => e.kind === 'flyby');
+  expect(flybys.map((e) => e.bodyId)).toEqual(expected.map((n) => n.bodyId));
+  expect(flybys.map((e) => e.midi)).toEqual(expected.map((n) => n.midi));
+  for (let i = 0; i < flybys.length; i++) {
+    expect(flybys[i].flightTime, `${flybys[i].bodyId} not early`).toBeGreaterThanOrEqual(expected[i].time);
+    expect(flybys[i].flightTime, `${flybys[i].bodyId} at most 0.35 s late`).toBeLessThanOrEqual(expected[i].time + 0.35);
+  }
+
+  // Then the phrase in rung order, then exactly one chord, last and latest.
+  const lastFlyby = events.lastIndexOf(flybys[flybys.length - 1]);
+  const after = events.slice(lastFlyby + 1).filter((e) => e.kind === 'phrase' || e.kind === 'chord');
+  const phrase = after.filter((e) => e.kind === 'phrase');
+  expect(phrase.map((e) => e.bodyId)).toEqual(solved.stars.rung);
+  expect(after.filter((e) => e.kind === 'chord')).toHaveLength(1);
+  expect(after[after.length - 1].kind).toBe('chord');
+  for (let i = 1; i < after.length; i++) expect(after[i].ctxTime).toBeGreaterThan(after[i - 1].ctxTime);
+
+  for (const voice of ['bell', 'chord'] as const) {
+    const render = await page.evaluate((v) => window.__game!.audio.renderOffline(v), voice);
+    console.log(`offline ${voice}`, JSON.stringify(render));
+    expect(render.peak, `${voice} peak`).toBeGreaterThan(0.01);
+    expect(render.peak, `${voice} peak`).toBeLessThan(1.0);
+    expect(render.rms, `${voice} rms`).toBeGreaterThan(0.001);
+  }
+});
+
+test('3-star melody run', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openGame(page);
+  const levels = await page.evaluate(() => window.__game!.levels());
+  // Event Horizon: the stored solution rings hole, p1; the melody asks for p1, hole.
+  const index = levels.findIndex((l) => l.id === 'c1-l4');
+  const level = levels[index];
+  expect(level.melodySolution).not.toBeNull();
+  await page.evaluate((n) => window.__game!.loadLevel(n), index);
+
+  const plain = await solveWith(page, level.solution);
+  expect(plain.attempts).toBe(1);
+  expect(plain.stars.rung).not.toEqual(level.melody);
+  expect([1, 2]).toContain(plain.stars.last);
+  expect(plain.stars.best[level.id]).toBe(plain.stars.last);
+
+  for (const [id, p] of Object.entries(level.melodySolution!)) await dragBody(page, id, p);
+  await expect.poll(async () => (await snapshot(page)).attempts, { timeout: 10_000 }).toBe(2);
+  await expect.poll(async () => (await snapshot(page)).solved, { timeout: 30_000 }).toBe(true);
+  const melody = await snapshot(page);
+  expect(melody.stars.rung).toEqual(level.melody);
+  expect(melody.stars.last).toBe(3);
+  expect(melody.stars.best[level.id]).toBe(3);
+  await page.waitForTimeout(300); // the HUD status text relayout
+  await page.screenshot({ path: screenshotPath('desktop-3-stars.png') });
 });
 
 test('render budget', async ({ page }) => {

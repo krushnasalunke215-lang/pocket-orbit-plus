@@ -4,8 +4,9 @@
 // level-1 solution), poke (Launch), render (XR render stats), spike (the
 // real-object probes), gate (off-board snap-back), near-pinch, tracking (hand
 // lost mid-hold), levels (2-3 by hand), handle (the board handle), rim (the
-// near-rim Launch button), hands-cdn (hand models from our own origin) and vr
-// (the immersive-vr fallback, also from a fresh desktop page).
+// near-rim Launch button), audio (context running in XR, flyby and chord
+// events after a hand solve), hands-cdn (hand models from our own origin) and
+// vr (the immersive-vr fallback, also from a fresh desktop page).
 // Setup, placement and the runtime teardown always run; the runtime is always
 // stopped.
 // Usage: npm run verify:iwer
@@ -63,6 +64,7 @@ const GROUPS = [
   'levels',
   'handle',
   'rim',
+  'audio',
   'hands-cdn',
   'vr',
 ];
@@ -394,7 +396,41 @@ const GROUP_RUNNERS = {
     );
   },
 
-  // 14. Hand models from our own origin (D3) in an immersive-ar hands session.
+  // 14. Audio in XR: the shared context runs after the session started, and a
+  // hand-ray solve of level 1 rings p1 and closes on the chord. The context
+  // state is read only through the debug API.
+  async audio() {
+    await seat();
+    const state = game('audio.state').value;
+    summary.data.audio = { state };
+    check('audio: AudioContext running in the XR session', state.contextState === 'running' && state.unlocked, state);
+    await game('loadLevel', 0);
+    xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+    const level = ctx.levels[0];
+    const movable = snapshot().bodies.find((x) => x.movable);
+    const drag = await rayDrag('hand-right', movable.id, level.solution[movable.id]);
+    const expected = game('audio.expectedNotes').value;
+    const flightId = expected[0]?.flightId ?? null;
+    const events = await waitFor('the solve chord in the audio log', () => {
+      const all = game('audio.events').value.filter((e) => e.flightId === flightId);
+      return all.some((e) => e.kind === 'chord') ? all : null;
+    }, 10_000).catch(() => game('audio.events').value.filter((e) => e.flightId === flightId));
+    summary.data.audio = { state, solved: drag.solved, expected, events };
+    check('audio: hand-ray solve of level 1', drag.solved, { outcome: drag.lastOutcome, error: drag.error });
+    check(
+      'audio: a flyby note for p1 rang during the flight',
+      events.some((e) => e.kind === 'flyby' && e.bodyId === movable.id),
+      events.filter((e) => e.kind === 'flyby').map((e) => ({ bodyId: e.bodyId, flightTime: round(e.flightTime, 3) })),
+    );
+    const chordIndex = events.findIndex((e) => e.kind === 'chord');
+    check(
+      'audio: the solve phrase then one chord',
+      chordIndex >= 0 && events.filter((e) => e.kind === 'chord').length === 1 && events.slice(0, chordIndex).some((e) => e.kind === 'phrase'),
+      events.map((e) => e.kind),
+    );
+  },
+
+  // 15. Hand models from our own origin (D3) in an immersive-ar hands session.
   async 'hands-cdn'() {
     const r = await handsCdn();
     summary.data.handsCdn = r;
@@ -405,7 +441,7 @@ const GROUP_RUNNERS = {
     check('hands-cdn: right hand visual loaded', r.handVisuals?.right === true, r.handVisuals);
   },
 
-  // 15. The immersive-vr fallback: opaque session with the starfield, then
+  // 16. The immersive-vr fallback: opaque session with the starfield, then
   // VR from a fresh desktop page (R5).
   async vr() {
     const vr = await vrStarfield(() => screenshot('iwer-vr-starfield.png'));
