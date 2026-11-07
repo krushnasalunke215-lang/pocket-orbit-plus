@@ -25,6 +25,8 @@ export interface CometVisual {
   readonly root: Object3D;
   setVisible(visible: boolean): void;
   setPosition(board: XYZLike): void;
+  /** Head, tail and halo opacity 0..1 (uniforms only); at 0 the next move emits no tail. */
+  setOpacity(alpha: number): void;
   update(dt: number, t: number): void;
 }
 
@@ -42,6 +44,17 @@ export interface TrailVisual {
   breakLine(): void;
   endFlight(): void;
   clear(): void;
+}
+
+/** The onboarding ghost hand and its translucent planet copy (board units). */
+export interface GhostHandVisual {
+  readonly root: Object3D;
+  setVisible(visible: boolean): void;
+  /**
+   * Poses the hand `t` seconds into its loop: it pinches a planet copy at
+   * board point `from` ([x, z]), carries it to `to` and lets go.
+   */
+  update(t: number, from: XYZLike, to: XYZLike): void;
 }
 
 export interface TargetVisual {

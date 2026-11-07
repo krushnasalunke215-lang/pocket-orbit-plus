@@ -30,4 +30,8 @@ export const ROLE_COLORS = {
   preview: PALETTE.white,
   target: PALETTE.yellow,
   star: PALETTE.white,
+  /** Onboarding ghost hand: white tinted toward sky blue. */
+  ghost: 0xcfe9fb,
+  /** Thin event-horizon rim of the black hole: white-hot, a touch warm. */
+  eventHorizon: 0xffe8c8,
 } as const;

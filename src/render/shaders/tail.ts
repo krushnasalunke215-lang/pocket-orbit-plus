@@ -34,11 +34,12 @@ void main() {
 const fragmentShader = /* glsl */ `
 uniform vec3 uHot;
 uniform vec3 uColor;
+uniform float uOpacity;
 varying float vLife;
 void main() {
   float d = length(gl_PointCoord - 0.5) * 2.0;
   if (d >= 1.0) discard;
-  float alpha = pow(1.0 - d, 2.0) * (1.0 - vLife) * 0.9;
+  float alpha = pow(1.0 - d, 2.0) * (1.0 - vLife) * 0.9 * uOpacity;
   vec3 color = mix(uHot, uColor, smoothstep(0.0, 0.35, vLife));
   gl_FragColor = vec4(color, alpha);
   #include <colorspace_fragment>
@@ -53,6 +54,7 @@ export const tailMaterial = new ShaderMaterial({
     uLife: { value: 0.9 },
     uSize: { value: 0.075 },
     uPixelScale: { value: 400 },
+    uOpacity: { value: 1 },
     uHot: { value: new Color(PALETTE.white) },
     uColor: { value: new Color(PALETTE.orange) },
   },

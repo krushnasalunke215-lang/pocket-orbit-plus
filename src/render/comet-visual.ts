@@ -21,7 +21,8 @@ import type { CometVisual } from './visual-types.js';
  * particle tail in a 256-slot ring buffer. The root stays at the board
  * origin; the head moves, and tail particles keep the board position they
  * were emitted at, so the tail streams behind the head. Two particles are
- * emitted per frame whenever the head moves.
+ * emitted per frame whenever the head moves. setOpacity fades the head, the
+ * tail and the halo together (the attract loop's fade-out).
  */
 
 const TAIL_CAPACITY = 256;
@@ -29,6 +30,7 @@ const EMIT_PER_FRAME = 2;
 /** A jump longer than this (level change, replay) is a teleport: no particles. */
 const MAX_STEP = 0.25;
 const HALO_SIZE = 0.17;
+const HALO_ALPHA = 0.6;
 
 const headGeometry = new SphereGeometry(0.026, 16, 12);
 const headMaterial = new MeshBasicMaterial({
@@ -81,11 +83,12 @@ export function createCometVisual(): CometVisual {
   };
   root.add(tail, head);
 
-  const halo = HALOS.allocate(ROLE_COLORS.cometTrail, 0.6);
+  const halo = HALOS.allocate(ROLE_COLORS.cometTrail, HALO_ALPHA);
   const random = mulberry32(0xc0e7);
   const last = [0, 0, 0];
   let hasLast = false;
   let next = 0;
+  let opacity = 1;
 
   const emit = (x: number, y: number, z: number, vx: number, vy: number, vz: number, t: number) => {
     const p = positions.array as Float32Array;
@@ -116,10 +119,21 @@ export function createCometVisual(): CometVisual {
     setPosition(p) {
       head.position.set(p[0], p[1], p[2]);
     },
+    setOpacity(alpha) {
+      const a = Math.min(1, Math.max(0, alpha));
+      if (a === opacity) return;
+      opacity = a;
+      // One comet per page, so its module-shared materials carry its opacity.
+      headMaterial.opacity = a;
+      tailMaterial.uniforms.uOpacity.value = a;
+      HALOS.setAlpha(halo, HALO_ALPHA * a);
+      // An invisible comet may jump (relaunch); no tail along the jump.
+      if (a <= 0) hasLast = false;
+    },
     update(dt, t) {
       setSharedTime(t);
       const hp = head.position;
-      if (root.visible) {
+      if (root.visible && opacity > 0) {
         const dx = hp.x - last[0];
         const dy = hp.y - last[1];
         const dz = hp.z - last[2];

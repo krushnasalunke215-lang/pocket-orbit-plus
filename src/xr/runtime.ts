@@ -41,6 +41,8 @@ export interface GameVisuals {
 export interface HudRuntime {
   readonly panel: UIKitMLAsset;
   readonly entity: Entity;
+  /** The status line last written. */
+  status: string;
 }
 
 /** The near-rim Launch/Replay button panel (RimButtonSystem). */
@@ -107,6 +109,62 @@ export interface SaveRuntime {
   clear(): boolean;
 }
 
+/**
+ * Visual-only control of the comet (attract loop, chapter-complete loop).
+ * OnboardingSystem rewrites it every frame, ChapterSystem may take it over
+ * after that, and RenderSyncSystem draws the comet from it while active.
+ * The game's comet state (phase, flight time, cometBoardPosition) is untouched.
+ */
+export interface CometOverride {
+  active: boolean;
+  /** Board position. */
+  readonly position: [number, number, number];
+  /** Comet opacity 0..1. */
+  alpha: number;
+}
+
+/** First-minutes state of this page session (not saved; OnboardingSystem). */
+export interface OnboardingSession {
+  /** The player has hovered or grabbed a body, clicked a button or launched. */
+  interacted: boolean;
+  /** The attract loop drives the comet this frame. */
+  attract: boolean;
+  /** The ghost hand is shown this frame. */
+  ghostHandVisible: boolean;
+  /** Seconds into the ghost hand loop (0 while hidden). */
+  ghostHandTime: number;
+}
+
+/** The level-select panel (LevelSelectSystem). */
+export interface LevelSelectRuntime {
+  readonly panel: UIKitMLAsset;
+  readonly entity: Entity;
+  open: boolean;
+  /** Element ids of the level buttons, in level order. */
+  readonly buttonIds: readonly string[];
+  /** Stars each level button shows (0 = no stars line), in level order. */
+  readonly shownStars: number[];
+  show(): void;
+  hide(): void;
+}
+
+/** The chapter-complete moment (ChapterSystem). */
+export interface ChapterRuntime {
+  shown: boolean;
+  chapter: number;
+  /** Best stars summed over the chapter's levels when it was shown. */
+  stars: number;
+  /** 3 x the chapter's level count. */
+  maxStars: number;
+  /** Increments on every show and hide. */
+  revision: number;
+  show(chapter: number): void;
+  hide(): void;
+}
+
+/** Phase 3 hook (the sky gallery): called when a chapter-complete moment starts. */
+export type ChapterCompleteListener = (chapter: number, stars: number) => void;
+
 interface OnboardingStore {
   value: Readonly<OnboardingFlags>;
   revision: number;
@@ -131,7 +189,67 @@ const KEYS = {
   pause: 'pause',
   pauseListeners: 'pauseListeners',
   save: 'save',
+  cometOverride: 'cometOverride',
+  onboardingSession: 'onboardingSession',
+  levelSelect: 'levelSelect',
+  chapter: 'chapter',
+  chapterListeners: 'chapterListeners',
 } as const;
+
+export function getCometOverride(world: World): CometOverride {
+  let o = world.globals[KEYS.cometOverride] as CometOverride | undefined;
+  if (!o) {
+    o = { active: false, position: [0, 0, 0], alpha: 1 };
+    world.globals[KEYS.cometOverride] = o;
+  }
+  return o;
+}
+
+export function getOnboardingSession(world: World): OnboardingSession {
+  let s = world.globals[KEYS.onboardingSession] as OnboardingSession | undefined;
+  if (!s) {
+    s = { interacted: false, attract: false, ghostHandVisible: false, ghostHandTime: 0 };
+    world.globals[KEYS.onboardingSession] = s;
+  }
+  return s;
+}
+/** Records a first interaction (a button click, a hover or grab, a launch): the attract loop stops for good. */
+export function markInteracted(world: World): void {
+  getOnboardingSession(world).interacted = true;
+}
+
+export function setLevelSelect(world: World, levelSelect: LevelSelectRuntime): void {
+  world.globals[KEYS.levelSelect] = levelSelect;
+}
+export function getLevelSelect(world: World): LevelSelectRuntime | undefined {
+  return world.globals[KEYS.levelSelect] as LevelSelectRuntime | undefined;
+}
+
+export function setChapter(world: World, chapter: ChapterRuntime): void {
+  world.globals[KEYS.chapter] = chapter;
+}
+export function getChapter(world: World): ChapterRuntime | undefined {
+  return world.globals[KEYS.chapter] as ChapterRuntime | undefined;
+}
+
+function chapterListeners(world: World): Set<ChapterCompleteListener> {
+  let listeners = world.globals[KEYS.chapterListeners] as Set<ChapterCompleteListener> | undefined;
+  if (!listeners) {
+    listeners = new Set();
+    world.globals[KEYS.chapterListeners] = listeners;
+  }
+  return listeners;
+}
+/** ChapterEvents: calls `listener(chapter, stars)` on every chapter-complete moment; returns the teardown. */
+export function onChapterComplete(world: World, listener: ChapterCompleteListener): () => void {
+  const listeners = chapterListeners(world);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+/** Notifies the chapter-complete listeners (ChapterSystem calls it). */
+export function emitChapterComplete(world: World, chapter: number, stars: number): void {
+  for (const listener of chapterListeners(world)) listener(chapter, stars);
+}
 
 function onboardingStore(world: World): OnboardingStore {
   let store = world.globals[KEYS.onboarding] as OnboardingStore | undefined;

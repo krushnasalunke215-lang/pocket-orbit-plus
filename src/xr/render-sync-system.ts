@@ -4,14 +4,15 @@ import type { GamePhase } from '../game/controller.js';
 import { createStarfield } from '../render/starfield.js';
 import type { InteractionState } from '../render/visual-types.js';
 import { BoardBody } from './components.js';
-import { getBoard, getGame, getVisuals } from './runtime.js';
+import { getBoard, getCometOverride, getGame, getVisuals } from './runtime.js';
 import { currentSessionMode } from './session.js';
 
 const EMPTY_SAMPLES = new Float32Array(0);
 
 /**
  * Copies game state into the visuals every frame: body and moon positions
- * (held bodies belong to BoardConstraintSystem), the comet, the flight trail,
+ * (held bodies belong to BoardConstraintSystem), the comet (or the visual-only
+ * CometOverride of the attract and chapter-complete loops), the flight trail,
  * the preview arc while placing, the target's solved state, collider sizes
  * for the current board radius, and starfield visibility (desktop and VR,
  * never over passthrough).
@@ -59,7 +60,16 @@ export class RenderSyncSystem extends createSystem({
     }
 
     game.cometBoardPosition(this.comet);
-    visuals.comet.setPosition(this.comet);
+    // The attract and chapter-complete loops move the comet visual only.
+    const override = getCometOverride(this.world);
+    if (override.active) {
+      const p = override.position;
+      visuals.comet.setPosition(p);
+      visuals.comet.setOpacity(override.alpha);
+    } else {
+      visuals.comet.setPosition(this.comet);
+      visuals.comet.setOpacity(1);
+    }
     visuals.comet.setVisible(true);
     visuals.comet.update(delta, time);
 
