@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { PREVIEW_FRACTION } from '../config.js';
 import { SIM_DT } from '../sim/constants.js';
-import type { LevelDef } from '../sim/level.js';
+import type { LevelDef, Placements } from '../sim/level.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
 import { simulate } from '../sim/simulate.js';
 import { WORMHOLE_EXIT, WORMHOLE_LEVEL, withStubWormhole } from '../sim/test-fixtures.js';
 import { GameController } from './controller.js';
 import { segmentCrossesBreak } from './path-breaks.js';
+import { DEFAULT_PAR, flightNotes, rungSequence, WELL_NOTE_MIDI } from './song.js';
 import { deserializeGameState, serializeGameState } from './state.js';
 
 function flyToEnd(game: GameController): void {
@@ -232,6 +233,114 @@ describe('GameController', () => {
     expect(restored.phase).toBe('placing');
     expect(restored.solvedLevelIds.has('c1-l1')).toBe(true);
     expect(() => restored.fromState({ ...state, levelId: 'missing' })).toThrow();
+  });
+
+  it('rates the stored solution of c1-l1 with 3 stars (its melody is the one planet)', () => {
+    const game = new GameController(ALL_LEVELS);
+    game.setPlacement('p1', game.level.solution.p1);
+    const result = game.launch();
+    expect(game.lastNotes).toEqual(flightNotes(game.level, result.flybys));
+    expect(game.lastNotes.map((n) => n.bodyId)).toEqual(['p1']);
+    game.tick(result.time / 2);
+    expect(game.lastStars).toBe(0);
+    flyToEnd(game);
+    expect(game.phase).toBe('solved');
+    expect(game.lastRung).toEqual(['p1']);
+    expect(game.lastStars).toBe(3);
+    expect(game.bestStars.get('c1-l1')).toBe(3);
+    expect(game.starsRevision).toBe(1);
+  });
+
+  it('gives 1-2 stars by attempts for a non-melody solve and 3 for the melody solution', () => {
+    const game = new GameController(ALL_LEVELS);
+    const solve = (placements: Placements) => {
+      for (const [id, p] of Object.entries(placements)) game.setPlacement(id, p);
+      game.launch();
+      flyToEnd(game);
+      expect(game.phase, game.level.id).toBe('solved');
+    };
+    const index = ALL_LEVELS.findIndex((l) => l.id === 'c1-l2');
+    game.loadLevel(index);
+    const level = game.level;
+    expect(level.melodySolution).toBeDefined();
+    expect(rungSequence(level, simulate(level, level.solution).flybys)).not.toEqual(level.melody);
+
+    // Within par: 2 stars.
+    solve(level.solution);
+    expect(game.attempts).toBe(1);
+    expect(game.lastStars).toBe(2);
+    expect(game.lastRung).toEqual(['p1', 'p2']);
+
+    // Past par: failed launches first, then the same solve earns 1 star.
+    game.loadLevel(index);
+    const par = level.par ?? DEFAULT_PAR;
+    for (let i = 0; i < par; i++) {
+      game.launch();
+      flyToEnd(game);
+      expect(game.phase).toBe('failed');
+      expect(game.lastStars).toBe(0);
+    }
+    solve(level.solution);
+    expect(game.attempts).toBe(par + 1);
+    expect(game.lastStars).toBe(1);
+    expect(game.bestStars.get(level.id)).toBe(2);
+
+    // The melody solution rings the melody: 3 stars, whatever the attempts.
+    solve(level.melodySolution!);
+    expect(game.lastRung).toEqual([...level.melody!]);
+    expect(game.lastStars).toBe(3);
+    expect(game.bestStars.get(level.id)).toBe(3);
+  });
+
+  it('keeps the best stars across replays and level loads', () => {
+    const game = new GameController(ALL_LEVELS);
+    const index = ALL_LEVELS.findIndex((l) => l.id === 'c1-l3');
+    game.loadLevel(index);
+    const level = game.level;
+    const solve = (placements: Placements) => {
+      for (const [id, p] of Object.entries(placements)) game.setPlacement(id, p);
+      game.launch();
+      flyToEnd(game);
+    };
+    solve(level.melodySolution!);
+    expect(game.lastStars).toBe(3);
+    const revision = game.starsRevision;
+
+    // A replay with the plain solution rates 2 but leaves the best at 3.
+    solve(level.solution);
+    expect(game.lastStars).toBe(2);
+    expect(game.bestStars.get(level.id)).toBe(3);
+    expect(game.starsRevision).toBe(revision);
+
+    // A level load clears the last flight but not the best.
+    game.loadLevel(index);
+    expect(game.lastStars).toBe(0);
+    expect(game.lastRung).toEqual([]);
+    expect(game.lastNotes).toEqual([]);
+    expect(game.bestStars.get(level.id)).toBe(3);
+
+    // A replay launch resets the last rating until it solves again.
+    solve(level.solution);
+    expect(game.lastStars).toBe(2);
+    game.launch();
+    expect(game.lastStars).toBe(0);
+    expect(game.lastRung).toEqual([]);
+  });
+
+  it('never counts external-well flybys toward the melody', () => {
+    const game = new GameController(ALL_LEVELS);
+    // A small well by the comet's start: c1-l1 still solves and the well rings first.
+    game.setExternalWells([{ id: 'mug', position: [-0.6, 0, -0.3], radius: 0.02, source: 'real-object' }]);
+    game.setPlacement('p1', game.level.solution.p1);
+    game.launch();
+    expect(game.lastNotes.map((n) => [n.bodyId, n.midi])).toEqual([
+      ['mug', WELL_NOTE_MIDI],
+      ['p1', 72],
+    ]);
+    flyToEnd(game);
+    expect(game.phase).toBe('solved');
+    expect(game.lastRung).toEqual(['p1']);
+    expect(game.lastStars).toBe(3);
   });
 
   it('feeds external wells into launches', () => {

@@ -35,7 +35,7 @@ function statusText(game: GameController): string {
     case 'flying':
       return 'Watch it fly';
     case 'solved':
-      return 'Solved!';
+      return game.lastStars > 0 ? `Solved! ${game.lastStars} of 3 stars` : 'Solved!';
     case 'failed':
       return game.lastOutcome && game.lastOutcome !== 'solved' ? FAILURE_TEXT[game.lastOutcome] : 'Try again';
   }

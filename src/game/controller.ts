@@ -13,9 +13,13 @@ import {
 } from '../sim/simulate.js';
 import { isFiniteVec, type Vec2 } from '../sim/vec.js';
 import type { ExternalWell } from '../sim/wells.js';
+import { DEFAULT_PAR, flightNotes, matchesMelody, rungSequence, starRating, type FlightNote } from './song.js';
 import type { GameState } from './state.js';
 
 export type GamePhase = 'placing' | 'flying' | 'solved' | 'failed';
+
+/** Stars a solve earns. */
+export type StarCount = 1 | 2 | 3;
 
 /**
  * The first PREVIEW_FRACTION of a flight: xyz samples, read the first
@@ -66,6 +70,16 @@ export class GameController {
   flightId = 0;
   /** Increments when the previewed placements (draft, committed or wells) change. */
   placementRevision = 0;
+  /** Stars of the current flight: 0 until it solves. */
+  lastStars: 0 | StarCount = 0;
+  /** Level-body ids the solving flight rang, consecutive repeats collapsed (empty until a solve). */
+  lastRung: string[] = [];
+  /** One note per flyby of the last launched flight, in flyby order. */
+  lastNotes: FlightNote[] = [];
+  /** Best stars per level id (the maximum over every solve). */
+  readonly bestStars = new Map<string, StarCount>();
+  /** Increments whenever bestStars changes. */
+  starsRevision = 0;
 
   /** Uncommitted drag placements; its tuples are owned here and written in place. */
   private draft: Record<string, [number, number]> | null = null;
@@ -109,6 +123,9 @@ export class GameController {
     this.lastResult = null;
     this.lastOutcome = null;
     this.flightTime = 0;
+    this.lastStars = 0;
+    this.lastRung = [];
+    this.lastNotes = [];
     this.draft = null;
     this.placementRevision++;
     this.levelRevision++;
@@ -204,6 +221,9 @@ export class GameController {
     const result = simulate(this.level, this.placements, { externalWells: this.wells });
     this.attempts++;
     this.lastResult = result;
+    this.lastNotes = flightNotes(this.level, result.flybys);
+    this.lastStars = 0;
+    this.lastRung = [];
     this.phase = 'flying';
     this.flightTime = 0;
     this.clearDraft();
@@ -217,7 +237,11 @@ export class GameController {
     this.flightTime = 0;
   }
 
-  /** Advances playback; ends the flight when its simulated time is reached. */
+  /**
+   * Advances playback; ends the flight when its simulated time is reached.
+   * A solve rates the flight: 3 stars when it rang the level's melody, else
+   * 2 within par attempts, else 1 (external-well flybys never count).
+   */
   tick(dtSec: number): void {
     const result = this.lastResult;
     if (this.phase !== 'flying' || !result) return;
@@ -226,8 +250,21 @@ export class GameController {
     this.flightTime = result.time;
     this.lastOutcome = result.outcome;
     if (result.outcome === 'solved') {
+      const level = this.level;
       this.phase = 'solved';
-      this.solvedLevelIds.add(this.level.id);
+      this.solvedLevelIds.add(level.id);
+      this.lastRung = rungSequence(level, result.flybys);
+      const stars = starRating({
+        solved: true,
+        attempts: this.attempts,
+        par: level.par ?? DEFAULT_PAR,
+        melodyMatched: matchesMelody(level, result.flybys),
+      }) as StarCount;
+      this.lastStars = stars;
+      if (stars > (this.bestStars.get(level.id) ?? 0)) {
+        this.bestStars.set(level.id, stars);
+        this.starsRevision++;
+      }
     } else {
       this.phase = 'failed';
     }
