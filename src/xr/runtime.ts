@@ -1,4 +1,5 @@
 import type { Entity, UIKitMLAsset, World } from '@iwsdk/core';
+import type { AudioEngine } from '../audio/engine.js';
 import type { BoardPose } from '../game/board-math.js';
 import type { GameController } from '../game/controller.js';
 import type { BoardPlacement } from '../game/placement.js';
@@ -66,6 +67,23 @@ export interface RenderStats {
   reset(): void;
 }
 
+/** User audio settings (FEAT-004 persists them, FEAT-005 adds panel controls). */
+export interface AppSettings {
+  readonly muted: boolean;
+  /** 0..1. */
+  readonly volume: number;
+  /** Multiplies the master level by QUIET_FACTOR (src/audio/engine.ts). */
+  readonly quiet: boolean;
+}
+
+export const DEFAULT_SETTINGS: AppSettings = { muted: false, volume: 0.8, quiet: false };
+
+interface SettingsStore {
+  value: AppSettings;
+  /** Increments on every setSettings; systems apply changes when it moves. */
+  revision: number;
+}
+
 const KEYS = {
   game: 'game',
   board: 'board',
@@ -73,7 +91,54 @@ const KEYS = {
   hud: 'hud',
   rimButton: 'rimButton',
   renderStats: 'renderStats',
+  audio: 'audio',
+  settings: 'settings',
 } as const;
+
+function settingsStore(world: World): SettingsStore {
+  let store = world.globals[KEYS.settings] as SettingsStore | undefined;
+  if (!store) {
+    store = { value: DEFAULT_SETTINGS, revision: 0 };
+    world.globals[KEYS.settings] = store;
+  }
+  return store;
+}
+
+export function getSettings(world: World): AppSettings {
+  return settingsStore(world).value;
+}
+export function getSettingsRevision(world: World): number {
+  return settingsStore(world).revision;
+}
+/**
+ * Merges `partial` into the settings and bumps the revision. Throws, changing
+ * nothing, on a non-boolean flag or a non-finite volume; clamps volume to 0..1.
+ */
+export function setSettings(world: World, partial: Partial<AppSettings>): AppSettings {
+  const store = settingsStore(world);
+  const next: { -readonly [K in keyof AppSettings]: AppSettings[K] } = { ...store.value };
+  for (const key of ['muted', 'quiet'] as const) {
+    const v = partial[key];
+    if (v === undefined) continue;
+    if (typeof v !== 'boolean') throw new TypeError(`settings.${key} must be a boolean`);
+    next[key] = v;
+  }
+  if (partial.volume !== undefined) {
+    const v = partial.volume;
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new TypeError('settings.volume must be a finite number');
+    next.volume = Math.min(1, Math.max(0, v));
+  }
+  store.value = next;
+  store.revision++;
+  return next;
+}
+
+export function setAudio(world: World, engine: AudioEngine): void {
+  world.globals[KEYS.audio] = engine;
+}
+export function getAudio(world: World): AudioEngine | undefined {
+  return world.globals[KEYS.audio] as AudioEngine | undefined;
+}
 
 export function setRenderStats(world: World, stats: RenderStats): void {
   world.globals[KEYS.renderStats] = stats;
