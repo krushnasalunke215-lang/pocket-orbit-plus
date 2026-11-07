@@ -1,6 +1,6 @@
 // `iwsdk browser run` script: evaluates one whitelisted window.__game call in
 // the app frame (the app may run inside the workspace iframe) and returns its
-// JSON result as { value, perfNow }. The driver writes the call to e2e/iwer/.request.json as
+// JSON result as { value, perfNow, origin }. The driver writes the call to e2e/iwer/.request.json as
 // { "method": "snapshot", "args": [] }.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -18,8 +18,10 @@ const METHODS = new Set([
   'spike.planes',
   'spike.meshes',
   'spike.hitTestFromViewer',
+  'resourceUrls',
   'watchLaunch.start',
   'watchLaunch.read',
+  'iwer.setPrimaryInputMode',
 ]);
 
 export default async function run({ frame, page, workspaceRoot }) {
@@ -49,11 +51,24 @@ export default async function run({ frame, page, workspaceRoot }) {
       if (method === 'watchLaunch.read') {
         return { value: window.__iwerLaunchWatch ?? null, perfNow: performance.now() };
       }
+      // IWER's input mode before a session starts ('hand' or 'controller');
+      // the CLI's set-input-mode needs an active session.
+      if (method === 'iwer.setPrimaryInputMode') {
+        const device = window.IWER_DEVICE;
+        if (!device) return { error: 'window.IWER_DEVICE is not installed' };
+        device.primaryInputMode = args[0];
+        return { value: device.primaryInputMode, perfNow: performance.now() };
+      }
       const parts = method.split('.');
       const owner = parts.length === 2 ? game[parts[0]] : game;
       const value = await owner[parts[parts.length - 1]](...args);
-      // perfNow: the page clock when the call returned (to time events against it).
-      return { value: value === undefined ? null : JSON.parse(JSON.stringify(value)), perfNow: performance.now() };
+      // perfNow: the page clock when the call returned (to time events against
+      // it); origin: the app frame's origin (to judge resource URLs).
+      return {
+        value: value === undefined ? null : JSON.parse(JSON.stringify(value)),
+        perfNow: performance.now(),
+        origin: location.origin,
+      };
     },
     { method, args },
   );

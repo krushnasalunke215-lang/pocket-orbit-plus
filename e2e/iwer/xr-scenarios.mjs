@@ -1,7 +1,8 @@
 // XR interaction scenarios beyond the level-1 solve: the release gate's
 // snap-back, a near pinch, losing hand tracking mid-hold, the board handle,
-// levels 2-3 by hand and the immersive-vr starfield fallback. Each returns
-// plain data; verify-iwer.mjs turns it into checks.
+// levels 2-3 by hand, the near-rim Launch button, hand models served from our
+// origin, and the immersive-vr fallback (also from a fresh desktop page).
+// Each returns plain data; verify-iwer.mjs turns it into checks.
 import { sleep } from './cli.mjs';
 import {
   bodyOf,
@@ -9,11 +10,14 @@ import {
   enterXR,
   exitXR,
   game,
+  grabbedNames,
+  handAtChest,
   hoveredNames,
   letGo,
   rayDrag,
   rayGrab,
   rayMoveTo,
+  reloadPage,
   round,
   snapshot,
   toWorld,
@@ -229,6 +233,7 @@ export async function vrStarfield(takeScreenshot) {
   xr('set-input-mode', { mode: 'hand' });
   await sleep(3000);
   const snap = snapshot();
+  const head = headPose();
   xr('look-at', { device: 'headset', target: vec(snap.board.center) });
   await sleep(500);
   takeScreenshot();
@@ -238,8 +243,237 @@ export async function vrStarfield(takeScreenshot) {
     blendMode: snap.session.blendMode,
     starfieldVisible: snap.starfieldVisible,
     boardSource: snap.board.source,
+    boardCenter: round(snap.board.center),
+    boardRadius: snap.board.radius,
+    head,
     levelBuilt: snap.levelBuilt,
     renderer: snap.renderer,
+  };
+}
+
+/** Rotates [0, 0, -1] (the view direction) by the unit quaternion q. */
+function viewForward(q) {
+  const { x, y, z, w } = q;
+  // Third column of the rotation matrix, negated.
+  return [-(2 * (x * z + w * y)), -(2 * (y * z - w * x)), -(1 - 2 * (x * x + y * y))];
+}
+
+/** Headset position and view direction (world). */
+function headPose() {
+  const t = xr('get-transform', { device: 'headset' });
+  const p = t.position;
+  return { position: round([p.x, p.y, p.z]), forward: t.orientation ? round(viewForward(t.orientation)) : null };
+}
+
+/**
+ * VR from a fresh page: leave XR, reload the managed page, wait for the
+ * desktop board, then request immersive-vr the way the HUD does when AR is
+ * missing, and read where the board landed relative to the head.
+ */
+export async function vrFromFreshPage() {
+  const active = xr('status').sessionActive;
+  if (active) await exitXR();
+  const { snapshot: desktop } = await reloadPage();
+  game('enterVR');
+  const status = await waitFor('an active immersive-vr session', () => {
+    const s = xr('status');
+    return s.sessionActive ? s : null;
+  }, 20_000);
+  await sleep(3000);
+  const snap = snapshot();
+  const head = headPose();
+  const c = snap.board.center;
+  const f = head.forward ?? [0, 0, -1];
+  const fl = Math.hypot(f[0], f[2]) || 1;
+  const ahead = ((c[0] - head.position[0]) * f[0] + (c[2] - head.position[2]) * f[2]) / fl;
+  return {
+    sourceBeforeVR: desktop.board.source,
+    sessionMode: status.sessionMode,
+    appMode: snap.session.mode,
+    boardSource: snap.board.source,
+    boardCenter: round(c),
+    boardRadius: snap.board.radius,
+    head,
+    aheadM: round(ahead),
+  };
+}
+
+/** One fingertip press on `target` with hand-right; returns timing against the page clock. */
+function poke(target) {
+  const watchBase = game('watchLaunch.start').value.base;
+  const press = xr('run-sequence', {
+    device: DEVICE,
+    steps: [{ label: `poke ${target}`, target, press: { hold: 0.05, retract: 0.05 } }],
+  }, { timeoutMs: 60_000 });
+  return { watchBase, press };
+}
+
+async function pokeResult(target) {
+  let { watchBase, press } = poke(target);
+  // A slow headless frame can hold the touch too long to count as a click
+  // (contactMs >= 800); press once more in that case.
+  if ((press.presses?.[0]?.contactMs ?? 0) >= 800 && snapshot().attempts === watchBase) {
+    ({ watchBase, press } = poke(target));
+  }
+  await sleep(300);
+  const watch = game('watchLaunch.read').value;
+  const step = press.steps[0];
+  const contactPerf = step.startPerf + (press.presses?.[0]?.contactMs ?? 0);
+  return {
+    attemptsBefore: watchBase,
+    launchAfterContactMs: watch?.launchedAt != null ? Math.round(watch.launchedAt - contactPerf) : null,
+    launchAfterPressEndMs: watch?.launchedAt != null ? Math.round(watch.launchedAt - step.endPerf) : null,
+    contactMs: press.presses?.[0]?.contactMs ?? null,
+  };
+}
+
+/**
+ * The near-rim Launch/Replay button at the seated table pose: reach, a
+ * fingertip poke, a poke while the other hand holds planet 1 (ignored), and
+ * a hand-ray pinch aimed at the button.
+ */
+export async function rimButton(takeScreenshot) {
+  xr('set-input-mode', { mode: 'hand' });
+  // Back to the verified table pose (the handle group moved the board), so
+  // the button is placed for this seated head.
+  game('placeBoard');
+  await sleep(500);
+  const { snap, body } = await freshLevel(0);
+  const t = xr('get-transform', { device: 'headset' }).position;
+  const head = [t.x, t.y, t.z];
+  const rim = snap.rimButton;
+  const targets = xr('list-targets').targets.map((x) => x.name);
+
+  // 1. Fingertip poke.
+  const pokeA = await pokeResult('rim-launch-button');
+  const afterPoke = snapshot();
+  const grabbedAfterPoke = grabbedNames();
+
+  // 2. Poke while hand-left holds planet 1 by ray: no launch. Then let go off the board.
+  const p = bodyOf(snapshot(), body.id).world;
+  const grab = await rayGrab('hand-left', p, (s) => bodyOf(s, body.id).held);
+  let whileHeld = null;
+  if (grab.held) {
+    const attemptsHeld = snapshot().attempts;
+    const pokeB = await pokeResult('rim-launch-button');
+    const during = snapshot();
+    await rayMoveTo('hand-left', toWorld(snap.board, [1.6, 0, 0.2]), grab.distance);
+    await letGo('hand-left');
+    await sleep(600);
+    const after = snapshot();
+    const back = bodyOf(after, body.id).board;
+    whileHeld = {
+      attemptsHeld,
+      attemptsDuringPoke: during.attempts,
+      heldDuringPoke: bodyOf(during, body.id).held,
+      launchAfterPressEndMs: pokeB.launchAfterPressEndMs,
+      attemptsAfterLetGo: after.attempts,
+      phaseAfterLetGo: after.phase,
+      snapBackError: round(Math.hypot(back[0] - body.board[0], back[2] - body.board[2]), 6),
+    };
+  } else {
+    await letGo('hand-left');
+  }
+
+  // 3. Hand-ray pinch aimed at the button (where it is now). A held pinch
+  // (set-select-value 1, read, 0) shows what the pinch grabs; it lasts over a
+  // second through the CLI round trips, too long to count as a UIKit click.
+  // The click itself is a short pinch: one 0.2 s `xr select`.
+  await game('loadLevel', 0);
+  await sleep(300);
+  const ray = snapshot().rimButton.position;
+  handAtChest(DEVICE);
+  xr('look-at', { device: DEVICE, target: vec(ray) });
+  await sleep(600);
+  const hoveredBeforePinch = hoveredNames();
+  xr('set-select-value', { device: DEVICE, value: 1 });
+  await sleep(400);
+  const grabbedWhilePinched = grabbedNames();
+  xr('set-select-value', { device: DEVICE, value: 0 });
+  await sleep(600);
+  const pinchBase = snapshot().attempts;
+  xr('select', { device: DEVICE, duration: 0.2 });
+  await sleep(800);
+  const afterPinch = snapshot();
+  const grabbedAfterPinch = grabbedNames();
+
+  // Screenshot: the head looks between the button and the board center.
+  const c = snap.board.center;
+  xr('look-at', { device: 'headset', target: vec([(ray[0] + c[0]) / 2, (ray[1] + c[1]) / 2, (ray[2] + c[2]) / 2]) });
+  handAtChest(DEVICE);
+  await sleep(600);
+  takeScreenshot();
+
+  return {
+    rim: { ready: rim.ready, position: round(rim.position), size: rim.size && round(rim.size), label: rim.label },
+    head: round(head),
+    reachM: round(dist(head, rim.position)),
+    listed: targets.includes('rim-launch-button'),
+    poke: {
+      ...pokeA,
+      attemptsAfter: afterPoke.attempts,
+      phaseAfter: afterPoke.phase,
+      labelAfter: afterPoke.rimButton.label,
+      grabbedAfter: grabbedAfterPoke,
+      handleHeldAfter: afterPoke.board.handleHeld,
+    },
+    heldBy: { leftGrabbed: grab.held, hovered: grab.hovered },
+    whileHeld,
+    rayPinch: {
+      hovered: hoveredBeforePinch,
+      attemptsBefore: pinchBase,
+      attemptsAfter: afterPinch.attempts,
+      phaseAfter: afterPinch.phase,
+      grabbedWhilePinched,
+      grabbedAfter: grabbedAfterPinch,
+      handleHeldAfter: afterPinch.board.handleHeld,
+    },
+  };
+}
+
+/**
+ * Resource URLs of the app frame during an immersive-ar hands session (D3).
+ * Earlier groups ran controller sessions (IWER starts with controllers,
+ * whose models still come from the CDN), so the page is reloaded first: a
+ * fresh Resource Timing buffer and visual cache, then a session that is in
+ * hand mode from its first frame.
+ */
+export async function handsCdn() {
+  if (xr('status').sessionActive) await exitXR();
+  await reloadPage();
+  // IWER starts sessions with controllers unless told otherwise before the
+  // session (the CLI's set-input-mode needs an active one).
+  const inputModeAtStart = game('iwer.setPrimaryInputMode', 'hand').value;
+  xr('enter');
+  const status = await waitFor('an active XR session', () => {
+    const s = xr('status');
+    return s.sessionActive ? s : null;
+  }, 20_000);
+  xr('set-input-mode', { mode: 'hand' });
+  await sleep(4000);
+  const reply = game('resourceUrls');
+  const urls = reply.value;
+  const origin = reply.origin;
+  const local = (name) => urls.filter((u) => u.endsWith(`vendor/webxr-input-profiles/generic-hand/${name}.glb`));
+  const crossOrigin = urls.filter((u) => {
+    if (u.startsWith('data:') || u.startsWith('blob:')) return false;
+    try {
+      return new URL(u).origin !== origin;
+    } catch {
+      return true;
+    }
+  });
+  const snap = snapshot();
+  return {
+    sessionMode: status.sessionMode,
+    inputModeAtStart,
+    origin,
+    resourceCount: urls.length,
+    localRight: local('right'),
+    localLeft: local('left'),
+    jsdelivr: urls.filter((u) => u.includes('cdn.jsdelivr.net')),
+    crossOrigin,
+    handVisuals: snap.handVisuals,
   };
 }
 

@@ -3,11 +3,11 @@
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { tsImport } from 'tsx/esm/api';
-import { call, root, sleep } from './cli.mjs';
+import { call, root, run, sleep } from './cli.mjs';
 
 const { boardToWorld } = await tsImport('../../src/game/board-math.ts', import.meta.url);
 
-export const SHOTS = path.join(root, '.agents', 'tasks', 'screenshots', 'phase1');
+export const SHOTS = path.join(root, '.agents', 'tasks', 'screenshots', 'phase2');
 export const RESULTS = path.join(root, 'test-results');
 const REQUEST = path.join(root, 'e2e', 'iwer', '.request.json');
 
@@ -61,12 +61,32 @@ export async function enterXR() {
   return status;
 }
 
+/**
+ * Reloads the managed page and waits for a fresh desktop board and an XR
+ * runtime that offers a session. The reload command itself can time out
+ * while the page is still loading (outcome unknown), so its reply is not
+ * trusted; the wait is.
+ */
+export async function reloadPage() {
+  const before = Date.now();
+  const reply = run(['browser', 'reload'], { input: {}, timeoutMs: 90_000 });
+  if (!reply.ok) console.log(`browser reload replied ${reply.error?.code ?? 'not ok'}; waiting for the page`);
+  await sleep(2000);
+  const fresh = await waitFor('a fresh desktop page', () => {
+    const s = snapshot();
+    return s.levelBuilt && s.board.source === 'desktop' ? s : null;
+  }, 120_000, 1000);
+  await waitFor('the XR runtime after reload', () => xr('status').sessionOffered, 60_000, 1000);
+  return { snapshot: fresh, reloadMs: Date.now() - before };
+}
+
 export async function exitXR() {
   xr('exit');
   await waitFor('session end', () => !xr('status').sessionActive, 10_000);
 }
 
 export const hoveredNames = () => call(['ecs', 'find'], { input: { withComponents: ['Hovered'] } }).result.entities.map((e) => e.name);
+export const grabbedNames = () => call(['ecs', 'find'], { input: { withComponents: ['Grabbed'] } }).result.entities.map((e) => e.name);
 
 /** Puts the hand's ray origin in front of the chest, between the head and the board. */
 export function handAtChest(device) {
