@@ -132,8 +132,12 @@ export const waitNotFlying = (timeoutMs = 20_000) =>
  * Hovers planet `body` with `device`, grabs it, moves the ray end to
  * `solution` (board [x, z]) and releases. With `expectSolve`, waits up to
  * 20 s for the solved state; otherwise waits for the flight to end.
+ * `afterRelease` (async) runs right after the release, before that wait
+ * (for example a mid-flight screenshot); its result is returned as `after`
+ * and its duration is left out of solvedAfterMs.
  */
-export async function rayDrag(device, body, solution, { expectSolve = true } = {}) {
+export async function rayDrag(device, body, solution, { expectSolve = true, afterRelease = null } = {}) {
+  const began = Date.now();
   const isHand = device.startsWith('hand');
   xr('set-input-mode', { mode: isHand ? 'hand' : 'controller' });
   let snap = snapshot();
@@ -198,7 +202,14 @@ export async function rayDrag(device, body, solution, { expectSolve = true } = {
   const error = Math.hypot(goal[0] - reached[0], goal[2] - reached[2]);
   const attemptsBefore = snap.attempts;
   xr('set-select-value', { device, value: 0 });
-  const released = Date.now();
+  const releasedAt = Date.now();
+  let released = releasedAt;
+  let after = null;
+  if (afterRelease) {
+    const started = Date.now();
+    after = await afterRelease();
+    released += Date.now() - started;
+  }
   let solvedSnap = null;
   let endSnap;
   if (expectSolve) {
@@ -224,6 +235,9 @@ export async function rayDrag(device, body, solution, { expectSolve = true } = {
     launched: endSnap.attempts > attemptsBefore,
     solved: Boolean(solvedSnap),
     solvedAfterMs: solvedSnap ? Date.now() - released : null,
+    /** Wall time of the whole scripted drag (aim, grab, move, release, flight), minus afterRelease. */
+    totalMs: Date.now() - began - (released - releasedAt),
     lastOutcome: endSnap.lastOutcome,
+    after,
   };
 }

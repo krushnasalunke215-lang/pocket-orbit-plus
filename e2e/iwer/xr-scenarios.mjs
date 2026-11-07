@@ -544,4 +544,187 @@ export async function visibilityPause() {
   };
 }
 
+/** Waits for an armed hold (hold.atFraction / hold.ghost) to pause the game. */
+const waitForHold = (label) =>
+  waitFor(label, () => {
+    const h = game('hold.read').value;
+    return h?.held ? h : null;
+  }, 20_000, 200).catch(() => game('hold.read').value);
+
+/**
+ * Levels 4-6 by hand-ray drags of every movable body to its stored solution.
+ * The solving flight is held about 40% in (an emulated page hide pauses the
+ * game; frames keep rendering) for `takeShot(name)`, then released.
+ */
+export async function solveLevels456ByHand(levels, takeShot) {
+  const results = [];
+  for (const index of [3, 4, 5]) {
+    await game('loadLevel', index);
+    await sleep(300);
+    const level = levels[index];
+    xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+    const ids = Object.keys(level.solution);
+    const drags = [];
+    const began = Date.now();
+    for (let k = 0; k < ids.length; k++) {
+      await waitNotFlying().catch(() => null);
+      const last = k === ids.length - 1;
+      if (last) game('hold.atFraction', 0.4);
+      const afterRelease = last
+        ? async () => {
+            const hold = await waitForHold('the mid-flight hold');
+            await sleep(300);
+            const shot = hold?.held ? takeShot(`iwer-l${index + 1}-midflight.png`) : null;
+            const released = game('hold.release').value;
+            return { held: Boolean(hold?.held), heldAt: hold?.heldAt ?? null, flightDuration: hold?.flightDuration ?? null, pauseReason: hold?.pause?.reason ?? null, shot, released };
+          }
+        : null;
+      drags.push(await rayDrag(DEVICE, ids[k], level.solution[ids[k]], { expectSolve: last, afterRelease }));
+    }
+    const snap = snapshot();
+    results.push({
+      level: level.id,
+      solved: snap.solved,
+      attempts: snap.attempts,
+      stars: snap.stars.last,
+      rung: snap.stars.rung,
+      wallMs: Date.now() - began,
+      mid: drags.at(-1).after,
+      drags,
+    });
+  }
+  return results;
+}
+
+/** One fingertip press on a UI element; once more if a slow frame held the touch too long. */
+function press(target, done) {
+  const run = () => xr('run-sequence', {
+    device: DEVICE,
+    steps: [{ label: `press ${target}`, target, press: { hold: 0.05, retract: 0.05 } }],
+  }, { timeoutMs: 60_000 });
+  let result = run();
+  let retried = false;
+  if ((result.presses?.[0]?.contactMs ?? 0) >= 800 && !done()) {
+    result = run();
+    retried = true;
+  }
+  return { contactMs: result.presses?.[0]?.contactMs ?? null, retried };
+}
+
+/** A short hand-ray pinch (a click) aimed at a UI element's center. */
+async function rayClick(elementId) {
+  const point = game('uiWorldPoint', elementId).value;
+  handAtChest(DEVICE);
+  xr('look-at', { device: DEVICE, target: vec(point) });
+  await sleep(500);
+  const hovered = hoveredNames();
+  xr('select', { device: DEVICE, duration: 0.2 });
+  await sleep(700);
+  return { point: round(point), hovered };
+}
+
+/**
+ * Onboarding on a fresh save (ghost hand screenshot, held mid-carry), then
+ * the level-select panel: opened by a fingertip poke on the HUD Levels
+ * button, a screenshot while open, a poke on level 2 (loads it, closes),
+ * then hand-ray clicks on Mute (twice) and level 3.
+ */
+export async function onboardingAndLevelSelect(takeShot) {
+  xr('set-input-mode', { mode: 'hand' });
+  game('placeBoard');
+  await sleep(500);
+  const seated = xr('get-transform', { device: 'headset' });
+  const board = snapshot().board;
+  xr('look-at', { device: 'headset', target: vec(board.center) });
+  // Hands low and to the sides, pointing at the floor, out of the board's
+  // picture: no hand ray may hover a planet (that would end the attract loop).
+  const t = seated.position;
+  for (const [device, dx] of [['hand-left', -0.3], ['hand-right', 0.3]]) {
+    xr('set-transform', { device, position: { x: t.x + dx, y: t.y - 0.45, z: t.z - 0.05 } });
+    xr('look-at', { device, target: { x: t.x + dx * 2, y: 0, z: t.z } });
+  }
+  await sleep(300);
+  game('clearSave');
+  game('resetOnboarding');
+  await game('loadLevel', 0);
+  await sleep(500);
+  const fresh = snapshot();
+  game('hold.ghost', 1.9, 2.7, 5.2);
+  const ghostHold = await waitForHold('the ghost hand mid-carry');
+  await sleep(300);
+  const ghostShot = ghostHold?.held ? takeShot('iwer-ghost-hand.png') : null;
+  game('hold.release');
+  const ghost = {
+    levelIndex: fresh.level.index,
+    phase: fresh.phase,
+    done: fresh.ghostHand.done,
+    visible: fresh.ghostHand.visible,
+    attract: fresh.attract,
+    held: Boolean(ghostHold?.held),
+    heldAt: ghostHold?.heldAt ?? null,
+    shot: ghostShot,
+  };
+
+  // Open the panel with a fingertip on the HUD Levels button. The HUD is
+  // beyond the board, out of arm's reach, so the press walks the emulated
+  // head forward; sit back down afterwards (the open panel re-poses once the
+  // head moved more than 25 cm) and bring the hand back to the chest, in
+  // front of the panel, as a seated player would before reaching for it.
+  const targets = xr('list-targets').targets.map((x) => x.name);
+  const openPress = press('levels-button', () => snapshot().levelSelect.open);
+  await sleep(500);
+  const openedAt = snapshot().levelSelect.open;
+  xr('set-transform', { device: 'headset', position: seated.position, orientation: seated.orientation });
+  xr('look-at', { device: 'headset', target: vec(board.center) });
+  handAtChest(DEVICE);
+  await sleep(800);
+  let s = snapshot();
+  const head = xr('get-transform', { device: 'headset' }).position;
+  const opened = {
+    listed: targets.includes('levels-button'),
+    contactMs: openPress.contactMs,
+    open: openedAt && s.levelSelect.open,
+    attractAfter: s.attract,
+    position: s.levelSelect.position && round(s.levelSelect.position),
+    size: s.levelSelect.size && round(s.levelSelect.size),
+    reachM: s.levelSelect.position ? round(dist([head.x, head.y, head.z], s.levelSelect.position)) : null,
+    shownStars: s.levelSelect.shownStars,
+  };
+  if (s.levelSelect.position) xr('look-at', { device: 'headset', target: vec(s.levelSelect.position) });
+  await sleep(600);
+  const panelShot = s.levelSelect.open ? takeShot('iwer-level-select.png') : null;
+
+  // Poke level 2.
+  const levelTargets = xr('list-targets').targets.map((x) => x.name);
+  const pokeLevel = press('level-2', () => snapshot().level.index === 1);
+  await sleep(600);
+  s = snapshot();
+  const poked = { listed: levelTargets.includes('level-2'), contactMs: pokeLevel.contactMs, retried: pokeLevel.retried, levelId: s.level.id, open: s.levelSelect.open };
+
+  // Ray: reopen from the HUD (only if closed; the button toggles), Mute twice, then level 3.
+  xr('set-transform', { device: 'headset', position: seated.position, orientation: seated.orientation });
+  xr('look-at', { device: 'headset', target: vec(board.center) });
+  await sleep(400);
+  const reopenClick = snapshot().levelSelect.open ? null : await rayClick('levels-button');
+  await sleep(400);
+  const reopened = snapshot().levelSelect.open;
+  const mutedBefore = game('audio.state').value.muted;
+  const muteClick = await rayClick('mute-button');
+  const mutedAfter = game('audio.state').value.muted;
+  await rayClick('mute-button');
+  const mutedRestored = game('audio.state').value.muted;
+  const levelClick = await rayClick('level-3');
+  s = snapshot();
+  const ray = {
+    reopened,
+    reopenHovered: reopenClick?.hovered ?? null,
+    muted: [mutedBefore, mutedAfter, mutedRestored],
+    muteHovered: muteClick.hovered,
+    levelHovered: levelClick.hovered,
+    levelId: s.level.id,
+    open: s.levelSelect.open,
+  };
+  return { ghost, opened, panelShot, poked, ray };
+}
+
 export { enterXR, exitXR };

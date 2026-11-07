@@ -4,6 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { AudioEngineState } from '../src/audio/engine';
 import { RENDER_BUDGET } from '../src/config';
 import type { GameSnapshot, ScreenPoint } from '../src/debug/debug-api';
+import { HUD_SIZE } from '../src/game/hud-layout';
 import type { Placements } from '../src/sim/level';
 
 /*
@@ -306,6 +307,169 @@ test('page hide pauses the flight and the audio', async ({ page }) => {
   expect(end.attempts).toBe(attempts);
   expect(end.flightTime).toBeCloseTo(end.flightDuration, 6);
   await expect.poll(async () => (await audioState(page)).contextState, { timeout: 5_000 }).toBe('running');
+});
+
+/** Moves the mouse onto a HUD or level-select element (two moves, see dragBody) and clicks it. */
+async function clickUi(page: Page, elementId: string): Promise<void> {
+  const point = await page.evaluate((id) => window.__game!.hudScreenPoint(id), elementId);
+  expect(point, `screen point of ${elementId}`).not.toBeNull();
+  await page.mouse.move(point!.x - 2, point!.y);
+  await page.mouse.move(point!.x, point!.y);
+  await page.mouse.click(point!.x, point!.y);
+}
+
+test('attract loop runs until the first interaction', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openGame(page);
+  const start = await snapshot(page);
+  expect(start.level.index).toBe(0);
+  expect(start.attract, 'attract loop after load').toBe(true);
+  expect(start.attempts).toBe(0);
+  expect(start.phase).toBe('placing');
+  // The loop moves only the comet visual: the game state stays at rest.
+  await page.waitForTimeout(1500);
+  const looping = await snapshot(page);
+  expect(looping.attract).toBe(true);
+  expect(looping.attempts).toBe(0);
+  expect(looping.phase).toBe('placing');
+  expect(looping.flightTime).toBe(0);
+  expect(looping.comet.board).toEqual(start.comet.board);
+
+  // Hovering a planet is the first interaction.
+  const body = looping.bodies.find((b) => b.movable)!;
+  const index = looping.bodies.indexOf(body);
+  const at = await screenPoint(page, body.board);
+  await page.mouse.move(at.x - 2, at.y);
+  await page.mouse.move(at.x, at.y);
+  await expect.poll(async () => (await snapshot(page)).bodies[index].hovered, { timeout: 10_000 }).toBe(true);
+  await expect.poll(async () => (await snapshot(page)).attract, { timeout: 5_000 }).toBe(false);
+  const after = await snapshot(page);
+  expect(after.attempts).toBe(0);
+  expect(after.phase).toBe('placing');
+  // For good: moving away does not restart it.
+  await page.mouse.move(20, 20);
+  await page.waitForTimeout(800);
+  expect((await snapshot(page)).attract).toBe(false);
+});
+
+test('ghost hand on level 1 stops at the first grab', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openGame(page);
+  await page.evaluate(() => window.__game!.clearSave());
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  const start = await snapshot(page);
+  expect(start.ghostHand.done).toBe(false);
+  await expect.poll(async () => (await snapshot(page)).ghostHand.visible, { timeout: 5_000 }).toBe(true);
+  // Capture mid-carry (about 1.9-2.7 s into its 5.2 s loop).
+  await expect
+    .poll(
+      async () => {
+        const t = (await snapshot(page)).ghostHand.time % 5.2;
+        return t > 1.9 && t < 2.7;
+      },
+      { timeout: 15_000, intervals: [40] },
+    )
+    .toBe(true);
+  await page.screenshot({ path: screenshotPath('ghost-hand.png') });
+
+  const levels = await page.evaluate(() => window.__game!.levels());
+  const [id, p] = Object.entries(levels[0].solution)[0];
+  await dragBody(page, id, p);
+  const grabbed = await snapshot(page);
+  expect(grabbed.ghostHand.visible, 'hidden after the first grab').toBe(false);
+  expect(grabbed.ghostHand.done).toBe(true);
+  await waitUntilNotFlying(page);
+  expect((await snapshot(page)).ghostHand.visible).toBe(false);
+
+  // Saved: still off after a reload on level 1.
+  await page.reload();
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 60_000 });
+  await expect.poll(async () => (await snapshot(page)).levelBuilt, { timeout: 10_000 }).toBe(true);
+  await page.waitForTimeout(500);
+  const reloaded = await snapshot(page);
+  expect(reloaded.level.index).toBe(0);
+  expect(reloaded.phase).toBe('placing');
+  expect(reloaded.ghostHand.done).toBe(true);
+  expect(reloaded.ghostHand.visible).toBe(false);
+});
+
+test('level select: stars, loading a level and audio settings', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openGame(page);
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  const levels = await page.evaluate(() => window.__game!.levels());
+  const solved = await solveWith(page, levels[0].solution);
+  expect(solved.stars.best['c1-l1']).toBeGreaterThanOrEqual(1);
+  await page.waitForTimeout(300); // the HUD relayout with the Next button
+
+  const closed = await snapshot(page);
+  expect(closed.levelSelect.ready).toBe(true);
+  expect(closed.levelSelect.open).toBe(false);
+  await clickUi(page, 'levels-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(true);
+  await page.waitForTimeout(400); // pose and stars on the next frames
+  const open = await snapshot(page);
+  expect(open.levelSelect.buttonIds).toEqual(['level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6']);
+  expect(open.levelSelect.shownStars[0], 'solved level 1 shows its stars').toBe(solved.stars.best['c1-l1']);
+  expect(open.levelSelect.shownStars.slice(1), 'unsolved levels show none').toEqual([0, 0, 0, 0, 0]);
+  console.log('level select', JSON.stringify(open.levelSelect));
+  await page.screenshot({ path: screenshotPath('level-select.png') });
+
+  // Audio settings on the panel edit the runtime settings the engine applies.
+  expect((await audioState(page)).muted).toBe(false);
+  await clickUi(page, 'mute-button');
+  await expect.poll(async () => (await audioState(page)).muted, { timeout: 5_000 }).toBe(true);
+  await clickUi(page, 'volume-down');
+  await expect.poll(async () => (await audioState(page)).volume, { timeout: 5_000 }).toBeCloseTo(0.7, 6);
+  await clickUi(page, 'mute-button');
+  await expect.poll(async () => (await audioState(page)).muted, { timeout: 5_000 }).toBe(false);
+  expect((await snapshot(page)).levelSelect.open, 'settings keep the panel open').toBe(true);
+
+  // A level button loads that level and closes the panel.
+  await clickUi(page, 'level-5');
+  await expect.poll(async () => (await snapshot(page)).level.id, { timeout: 5_000 }).toBe('c1-l5');
+  const loaded = await snapshot(page);
+  expect(loaded.levelSelect.open).toBe(false);
+  expect(loaded.phase).toBe('placing');
+});
+
+test('chapter complete after level 6', async ({ page }) => {
+  test.setTimeout(240_000);
+  await openGame(page);
+  const levels = await page.evaluate(() => window.__game!.levels());
+  const last = levels.length - 1;
+  await page.evaluate((n) => window.__game!.loadLevel(n), last);
+  const solved = await solveWith(page, levels[last].solution);
+  expect(solved.level.id).toBe('c1-l6');
+  await page.waitForTimeout(300); // the HUD relayout with the Next button
+
+  await clickUi(page, 'next-button');
+  await expect.poll(async () => (await snapshot(page)).chapterComplete.shown, { timeout: 5_000 }).toBe(true);
+  const moment = await snapshot(page);
+  const total = Object.values(moment.stars.best).reduce((a, b) => a + b, 0);
+  expect(moment.level.id, 'Next did not wrap to level 1').toBe('c1-l6');
+  expect(moment.chapterComplete).toEqual({ shown: true, chapter: 1, stars: total, maxStars: 18 });
+  expect(total).toBe(solved.stars.last);
+  // HudSystem writes the status on the frame after the moment starts.
+  await expect
+    .poll(async () => (await snapshot(page)).hud.status, { timeout: 5_000 })
+    .toBe(`Chapter 1 complete: ${total} of 18 stars`);
+  // Let the stars rise, then capture the moment.
+  await page.waitForTimeout(2500);
+  // The HUD keeps the size the glasses-view geometry tests assume (HUD_SIZE).
+  const hudSize = (await snapshot(page)).hud.size!;
+  expect(hudSize[0]).toBeLessThanOrEqual(HUD_SIZE.width + 1e-6);
+  expect(hudSize[1]).toBeLessThanOrEqual(HUD_SIZE.height + 1e-6);
+  await page.screenshot({ path: screenshotPath('chapter-complete.png') });
+  console.log('chapter complete', JSON.stringify({ chapter: moment.chapterComplete, hud: moment.hud }));
+
+  // Play again loads level 1 and ends the moment.
+  await clickUi(page, 'play-again-button');
+  await expect.poll(async () => (await snapshot(page)).level.index, { timeout: 5_000 }).toBe(0);
+  await expect.poll(async () => (await snapshot(page)).chapterComplete.shown, { timeout: 5_000 }).toBe(false);
+  const again = await snapshot(page);
+  expect(again.phase).toBe('placing');
+  await expect.poll(async () => (await snapshot(page)).hud.status, { timeout: 5_000 }).not.toMatch(/^Chapter/);
 });
 
 test('render budget', async ({ page }) => {

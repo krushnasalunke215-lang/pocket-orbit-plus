@@ -25,6 +25,12 @@ const METHODS = new Set([
   'iwer.setVisibility',
   'saveNow',
   'clearSave',
+  'resetOnboarding',
+  'uiWorldPoint',
+  'hold.atFraction',
+  'hold.ghost',
+  'hold.read',
+  'hold.release',
   'audio.state',
   'audio.events',
   'audio.expectedNotes',
@@ -84,6 +90,65 @@ export default async function run({ frame, page, workspaceRoot }) {
           value: { state: args[0], launched, attempts: s.attempts, phase: s.phase, flightTime: s.flightTime },
           perfNow: performance.now(),
         };
+      }
+      // Mid-flight hold for screenshots: a page timer pauses the game (an
+      // emulated page hide, so the XR frames and the hands keep rendering)
+      // once the next flight reaches `args[0]` of its duration; the driver
+      // reads it, takes the screenshot and releases it.
+      if (method === 'hold.atFraction') {
+        const hold = { fraction: args[0], held: false, heldAt: null, flightDuration: null };
+        window.__iwerHold = hold;
+        const id = setInterval(() => {
+          const s = game.snapshot();
+          if (s.phase !== 'flying' || s.flightTime < hold.fraction * s.flightDuration) return;
+          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+          document.dispatchEvent(new Event('visibilitychange'));
+          hold.held = true;
+          hold.heldAt = s.flightTime;
+          hold.flightDuration = s.flightDuration;
+          clearInterval(id);
+        }, 5);
+        hold.stop = () => clearInterval(id);
+        setTimeout(() => clearInterval(id), 60_000);
+        return { value: { fraction: hold.fraction }, perfNow: performance.now() };
+      }
+      // Same hold, once the ghost hand is between args[0] and args[1] seconds
+      // into its args[2]-second loop (mid-carry), for its screenshot.
+      if (method === 'hold.ghost') {
+        const [from, to, period] = args;
+        const hold = { fraction: null, held: false, heldAt: null, flightDuration: null };
+        window.__iwerHold = hold;
+        const id = setInterval(() => {
+          const s = game.snapshot();
+          const t = s.ghostHand.time % period;
+          if (!s.ghostHand.visible || t < from || t > to) return;
+          Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+          document.dispatchEvent(new Event('visibilitychange'));
+          hold.held = true;
+          hold.heldAt = s.ghostHand.time;
+          clearInterval(id);
+        }, 5);
+        hold.stop = () => clearInterval(id);
+        setTimeout(() => clearInterval(id), 60_000);
+        return { value: { from, to }, perfNow: performance.now() };
+      }
+      if (method === 'hold.read') {
+        const hold = window.__iwerHold;
+        const s = game.snapshot();
+        return {
+          value: hold
+            ? { held: hold.held, heldAt: hold.heldAt, flightDuration: hold.flightDuration, flightTime: s.flightTime, phase: s.phase, pause: s.pause }
+            : null,
+          perfNow: performance.now(),
+        };
+      }
+      if (method === 'hold.release') {
+        window.__iwerHold?.stop?.();
+        window.__iwerHold = null;
+        // Drop the override: the prototype getter reports the real state.
+        delete document.visibilityState;
+        document.dispatchEvent(new Event('visibilitychange'));
+        return { value: game.snapshot().pause, perfNow: performance.now() };
       }
       const parts = method.split('.');
       const owner = parts.length === 2 ? game[parts[0]] : game;

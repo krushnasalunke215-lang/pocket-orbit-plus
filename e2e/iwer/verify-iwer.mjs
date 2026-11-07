@@ -3,8 +3,10 @@
 // sunlit_living_room SEM room), hand-solve (a hand-ray grab of planet 1 to the
 // level-1 solution), poke (Launch), render (XR render stats), spike (the
 // real-object probes), gate (off-board snap-back), near-pinch, tracking (hand
-// lost mid-hold), levels (2-3 by hand), handle (the board handle), rim (the
-// near-rim Launch button), audio (context running in XR, flyby and chord
+// lost mid-hold), levels (2-3 by hand), levels-4-6 (by hand, mid-flight
+// screenshots), handle (the board handle), rim (the near-rim Launch button),
+// onboarding (ghost hand on a fresh save, level select by poke and ray),
+// audio (context running in XR, flyby and chord
 // events after a hand solve), visibility (visible-blurred pauses the flight
 // and audio), hands-cdn (hand models from our own origin) and
 // vr (the immersive-vr fallback, also from a fresh desktop page).
@@ -36,7 +38,9 @@ import {
   handsCdn,
   nearPinch,
   offBoardRelease,
+  onboardingAndLevelSelect,
   rimButton,
+  solveLevels456ByHand,
   solveLevelsByHand,
   trackingLoss,
   visibilityPause,
@@ -64,8 +68,10 @@ const GROUPS = [
   'near-pinch',
   'tracking',
   'levels',
+  'levels-4-6',
   'handle',
   'rim',
+  'onboarding',
   'audio',
   'visibility',
   'hands-cdn',
@@ -346,6 +352,30 @@ const GROUP_RUNNERS = {
     screenshot('iwer-l3-hand-solved.png');
   },
 
+  // 11b. Levels 4-6 (black hole, white star, both) by hand ray, with a
+  // screenshot about 40% into each solving flight.
+  async 'levels-4-6'() {
+    await seat();
+    const byHand = await solveLevels456ByHand(ctx.levels, (name) => screenshot(name));
+    summary.data.levels456 = byHand;
+    for (const result of byHand) {
+      const worst = Math.max(...result.drags.map((d) => d.error ?? Infinity));
+      check(`${result.level} solved by hand-ray drags`, result.solved && result.drags.every((d) => d.colliderHover && d.heldAfterSelect), {
+        attempts: result.attempts,
+        stars: result.stars,
+        worstError: worst,
+        wallMs: result.wallMs,
+      });
+      const mid = result.mid;
+      const fraction = mid?.heldAt != null && mid.flightDuration ? mid.heldAt / mid.flightDuration : null;
+      check(
+        `${result.level} mid-flight screenshot about 40% into the solving flight`,
+        Boolean(mid?.held && mid.shot) && fraction >= 0.38 && fraction <= 0.55 && mid.released?.paused === false,
+        { fraction: fraction === null ? null : round(fraction, 3), pauseReason: mid?.pauseReason, shot: mid?.shot },
+      );
+    }
+  },
+
   // 12. The board handle: grab with the hand ray and move the board 10 cm right.
   async handle() {
     await seat();
@@ -397,6 +427,33 @@ const GROUP_RUNNERS = {
       p.grabbedWhilePinched.length === 0 && p.grabbedAfter.length === 0 && p.handleHeldAfter === false,
       { whilePinched: p.grabbedWhilePinched, after: p.grabbedAfter },
     );
+  },
+
+  // 13b. Onboarding (F3): the ghost hand on a fresh save, then the level
+  // select opened by poke, a level loaded by poke, Mute and a level by ray.
+  async onboarding() {
+    await seat();
+    const o = await onboardingAndLevelSelect((name) => screenshot(name));
+    summary.data.onboarding = o;
+    check(
+      'onboarding: fresh save shows the ghost hand on level 1 (attract loop on)',
+      o.ghost.levelIndex === 0 && o.ghost.phase === 'placing' && o.ghost.done === false && o.ghost.visible && o.ghost.attract,
+      o.ghost,
+    );
+    check('onboarding: ghost hand screenshot mid-carry', o.ghost.held && Boolean(o.ghost.shot), { heldAt: o.ghost.heldAt, shot: o.ghost.shot });
+    check(
+      "onboarding: a fingertip poke on the HUD 'levels-button' opens the level select",
+      o.opened.listed && o.opened.open && o.opened.attractAfter === false,
+      { contactMs: o.opened.contactMs, open: o.opened.open },
+    );
+    check('onboarding: level select within 0.55 m of the head while open', o.opened.reachM !== null && o.opened.reachM <= 0.55, { reachM: o.opened.reachM, size: o.opened.size });
+    check('onboarding: a poke on level-2 loads c1-l2 and closes the panel', o.poked.listed && o.poked.levelId === 'c1-l2' && o.poked.open === false, o.poked);
+    check(
+      'onboarding: hand-ray clicks on mute-button toggle audio muted and back',
+      o.ray.reopened && o.ray.muted[0] === false && o.ray.muted[1] === true && o.ray.muted[2] === false,
+      { reopened: o.ray.reopened, reopenHovered: o.ray.reopenHovered, muted: o.ray.muted, hovered: o.ray.muteHovered },
+    );
+    check('onboarding: a hand-ray click on level-3 loads c1-l3 and closes the panel', o.ray.levelId === 'c1-l3' && o.ray.open === false, { levelId: o.ray.levelId, hovered: o.ray.levelHovered });
   },
 
   // 14. Audio in XR: the shared context runs after the session started, and a

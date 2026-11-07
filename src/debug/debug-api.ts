@@ -9,16 +9,22 @@ import { BoardBody } from '../xr/components.js';
 import {
   getAudio,
   getBoard,
+  getChapter,
   getGame,
   getHud,
+  getLevelSelect,
+  getOnboarding,
+  getOnboardingSession,
   getPause,
   getRenderStats,
   getRimButton,
   getSave,
   getVisuals,
+  setOnboarding,
   setSettings,
   type AppSettings,
   type HudRuntime,
+  type LevelSelectRuntime,
   type PauseReason,
   type RenderCounts,
   type RimButtonRuntime,
@@ -76,8 +82,23 @@ export interface GameSnapshot {
   session: { mode: string; blendMode: string | null; enabledFeatures: string[]; visibility: string };
   /** The VR / desktop starfield is drawn (never over passthrough). */
   starfieldVisible: boolean;
-  /** HUD world position and size (meters, from the UIKit layout). */
-  hud: { ready: boolean; position: Triple | null; size: [number, number] | null };
+  /** HUD world position and size (meters, from the UIKit layout) and its status line. */
+  hud: { ready: boolean; position: Triple | null; size: [number, number] | null; status: string | null };
+  /** The attract loop drives the comet visual (before the first interaction). */
+  attract: boolean;
+  /** The level-1 ghost hand: shown, seconds into its loop, and the saved onboarding flag. */
+  ghostHand: { visible: boolean; time: number; done: boolean };
+  /** The level-select panel: open, level button ids, the stars each shows, world position and size. */
+  levelSelect: {
+    ready: boolean;
+    open: boolean;
+    buttonIds: string[];
+    shownStars: number[];
+    position: Triple | null;
+    size: [number, number] | null;
+  };
+  /** The chapter-complete moment. */
+  chapterComplete: { shown: boolean; chapter: number; stars: number; maxStars: number };
   /** Near-rim Launch/Replay button: world position, size (meters) and label. */
   rimButton: { ready: boolean; position: Triple | null; size: [number, number] | null; label: string | null };
   /** Whether each hand adapter has a loaded visual whose model is in the scene. */
@@ -156,6 +177,10 @@ export interface GameDebugApi {
    * (default the HUD Launch button).
    */
   hudScreenPoint(elementId?: string): ScreenPoint | null;
+  /** World position (meters) of a HUD, near-rim button or level-select element's center. */
+  uiWorldPoint(elementId: string): Triple | null;
+  /** Fresh-save onboarding: ghostHandDone false and the attract loop on again (no interaction yet). */
+  resetOnboarding(): void;
   /** Names (URLs) of every resource the page has loaded (Resource Timing). */
   resourceUrls(): string[];
   /** Per-frame renderer.info samples since the last reset (RenderStatsSystem). */
@@ -218,8 +243,14 @@ export function installDebugApi(world: World): GameDebugApi {
     };
   };
 
+  /** A HUD, near-rim button or level-select element by id. */
+  const uiElement = (elementId: string) =>
+    getHud(world)?.panel.getElementById(elementId) ??
+    getRimButton(world)?.panel.getElementById(elementId) ??
+    getLevelSelect(world)?.panel.getElementById(elementId);
+
   /** UIKit units are centimeters before the panel entity's own scale. */
-  const panelSize = (panel: HudRuntime | RimButtonRuntime | undefined): [number, number] | null => {
+  const panelSize = (panel: HudRuntime | RimButtonRuntime | LevelSelectRuntime | undefined): [number, number] | null => {
     const size = panel?.panel.document.computedSize;
     if (!panel || !size) return null;
     const s = panel.entity.object3D!.getWorldScale(new Vector3()).x * 0.01;
@@ -251,7 +282,9 @@ export function installDebugApi(world: World): GameDebugApi {
 
   const api: GameDebugApi = {
     get ready() {
-      return Boolean(getGame(world) && getBoard(world) && getVisuals(world) && getHud(world) && getRimButton(world));
+      return Boolean(
+        getGame(world) && getBoard(world) && getVisuals(world) && getHud(world) && getRimButton(world) && getLevelSelect(world),
+      );
     },
     appName: APP_NAME,
 
@@ -290,6 +323,9 @@ export function installDebugApi(world: World): GameDebugApi {
       const pose = board.pose;
       const pause = getPause(world);
       const save = getSave(world);
+      const onboarding = getOnboardingSession(world);
+      const levelSelect = getLevelSelect(world);
+      const chapter = getChapter(world);
       return {
         level: { id: game.level.id, index: game.levelIndex, title: game.level.title, count: game.levels.length },
         levelBuilt: visuals?.builtRevision === game.levelRevision,
@@ -329,6 +365,27 @@ export function installDebugApi(world: World): GameDebugApi {
           ready: Boolean(hud),
           position: hud ? triple(hud.entity.object3D!.getWorldPosition(v)) : null,
           size: panelSize(hud),
+          status: hud?.status ?? null,
+        },
+        attract: onboarding.attract,
+        ghostHand: {
+          visible: onboarding.ghostHandVisible,
+          time: onboarding.ghostHandTime,
+          done: getOnboarding(world).ghostHandDone,
+        },
+        levelSelect: {
+          ready: Boolean(levelSelect),
+          open: levelSelect?.open ?? false,
+          buttonIds: [...(levelSelect?.buttonIds ?? [])],
+          shownStars: [...(levelSelect?.shownStars ?? [])],
+          position: levelSelect ? triple(levelSelect.entity.object3D!.getWorldPosition(v)) : null,
+          size: panelSize(levelSelect),
+        },
+        chapterComplete: {
+          shown: chapter?.shown ?? false,
+          chapter: chapter?.chapter ?? 0,
+          stars: chapter?.stars ?? 0,
+          maxStars: chapter?.maxStars ?? 0,
         },
         rimButton: {
           ready: Boolean(rim),
@@ -395,11 +452,22 @@ export function installDebugApi(world: World): GameDebugApi {
     },
 
     hudScreenPoint(elementId = 'launch-button') {
-      const element =
-        getHud(world)?.panel.getElementById(elementId) ?? getRimButton(world)?.panel.getElementById(elementId);
+      const element = uiElement(elementId);
       if (!element) return null;
       element.updateWorldMatrix(true, false);
       return toScreen(new Vector3().setFromMatrixPosition(element.matrixWorld));
+    },
+
+    uiWorldPoint(elementId) {
+      const element = uiElement(elementId);
+      if (!element) return null;
+      element.updateWorldMatrix(true, false);
+      return triple(new Vector3().setFromMatrixPosition(element.matrixWorld));
+    },
+
+    resetOnboarding() {
+      setOnboarding(world, { ghostHandDone: false });
+      getOnboardingSession(world).interacted = false;
     },
 
     resourceUrls() {
