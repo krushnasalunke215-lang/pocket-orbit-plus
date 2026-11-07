@@ -13,6 +13,7 @@ import {
 } from '../sim/simulate.js';
 import { isFiniteVec, type Vec2 } from '../sim/vec.js';
 import type { ExternalWell } from '../sim/wells.js';
+import { flightPositionAt } from './attract.js';
 import { DEFAULT_PAR, flightNotes, matchesMelody, rungSequence, starRating, type FlightNote } from './song.js';
 import type { GameState, OnboardingFlags, SavedSettings } from './state.js';
 
@@ -280,48 +281,7 @@ export class GameController {
       out[2] = comet.position[1];
       return out;
     }
-    const s = result.samples;
-    const stepF = this.flightTime / SIM_DT;
-    const i0 = Math.floor(stepF / result.sampleEvery);
-    if (i0 >= result.sampleCount - 1) {
-      const k = (result.sampleCount - 1) * 3;
-      out[0] = s[k];
-      out[1] = s[k + 1];
-      out[2] = s[k + 2];
-      return out;
-    }
-    const k = i0 * 3;
-    let fromStep = i0 * result.sampleEvery;
-    let toStep = Math.min(fromStep + result.sampleEvery, result.steps);
-    let ax = s[k];
-    let ay = s[k + 1];
-    let az = s[k + 2];
-    let bx = s[k + 3];
-    let by = s[k + 4];
-    let bz = s[k + 5];
-    // A teleport between the two samples splits the interval: before the jump
-    // the comet moves toward the entry point, after it away from the exit.
-    const teleports = result.teleports;
-    for (let j = 0; j < teleports.length; j++) {
-      const tp = teleports[j];
-      if (tp.step <= fromStep || tp.step > toStep) continue;
-      if (stepF < tp.step) {
-        bx = tp.entry[0];
-        by = tp.entry[1];
-        bz = tp.entry[2];
-        toStep = tp.step;
-      } else {
-        ax = tp.exit[0];
-        ay = tp.exit[1];
-        az = tp.exit[2];
-        fromStep = tp.step;
-      }
-    }
-    const a = toStep > fromStep ? Math.min(1, Math.max(0, (stepF - fromStep) / (toStep - fromStep))) : 0;
-    out[0] = ax + (bx - ax) * a;
-    out[1] = ay + (by - ay) * a;
-    out[2] = az + (bz - az) * a;
-    return out;
+    return flightPositionAt(result, this.flightTime, out);
   }
 
   /** Teleport jumps the playback has passed in the current flight (0 while placing). */
