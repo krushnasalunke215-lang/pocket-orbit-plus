@@ -1,10 +1,18 @@
-import { AudioContext as ThreeAudioContext, createSystem, Grabbed, Vector3, type Entity } from '@iwsdk/core';
+import {
+  AudioContext as ThreeAudioContext,
+  createSystem,
+  Grabbed,
+  Vector3,
+  type Entity,
+  type World,
+} from '@iwsdk/core';
 import { AudioEngine } from '../audio/engine.js';
 import type { GameController, GamePhase } from '../game/controller.js';
 import { phraseSchedule, type FlightNote } from '../game/song.js';
 import { LEVEL_SOURCE } from '../sim/simulate.js';
 import { BoardBody } from './components.js';
 import {
+  getAudio,
   getBoard,
   getGame,
   getPause,
@@ -18,6 +26,27 @@ import {
 
 /** Seconds from the solving frame to the first phrase note. */
 const PHRASE_DELAY = 0.35;
+/** Seconds from the chapter-complete moment to its arpeggio. */
+const ARPEGGIO_DELAY = 0.25;
+
+/**
+ * Chapter-complete fanfare: the chapter's success chord as a rising
+ * arpeggio, then the chord itself (non-spatial). Each note is logged as an
+ * 'arpeggio' event. Returns false (silent) before audio is unlocked or while
+ * paused.
+ */
+export function playChapterArpeggio(world: World, chapter: number): boolean {
+  const engine = getAudio(world);
+  const game = getGame(world);
+  if (!engine?.unlocked || getPause(world).paused) return false;
+  const midis = phraseSchedule([], { chapter }).chord.midis;
+  const times = engine.playArpeggio(midis, engine.now + ARPEGGIO_DELAY);
+  for (let i = 0; i < times.length; i++) {
+    const midi = i < midis.length ? midis[i] : midis[0];
+    engine.log.record('arpeggio', '', '', game?.flightId ?? 0, game?.flightTime ?? 0, times[i], midi);
+  }
+  return true;
+}
 /** Seconds from the failing frame to the miss glide. */
 const MISS_DELAY = 0.05;
 /** Comet speeds above this (m/s) are teleport jumps, not motion. */

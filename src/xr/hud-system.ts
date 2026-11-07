@@ -12,7 +12,17 @@ import { APP_NAME } from '../config.js';
 import type { GameController, GamePhase } from '../game/controller.js';
 import { hudPose } from '../game/hud-layout.js';
 import type { SimOutcome } from '../sim/bodies.js';
-import { getBoard, getGame, getPause, setHud } from './runtime.js';
+import {
+  getBoard,
+  getChapter,
+  getGame,
+  getLevelSelect,
+  getPause,
+  markInteracted,
+  setHud,
+  type ChapterRuntime,
+  type HudRuntime,
+} from './runtime.js';
 import { detectXRSupport, enterXR, type XRSupport } from './session.js';
 
 /** The UIKitML is authored in Horizon kit pixel units: 10 units = 1 cm. */
@@ -23,12 +33,13 @@ const FORWARD: readonly [number, number, number] = [0, 0, -1];
 
 const FAILURE_TEXT: Record<Exclude<SimOutcome, 'solved'>, string> = {
   collision: 'Hit a planet',
-  swallowed: 'Swallowed',
+  swallowed: 'Swallowed by the black hole',
   'out-of-bounds': 'Lost in space',
   timeout: 'Out of time',
 };
 
-function statusText(game: GameController): string {
+function statusText(game: GameController, chapter: ChapterRuntime | undefined): string {
+  if (chapter?.shown) return `Chapter ${chapter.chapter} complete: ${chapter.stars} of ${chapter.maxStars} stars`;
   switch (game.phase) {
     case 'placing':
       return 'Drag a planet, then let go';
@@ -44,25 +55,39 @@ function statusText(game: GameController): string {
 interface HudElements {
   readonly level: UIKit.Text;
   readonly status: UIKit.Text;
+  readonly launch: UIKit.Text;
   readonly launchLabel: UIKit.Text;
   readonly next: UIKit.Text;
+  readonly playAgain: UIKit.Text;
   readonly xr: UIKit.Text;
   readonly xrLabel: UIKit.Text;
 }
 
+/** True when the current level is its chapter's last (Next would wrap or change chapter). */
+function isChapterEnd(game: GameController): boolean {
+  const following = game.levels[game.levelIndex + 1];
+  return !following || following.chapter !== game.level.chapter;
+}
+
 /**
- * The UIKitML HUD: title, level, status and the Launch/Replay, Next and
- * Enter AR/VR buttons. The panel entity takes hand rays, gaze, the mouse
- * (RayInteractable) and fingertip presses (PokeInteractable). It sits beyond
- * the board's far rim, turned toward the viewer (see hudPose).
+ * The UIKitML HUD: title, level, status and the Levels, Launch/Replay, Next,
+ * Play again and Enter AR/VR buttons. The panel entity takes hand rays,
+ * gaze, the mouse (RayInteractable) and fingertip presses
+ * (PokeInteractable). It sits beyond the board's far rim, turned toward the
+ * viewer (see hudPose). Next on a chapter's last level opens the
+ * chapter-complete moment instead of wrapping; during it, Play again (the
+ * chapter's first level) replaces Launch and Next. Every click counts as
+ * the first interaction (it ends the attract loop).
  */
 export class HudSystem extends createSystem({}) {
   private entity: Entity | null = null;
   private elements: HudElements | null = null;
+  private runtime: HudRuntime | null = null;
   private support: XRSupport = { ar: false, vr: false };
   private lastPhase: GamePhase | null = null;
   private lastLevelRevision = -1;
   private lastAttempts = -1;
+  private lastChapterRevision = -1;
   private lastImmersive: boolean | null = null;
   private lastBoardVersion = -1;
   private readonly head = new Vector3();
@@ -91,26 +116,57 @@ export class HudSystem extends createSystem({}) {
       const target = element(id);
       // Clicks are ignored while paused (XR blurred or hidden, page hidden).
       const listener = () => {
-        if (!getPause(this.world).paused) action();
+        if (getPause(this.world).paused) return;
+        markInteracted(this.world);
+        action();
       };
       target.addEventListener('click', listener);
       this.cleanupFuncs.push(() => target.removeEventListener('click', listener));
       return target;
     };
-    onClick('launch-button', () => getGame(this.world)?.launch());
-    const next = onClick('next-button', () => getGame(this.world)?.nextLevel());
+    const launch = onClick('launch-button', () => getGame(this.world)?.launch());
+    const next = onClick('next-button', () => this.onNext());
+    const playAgain = onClick('play-again-button', () => this.onPlayAgain());
+    onClick('levels-button', () => {
+      const levels = getLevelSelect(this.world);
+      if (levels?.open) levels.hide();
+      else levels?.show();
+    });
     const xr = onClick('xr-button', () => enterXR(this.world, this.support));
 
     this.elements = {
       level: element('level-text'),
       status: element('status-text'),
+      launch,
       launchLabel: element('launch-label'),
       next,
+      playAgain,
       xr,
       xrLabel: element('xr-label'),
     };
     this.entity = entity;
-    setHud(this.world, { panel, entity });
+    this.runtime = { panel, entity, status: '' };
+    setHud(this.world, this.runtime);
+  }
+
+  /** Next level, or the chapter-complete moment on a chapter's last level. */
+  private onNext(): void {
+    const game = getGame(this.world);
+    if (!game) return;
+    const chapter = getChapter(this.world);
+    if (chapter && isChapterEnd(game)) chapter.show(game.level.chapter);
+    else game.nextLevel();
+  }
+
+  /** Back to the first level of the completed chapter. */
+  private onPlayAgain(): void {
+    const game = getGame(this.world);
+    const moment = getChapter(this.world);
+    const chapter = moment?.chapter ?? game?.level.chapter;
+    if (!game) return;
+    moment?.hide();
+    const first = game.levels.findIndex((l) => l.chapter === chapter);
+    game.loadLevel(Math.max(0, first));
   }
 
   update(): void {
@@ -120,12 +176,27 @@ export class HudSystem extends createSystem({}) {
     const entity = this.entity;
     if (!game || !board || !elements || !entity) return;
 
+    const chapter = getChapter(this.world);
+    const chapterRevision = chapter?.revision ?? 0;
     if (game.levelRevision !== this.lastLevelRevision) {
       elements.level.setProperties({ text: `Level ${game.levelIndex + 1}: ${game.level.title}` });
     }
-    if (game.phase !== this.lastPhase || game.levelRevision !== this.lastLevelRevision) {
-      elements.status.setProperties({ text: statusText(game) });
-      elements.next.setProperties({ display: game.phase === 'solved' ? 'flex' : 'none' });
+    if (
+      game.phase !== this.lastPhase ||
+      game.levelRevision !== this.lastLevelRevision ||
+      chapterRevision !== this.lastChapterRevision
+    ) {
+      const celebrating = Boolean(chapter?.shown);
+      const status = statusText(game, chapter);
+      elements.status.setProperties({ text: status });
+      if (this.runtime) this.runtime.status = status;
+      // The chapter status wraps to two lines; it takes the level line's place,
+      // so the panel stays within HUD_SIZE.
+      elements.level.setProperties({ display: celebrating ? 'none' : 'flex' });
+      elements.next.setProperties({ display: game.phase === 'solved' && !celebrating ? 'flex' : 'none' });
+      elements.launch.setProperties({ display: celebrating ? 'none' : 'flex' });
+      elements.playAgain.setProperties({ display: celebrating ? 'flex' : 'none' });
+      this.lastChapterRevision = chapterRevision;
     }
     if (game.attempts !== this.lastAttempts) {
       elements.launchLabel.setProperties({ text: game.attempts > 0 ? 'Replay' : 'Launch' });

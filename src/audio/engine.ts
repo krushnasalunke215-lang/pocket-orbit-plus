@@ -35,12 +35,14 @@ const WHOOSH_FLOOR_GAIN = 0.012;
 export const WHOOSH_FULL_SPEED = 0.35;
 /** Gain of a phrase note (non-spatial). */
 const PHRASE_GAIN = 0.16;
+/** Seconds between the notes of the chapter-complete arpeggio. */
+export const ARPEGGIO_STEP = 0.2;
 /** PannerNode refDistance (m) of spatial notes and the whoosh. */
 const REF_DISTANCE = 0.5;
 /** Small offset so a note scheduled "now" never starts in the past. */
 const SCHEDULE_AHEAD = 0.005;
 
-export type AudioEventKind = 'flyby' | 'phrase' | 'chord' | 'miss' | 'pickup' | 'drop';
+export type AudioEventKind = 'flyby' | 'phrase' | 'chord' | 'miss' | 'pickup' | 'drop' | 'arpeggio';
 
 export interface AudioEvent {
   kind: AudioEventKind;
@@ -308,6 +310,24 @@ export class AudioEngine {
 
   playMiss(at: number): void {
     miss(this.context, this.chain.voices, at);
+  }
+
+  /**
+   * The chord as an arpeggio: its notes rise one bell every `step` seconds
+   * from `at`, then ring together as the success chord. Returns each note's
+   * start time (the last entry is the closing chord).
+   */
+  playArpeggio(midis: readonly number[], at: number, step = ARPEGGIO_STEP): number[] {
+    const times: number[] = [];
+    for (let i = 0; i < midis.length; i++) {
+      const t = at + i * step;
+      bell(this.context, this.chain.voices, midiToHz(midis[i]), t, PHRASE_GAIN);
+      times.push(t);
+    }
+    const chordAt = at + midis.length * step + ARPEGGIO_STEP;
+    successChord(this.context, this.chain.voices, midis, chordAt);
+    times.push(chordAt);
+    return times;
   }
 
   playTick(up: boolean, at: number): void {

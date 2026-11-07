@@ -5,22 +5,31 @@
   by 0.1, so 10 units = 1 cm and the panel is about 30 x 21 cm, small enough
   for the Meta VR Glasses view beside the board. The "-" placeholders are
   replaced at runtime (the title from APP_NAME in src/config.ts; never write
-  the app name here). All three buttons share one row to keep the panel short.
+  the app name here). The Levels button shares the title row and the action
+  buttons share one row, to keep the panel short; Play again replaces
+  Launch and Next during the chapter-complete moment.
 -->
 <style>
   .hud-root {
     flex-direction: column;
     width: 300;
-    padding-top: 14;
-    padding-bottom: 14;
+    padding-top: 12;
+    padding-bottom: 12;
     padding-left: 16;
     padding-right: 16;
+    gap: 7;
+  }
+
+  .title-row {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
     gap: 8;
   }
 
   .title {
     color: #fafaf7;
-    font-size: 28;
+    font-size: 24;
     font-weight: 700;
   }
 
@@ -45,9 +54,24 @@
     font-size: 24;
     line-height: 30px;
   }
+
+  .levels-button {
+    height: 40;
+    justify-content: center;
+  }
+
+  .levels-label {
+    font-size: 18;
+    line-height: 1.2;
+  }
 </style>
 <Panel class="hud-root">
-  <div id="title-text" class="title">-</div>
+  <div class="title-row">
+    <div id="title-text" class="title">-</div>
+    <Button id="levels-button" class="levels-button">
+      <ButtonLabel class="levels-label">Levels</ButtonLabel>
+    </Button>
+  </div>
   <div id="level-text" class="info">-</div>
   <div id="status-text" class="info">-</div>
   <div class="button-row">
@@ -56,6 +80,9 @@
     </Button>
     <Button id="next-button" class="button" style="display: none">
       <ButtonLabel class="button-label">Next</ButtonLabel>
+    </Button>
+    <Button id="play-again-button" class="button" style="display: none">
+      <ButtonLabel class="button-label">Play again</ButtonLabel>
     </Button>
     <Button id="xr-button" class="button" style="display: none">
       <ButtonLabel id="xr-label" class="button-label">Enter AR</ButtonLabel>

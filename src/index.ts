@@ -9,11 +9,14 @@ import { World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
 import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
+import { ChapterSystem } from './xr/chapter-system.js';
 import { GameAudioSystem } from './xr/game-audio-system.js';
 import { GameSystem } from './xr/game-system.js';
 import { installLocalHandVisuals } from './xr/hand-visuals.js';
 import { HudSystem } from './xr/hud-system.js';
+import { LevelSelectSystem } from './xr/level-select-system.js';
 import { LifecycleSystem } from './xr/lifecycle-system.js';
+import { OnboardingSystem } from './xr/onboarding-system.js';
 import { RenderStatsSystem } from './xr/render-stats-system.js';
 import { RenderSyncSystem } from './xr/render-sync-system.js';
 import { RimButtonSystem } from './xr/rim-button-system.js';
@@ -39,11 +42,16 @@ async function main(): Promise<void> {
     // Right after GameSystem: restores the save before other systems read state.
     .registerSystem(SaveSystem, { priority: 11 })
     .registerSystem(BoardConstraintSystem, { priority: 0 })
+    // Attract loop and ghost hand, then the chapter-complete moment: both
+    // write the comet override before RenderSync draws it.
+    .registerSystem(OnboardingSystem, { priority: 15 })
+    .registerSystem(ChapterSystem, { priority: 16 })
     .registerSystem(RenderSyncSystem, { priority: 20 })
     // After RenderSync, so flyby notes ring from this frame's body positions.
     .registerSystem(GameAudioSystem, { priority: 21 })
     .registerSystem(HudSystem, { priority: 30 })
     .registerSystem(RimButtonSystem, { priority: 31 })
+    .registerSystem(LevelSelectSystem, { priority: 32 })
     .registerSystem(RenderStatsSystem, { priority: 40 });
 
   if (import.meta.env.DEV || import.meta.env.MODE === 'e2e') {
