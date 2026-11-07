@@ -14,7 +14,7 @@ import {
 import { isFiniteVec, type Vec2 } from '../sim/vec.js';
 import type { ExternalWell } from '../sim/wells.js';
 import { DEFAULT_PAR, flightNotes, matchesMelody, rungSequence, starRating, type FlightNote } from './song.js';
-import type { GameState } from './state.js';
+import type { GameState, OnboardingFlags, SavedSettings } from './state.js';
 
 export type GamePhase = 'placing' | 'flying' | 'solved' | 'failed';
 
@@ -352,29 +352,46 @@ export class GameController {
     return true;
   }
 
-  toState(): GameState {
+  /** The saveable state; settings and onboarding flags live outside the controller. */
+  toState(settings: SavedSettings, onboarding: OnboardingFlags): GameState {
     return {
-      version: 1,
+      version: 2,
       levelId: this.level.id,
       placements: Object.fromEntries(
         Object.entries(this.placements).map(([id, p]) => [id, [p[0], p[1]] as Vec2]),
       ),
       attempts: this.attempts,
       solvedLevelIds: [...this.solvedLevelIds],
+      stars: Object.fromEntries(this.bestStars),
       lastOutcome: this.lastOutcome,
+      settings: { muted: settings.muted, volume: settings.volume, quiet: settings.quiet },
+      onboarding: { ghostHandDone: onboarding.ghostHandDone },
     };
   }
 
-  /** Restores a saved state; throws on an unknown level or invalid placement. */
+  /**
+   * Restores a saved state in the placing phase. A level id no longer in the
+   * game falls back to the first level (its placements and attempts are
+   * dropped; stars and solved ids are kept), and a placement for a body that
+   * is not movable in the level is skipped, so an old save never fails to load.
+   */
   fromState(state: GameState): void {
-    const index = this.levels.findIndex((l) => l.id === state.levelId);
-    if (index < 0) throw new Error(`Unknown level in game state: ${state.levelId}`);
-    this.loadLevel(index);
-    for (const [id, p] of Object.entries(state.placements)) this.setPlacement(id, p);
-    this.attempts = state.attempts;
+    const found = this.levels.findIndex((l) => l.id === state.levelId);
+    this.loadLevel(Math.max(0, found));
+    if (found >= 0) {
+      for (const [id, p] of Object.entries(state.placements)) {
+        const index = this.bodyIndex.get(id);
+        if (index === undefined || !this.level.bodies[index].movable || !isFiniteVec(p)) continue;
+        this.setPlacement(id, p);
+      }
+      this.attempts = state.attempts;
+      this.lastOutcome = state.lastOutcome;
+    }
     this.solvedLevelIds.clear();
     for (const id of state.solvedLevelIds) this.solvedLevelIds.add(id);
-    this.lastOutcome = state.lastOutcome;
+    this.bestStars.clear();
+    for (const [id, stars] of Object.entries(state.stars)) this.bestStars.set(id, stars);
+    this.starsRevision++;
   }
 
   private requireMovable(id: string, p: Vec2): void {

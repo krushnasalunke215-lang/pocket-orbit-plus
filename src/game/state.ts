@@ -2,17 +2,44 @@ import { SIM_OUTCOMES, type SimOutcome } from '../sim/bodies.js';
 import type { Placements } from '../sim/level.js';
 import { isFiniteVec, type Vec2 } from '../sim/vec.js';
 
+/** Current GameState version; version 1 saves are migrated on load. */
+export const GAME_STATE_VERSION = 2;
+
+/** Stars a solve can earn (also StarCount in controller.ts). */
+export type SavedStars = 1 | 2 | 3;
+
+/** User audio settings as saved. */
+export interface SavedSettings {
+  muted: boolean;
+  /** 0..1. */
+  volume: number;
+  quiet: boolean;
+}
+
+export const DEFAULT_SETTINGS: Readonly<SavedSettings> = Object.freeze({ muted: false, volume: 0.8, quiet: false });
+
+/** One-time onboarding steps the player has completed. */
+export interface OnboardingFlags {
+  ghostHandDone: boolean;
+}
+
+export const DEFAULT_ONBOARDING: Readonly<OnboardingFlags> = Object.freeze({ ghostHandDone: false });
+
 /**
  * Everything needed to resume a session. Flights are recomputed
  * deterministically from the placements, so no physics state is stored.
  */
 export interface GameState {
-  version: 1;
+  version: 2;
   levelId: string;
   placements: Placements;
   attempts: number;
   solvedLevelIds: string[];
+  /** Best stars per level id. */
+  stars: Record<string, SavedStars>;
   lastOutcome: SimOutcome | null;
+  settings: SavedSettings;
+  onboarding: OnboardingFlags;
 }
 
 function sortKeys(value: unknown): unknown {
@@ -41,7 +68,40 @@ function isVec2(value: unknown): value is Vec2 {
   return Array.isArray(value) && value.length === 2 && value.every((n) => typeof n === 'number') && isFiniteVec(value);
 }
 
-/** Parses and validates a saved state. Throws Error on any invalid input. */
+function parseStars(value: unknown): Record<string, SavedStars> {
+  if (!isRecord(value)) throw new Error('Game state stars must be an object');
+  const stars: Record<string, SavedStars> = {};
+  for (const [id, n] of Object.entries(value)) {
+    if (id === '' || (n !== 1 && n !== 2 && n !== 3)) {
+      throw new Error(`Game state stars for ${JSON.stringify(id)} must be 1, 2 or 3`);
+    }
+    stars[id] = n;
+  }
+  return stars;
+}
+
+function parseSettings(value: unknown): SavedSettings {
+  if (!isRecord(value)) throw new Error('Game state settings must be an object');
+  const { muted, volume, quiet } = value;
+  if (typeof muted !== 'boolean') throw new Error('Game state settings.muted must be a boolean');
+  if (typeof quiet !== 'boolean') throw new Error('Game state settings.quiet must be a boolean');
+  if (typeof volume !== 'number' || !Number.isFinite(volume) || volume < 0 || volume > 1) {
+    throw new Error('Game state settings.volume must be a finite number in [0, 1]');
+  }
+  return { muted, volume, quiet };
+}
+
+function parseOnboarding(value: unknown): OnboardingFlags {
+  if (!isRecord(value)) throw new Error('Game state onboarding must be an object');
+  if (typeof value.ghostHandDone !== 'boolean') throw new Error('Game state onboarding.ghostHandDone must be a boolean');
+  return { ghostHandDone: value.ghostHandDone };
+}
+
+/**
+ * Parses and validates a saved state. Accepts version 2 and migrates
+ * version 1 (no stars, default settings, onboarding not done). Throws Error
+ * on any invalid input.
+ */
 export function deserializeGameState(json: string): GameState {
   let data: unknown;
   try {
@@ -50,7 +110,9 @@ export function deserializeGameState(json: string): GameState {
     throw new Error('Game state is not valid JSON');
   }
   if (!isRecord(data)) throw new Error('Game state must be a JSON object');
-  if (data.version !== 1) throw new Error(`Unsupported game state version: ${String(data.version)}`);
+  if (data.version !== 1 && data.version !== 2) {
+    throw new Error(`Unsupported game state version: ${String(data.version)}`);
+  }
 
   const { levelId, placements, attempts, solvedLevelIds, lastOutcome } = data;
   if (typeof levelId !== 'string' || levelId === '') throw new Error('Game state levelId must be a non-empty string');
@@ -68,14 +130,18 @@ export function deserializeGameState(json: string): GameState {
     throw new Error(`Game state lastOutcome is unknown: ${String(lastOutcome)}`);
   }
 
+  const v2 = data.version === 2;
   return {
-    version: 1,
+    version: 2,
     levelId,
     placements: Object.fromEntries(
       Object.entries(placements).map(([id, p]) => [id, [(p as Vec2)[0], (p as Vec2)[1]] as Vec2]),
     ),
     attempts,
     solvedLevelIds: [...solvedLevelIds],
+    stars: v2 ? parseStars(data.stars) : {},
     lastOutcome: lastOutcome as SimOutcome | null,
+    settings: v2 ? parseSettings(data.settings) : { ...DEFAULT_SETTINGS },
+    onboarding: v2 ? parseOnboarding(data.onboarding) : { ...DEFAULT_ONBOARDING },
   };
 }

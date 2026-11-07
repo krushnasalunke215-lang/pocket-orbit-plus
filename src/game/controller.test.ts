@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PREVIEW_FRACTION } from '../config.js';
 import { SIM_DT } from '../sim/constants.js';
-import type { LevelDef, Placements } from '../sim/level.js';
+import { startPlacements, type LevelDef, type Placements } from '../sim/level.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
 import { simulate } from '../sim/simulate.js';
 import { WORMHOLE_EXIT, WORMHOLE_LEVEL, withStubWormhole } from '../sim/test-fixtures.js';
@@ -214,25 +214,61 @@ describe('GameController', () => {
     expect(game.level.id).toBe('c1-l3');
   });
 
-  it('round-trips through GameState JSON', () => {
+  it('round-trips through GameState JSON with stars, settings and onboarding', () => {
+    const settings = { muted: true, volume: 0.4, quiet: false };
+    const onboarding = { ghostHandDone: true };
     const game = new GameController(ALL_LEVELS);
     game.setPlacement('p1', [-0.075, -0.4]);
     game.launch();
     flyToEnd(game);
+    expect(game.bestStars.get('c1-l1')).toBe(3);
     game.nextLevel();
     game.setPlacement('p2', [0.15, -0.55]);
     game.launch();
     flyToEnd(game);
-    const state = game.toState();
+    const state = game.toState(settings, onboarding);
+    expect(state.version).toBe(2);
+    expect(state.stars).toEqual({ 'c1-l1': 3 });
+    expect(state.settings).toEqual(settings);
+    expect(state.onboarding).toEqual(onboarding);
     const json = serializeGameState(state);
 
     const restored = new GameController(ALL_LEVELS);
+    const starsRevision = restored.starsRevision;
     restored.fromState(deserializeGameState(json));
-    expect(restored.toState()).toEqual(state);
+    expect(restored.toState(settings, onboarding)).toEqual(state);
     expect(restored.levelIndex).toBe(1);
     expect(restored.phase).toBe('placing');
     expect(restored.solvedLevelIds.has('c1-l1')).toBe(true);
-    expect(() => restored.fromState({ ...state, levelId: 'missing' })).toThrow();
+    expect(restored.bestStars.get('c1-l1')).toBe(3);
+    expect(restored.starsRevision).toBeGreaterThan(starsRevision);
+    expect(restored.lastOutcome).toBe(state.lastOutcome);
+  });
+
+  it('falls back to the first level for an unknown level id, keeping stars and solved ids', () => {
+    const game = new GameController(ALL_LEVELS);
+    game.loadLevel(2);
+    const state = {
+      ...game.toState({ muted: false, volume: 0.8, quiet: false }, { ghostHandDone: false }),
+      levelId: 'removed-level',
+      placements: { p1: [0.1, 0.1] as [number, number] },
+      attempts: 4,
+      solvedLevelIds: ['c1-l1', 'c1-l2'],
+      stars: { 'c1-l1': 3 as const, 'c1-l2': 2 as const },
+      lastOutcome: 'collision' as const,
+    };
+    expect(() => game.fromState(state)).not.toThrow();
+    expect(game.levelIndex).toBe(0);
+    expect(game.attempts).toBe(0);
+    expect(game.lastOutcome).toBeNull();
+    expect(game.placements).toEqual(startPlacements(game.level));
+    expect([...game.solvedLevelIds]).toEqual(['c1-l1', 'c1-l2']);
+    expect(Object.fromEntries(game.bestStars)).toEqual({ 'c1-l1': 3, 'c1-l2': 2 });
+
+    // A placement for a body the level does not move is skipped, not thrown.
+    expect(() => game.fromState({ ...state, levelId: 'c1-l1', placements: { p1: [-0.075, -0.4], ghost: [0, 0] } })).not.toThrow();
+    expect(game.placements.p1).toEqual([-0.075, -0.4]);
+    expect(game.placements.ghost).toBeUndefined();
   });
 
   it('rates the stored solution of c1-l1 with 3 stars (its melody is the one planet)', () => {
