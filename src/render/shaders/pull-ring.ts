@@ -1,11 +1,20 @@
 import { AdditiveBlending, ShaderMaterial } from '@iwsdk/core';
+import { SHARED_TIME } from './common.js';
 
 /*
  * Pull rings: instanced flat quads lying on the board, each drawing a thin
  * ring at the body's influence radius with a faint fill toward the center.
  * Per instance: aOffset (center), aSize (ring radius), aColor, aAlpha and
- * aPattern (0 solid, 1 dotted, 2 dashed), so ring patterns echo body kinds.
+ * aPattern, so ring patterns echo body kinds:
+ *   0 solid line (planet)
+ *   1 dotted line (moon)
+ *   2 dashed line with ripples flowing outward (white star: push)
+ *   3 solid line with ripples flowing inward, brightening toward the core
+ *     (black hole: danger)
  */
+
+/** Pull-ring pattern ids (aPattern). */
+export const PULL_PATTERN = { solid: 0, dotted: 1, outward: 2, inward: 3 } as const;
 
 /** GLSL vertex: scales the unit quad (XZ) by the ring radius and moves it to the body. */
 const vertexShader = /* glsl */ `
@@ -30,8 +39,13 @@ void main() {
 }
 `;
 
-/** GLSL fragment: thin ring line (patterned by angle) plus a soft inner well. */
+/**
+ * GLSL fragment: thin ring line (patterned by angle) plus a soft inner
+ * well; patterns 2 and 3 add concentric ripples whose phase 4r -/+ 0.6t
+ * moves them outward (2) or inward (3).
+ */
 const fragmentShader = /* glsl */ `
+uniform float uTime;
 varying vec2 vLocal;
 varying vec3 vColor;
 varying float vAlpha;
@@ -44,10 +58,22 @@ void main() {
   float width = 0.006 / max(vRadius, 1e-4);
   float line = 1.0 - smoothstep(0.0, width, abs(r - 1.0 + width));
   float a = atan(vLocal.y, vLocal.x) / TAU;
-  if (vPattern > 1.5) line *= step(0.4, fract(a * 18.0));
-  else if (vPattern > 0.5) line *= step(0.6, fract(a * 40.0));
   float well = pow(1.0 - r, 3.0) * 0.18;
-  float alpha = (line + well) * vAlpha;
+  float ripples = 0.0;
+  if (vPattern > 2.5) {
+    // Inward: crests at 4r + 0.6t = const move to smaller r; stronger near the core.
+    float w = fract(r * 4.0 + uTime * 0.6);
+    ripples = (1.0 - smoothstep(0.0, 0.12, abs(w - 0.5))) * (1.0 - r) * 0.55;
+    well = pow(1.0 - r, 2.0) * 0.3;
+  } else if (vPattern > 1.5) {
+    // Outward: crests at 4r - 0.6t = const move to larger r, fading at the rim.
+    float w = fract(r * 4.0 - uTime * 0.6);
+    ripples = (1.0 - smoothstep(0.0, 0.12, abs(w - 0.5))) * (0.25 + 0.75 * r) * (1.0 - r) * 0.7;
+    line *= step(0.4, fract(a * 18.0));
+  } else if (vPattern > 0.5) {
+    line *= step(0.6, fract(a * 40.0));
+  }
+  float alpha = (line + well + ripples) * vAlpha;
   gl_FragColor = vec4(vColor, alpha);
   #include <colorspace_fragment>
 }
@@ -56,6 +82,7 @@ void main() {
 /** Shared pull-ring material (one per module). */
 export const pullRingMaterial = new ShaderMaterial({
   name: 'PullRing',
+  uniforms: { uTime: SHARED_TIME },
   vertexShader,
   fragmentShader,
   transparent: true,

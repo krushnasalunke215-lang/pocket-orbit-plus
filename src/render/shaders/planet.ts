@@ -32,6 +32,8 @@ uniform vec3 uRimColor;
 uniform float uSeed;
 uniform float uTime;
 uniform float uBandScale;
+uniform float uRimPower;
+uniform float uRimStrength;
 varying vec3 vNormalW;
 varying vec3 vWorldPos;
 varying vec3 vLocal;
@@ -50,9 +52,9 @@ void main() {
   float key = 0.55 + 0.45 * max(dot(N, normalize(vec3(0.35, 0.85, 0.4))), 0.0);
   vec3 color = surface * key;
 
-  // Fresnel rim light.
-  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-  color += uRimColor * rim * 1.3;
+  // Fresnel rim light (a high power makes it thin: the black hole's event horizon).
+  float rim = pow(1.0 - max(dot(N, V), 0.0), uRimPower);
+  color += uRimColor * rim * uRimStrength;
 
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
@@ -69,6 +71,8 @@ export const planetMaterial = new ShaderMaterial({
     uSeed: { value: 0 },
     uTime: SHARED_TIME,
     uBandScale: { value: 6 },
+    uRimPower: { value: 3 },
+    uRimStrength: { value: 1.3 },
   },
   vertexShader,
   fragmentShader,
@@ -81,6 +85,10 @@ export interface SurfaceColors {
   rim: number;
   seed: number;
   bandScale?: number;
+  /** Fresnel exponent (default 3); higher is a thinner rim. */
+  rimPower?: number;
+  /** Rim brightness (default 1.3). */
+  rimStrength?: number;
 }
 
 /** Per-body clone sharing the program and the clock. */
@@ -92,5 +100,7 @@ export function createSurfaceMaterial(colors: SurfaceColors): ShaderMaterial {
   (material.uniforms.uRimColor.value as Color).setHex(colors.rim);
   material.uniforms.uSeed.value = colors.seed;
   material.uniforms.uBandScale.value = colors.bandScale ?? 6;
+  material.uniforms.uRimPower.value = colors.rimPower ?? 3;
+  material.uniforms.uRimStrength.value = colors.rimStrength ?? 1.3;
   return material;
 }

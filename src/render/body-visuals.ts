@@ -17,19 +17,27 @@ import { PALETTE, ROLE_COLORS } from './palette.js';
 import { ACCRETION_INNER, ACCRETION_OUTER, accretionMaterial } from './shaders/accretion.js';
 import { noRaycast, setSharedTime } from './shaders/common.js';
 import { createSurfaceMaterial, type SurfaceColors } from './shaders/planet.js';
+import { PULL_PATTERN } from './shaders/pull-ring.js';
 import { createRingMaterial, RING_PATTERN } from './shaders/ring.js';
 import type { BodyVisual, InteractionState } from './visual-types.js';
 
 /*
  * Level bodies. Kinds differ by shape and ring pattern as well as color:
- *   planet     banded sphere + solid tilted ring
- *   moon       faceted icosahedron + dotted ring
- *   black hole black core + thick swirling accretion ring
- *   repulsor   spiky stellated octahedron + dashed rings drifting outward
+ *   planet     banded sphere + solid tilted ring, solid pull ring
+ *   moon       faceted icosahedron + dotted ring, dotted pull ring
+ *   black hole (danger) black core with a thin bright event-horizon rim, an
+ *              accretion disc whose spiral arms fall inward, and a
+ *              vermillion pull ring whose ripples flow inward
+ *   repulsor   (white star, push) bright white spiky stellated octahedron
+ *              with a sky-blue rim and a soft pulse, dashed rings drifting
+ *              outward, and a dashed pull ring whose ripples flow outward
  * Each body also owns one halo slot (fake bloom) and one pull-ring slot
  * (its influence radius on the board). Geometry and ring materials are
  * shared module resources; only the surface material is cloned per body.
  */
+
+/** White-star pulse rate (rad/s). */
+const PULSE_RATE = 2.6;
 
 const sphere = new SphereGeometry(1, 24, 16);
 /** Non-indexed, so computeVertexNormals gives one flat normal per facet. */
@@ -69,6 +77,8 @@ interface KindStyle {
   halo: { color: number; size: number; alpha: number };
   pull: { color: number; alpha: number; pattern: number };
   spin: number;
+  /** Relative size of the soft pulse (0 = none). */
+  pulse: number;
 }
 
 /** Small stable hash of the body id, so band patterns differ per body but never per run. */
@@ -91,8 +101,9 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
           tilt: 0.38,
         },
         halo: { color, size: 2.6, alpha: 0.32 },
-        pull: { color, alpha: 0.35, pattern: 0 },
+        pull: { color, alpha: 0.35, pattern: PULL_PATTERN.solid },
         spin: 0.25,
+        pulse: 0,
       };
     }
     case 'moon':
@@ -101,26 +112,43 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
         surface: { color: ROLE_COLORS.moon, band: 0xf0c4dc, rim: 0xf6dceb, seed, bandScale: 3 },
         ring: { geometry: moonRing, material: ringMaterials.moon, tilt: 0 },
         halo: { color: ROLE_COLORS.moon, size: 2.4, alpha: 0.3 },
-        pull: { color: ROLE_COLORS.moon, alpha: 0.3, pattern: 1 },
+        pull: { color: ROLE_COLORS.moon, alpha: 0.3, pattern: PULL_PATTERN.dotted },
         spin: 0.6,
+        pulse: 0,
       };
     case 'black-hole':
       return {
         geometry: sphere,
-        surface: { color: PALETTE.black, band: PALETTE.black, rim: ROLE_COLORS.blackHoleRing, seed },
+        surface: {
+          color: PALETTE.black,
+          band: PALETTE.black,
+          rim: ROLE_COLORS.eventHorizon,
+          seed,
+          rimPower: 9,
+          rimStrength: 2.6,
+        },
         ring: { geometry: accretionRing, material: accretionMaterial, tilt: 0.22 },
-        halo: { color: ROLE_COLORS.blackHoleRing, size: 3.4, alpha: 0.28 },
-        pull: { color: ROLE_COLORS.blackHoleRing, alpha: 0.4, pattern: 0 },
+        halo: { color: ROLE_COLORS.blackHoleRing, size: 3.4, alpha: 0.3 },
+        pull: { color: ROLE_COLORS.blackHoleRing, alpha: 0.45, pattern: PULL_PATTERN.inward },
         spin: 0,
+        pulse: 0,
       };
     case 'repulsor':
       return {
         geometry: spikes,
-        surface: { color: ROLE_COLORS.repulsor, band: 0xdfefff, rim: ROLE_COLORS.repulsorRing, seed, bandScale: 2 },
+        surface: {
+          color: ROLE_COLORS.repulsor,
+          band: 0xdfefff,
+          rim: PALETTE.skyBlue,
+          seed,
+          bandScale: 2,
+          rimStrength: 1.8,
+        },
         ring: { geometry: repulsorRing, material: ringMaterials.repulsor, tilt: 0 },
-        halo: { color: ROLE_COLORS.repulsor, size: 2.8, alpha: 0.3 },
-        pull: { color: ROLE_COLORS.repulsorRing, alpha: 0.35, pattern: 2 },
+        halo: { color: ROLE_COLORS.repulsor, size: 3.2, alpha: 0.36 },
+        pull: { color: ROLE_COLORS.repulsorRing, alpha: 0.4, pattern: PULL_PATTERN.outward },
         spin: 0.8,
+        pulse: 0.07,
       };
   }
 }
@@ -176,7 +204,16 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
       mesh.rotation.y = t * style.spin;
       const p = root.position;
       HALOS.setPosition(halo, p.x, p.y, p.z);
-      HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state]);
+      if (style.pulse > 0) {
+        // The white star breathes: core, glow size and glow strength together.
+        const wave = Math.sin(t * PULSE_RATE);
+        const pulse = 1 + style.pulse * wave;
+        mesh.scale.setScalar(radius * STATE_SCALE[state] * pulse);
+        HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state] * pulse);
+        HALOS.setAlpha(halo, Math.min(1, style.halo.alpha * STATE_HALO[state] * (1 + 0.3 * wave)));
+      } else {
+        HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state]);
+      }
       PULL_RINGS.setPosition(pull, p.x, 0, p.z);
     },
     dispose() {
