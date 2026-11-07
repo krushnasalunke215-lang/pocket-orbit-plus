@@ -243,12 +243,21 @@ async function main() {
   );
 
   // 10. Hand tracking lost mid-hold (IWER: the hand input source disconnects).
-  // Informational: IWER ends the hold in the same frame, so the gate sees a
-  // hand tracked a frame ago and launches; a release more than 100 ms after
-  // tracking stopped cannot be produced here (see progress.md known issues).
+  // IWER ends the hold in the same frame the source disappears; the gate sees
+  // the holder hand missing on the release frame and snaps back (D1).
   const lost = await trackingLoss();
   summary.data.trackingLoss = lost;
-  check('tracking loss: disconnecting the hand ends the hold', lost.held && lost.heldWhileDisconnected === false, lost);
+  check(
+    'tracking loss mid-hold snaps back without a launch (D1)',
+    lost.held &&
+      lost.heldWhileDisconnected === false &&
+      lost.attemptsAfterLetGo === lost.attemptsBefore &&
+      lost.attemptsWhileDisconnected === lost.attemptsBefore &&
+      lost.placementsUnchanged &&
+      lost.phase === 'placing' &&
+      lost.snapBackError < 1e-4,
+    lost,
+  );
 
   // 11. Levels 2 and 3 by hand ray.
   const byHand = await solveLevelsByHand(levels);

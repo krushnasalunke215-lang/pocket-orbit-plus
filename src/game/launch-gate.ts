@@ -20,9 +20,18 @@ export interface ReleaseInfo {
  * tracking concept: null. In XR, `lastTrackedMs` is when the holding hand's
  * pose was last seen, or null when the hold never reported a hand; that
  * cannot prove tracking, so it counts as never tracked (Infinity).
+ * `handPresent` is false when the holding hand is known but its input source
+ * is gone on the release frame (tracking lost, which also ends the pinch):
+ * that release is never fresh, whatever the last pose time (Infinity).
  */
-export function trackingAge(immersive: boolean, lastTrackedMs: number | null, nowMs: number): number | null {
+export function trackingAge(
+  immersive: boolean,
+  lastTrackedMs: number | null,
+  nowMs: number,
+  handPresent = true,
+): number | null {
   if (!immersive) return null;
+  if (!handPresent) return Infinity;
   return lastTrackedMs === null ? Infinity : nowMs - lastTrackedMs;
 }
 

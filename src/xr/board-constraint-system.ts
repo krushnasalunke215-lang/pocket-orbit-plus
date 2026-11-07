@@ -46,8 +46,10 @@ const PREVIEW_STEP = 0.002;
  * the desktop, where the camera ray through the cursor meets the board plane
  * (so the planet sits under the cursor). The point is clamped to the disc
  * and drives the preview arc. On release the gate launches the comet only
- * if the release was over the board and the hand was tracked within the
- * last 100 ms; otherwise the planet snaps back to where it was.
+ * if the release was over the board, the holding hand's input source still
+ * exists on the release frame, and that hand was tracked within the last
+ * 100 ms; otherwise the planet snaps back to where it was. A hand that
+ * disappears (tracking lost) ends the pinch, so its release never launches.
  */
 export class BoardConstraintSystem extends createSystem({
   held: { required: [BoardBody, Grabbed] },
@@ -168,10 +170,13 @@ export class BoardConstraintSystem extends createSystem({
     // Check the release frame itself too, so one slow frame (> 100 ms) with
     // the hand still tracked does not count as lost tracking.
     if (immersive) this.recordTracking(entity, drag);
-    // The mouse has no tracking concept; a hand must be fresh, and an XR hold
-    // that never reported its hand counts as untracked (see trackingAge).
+    // The mouse has no tracking concept; a hand must be fresh, an XR hold
+    // that never reported its hand counts as untracked, and a known holder
+    // hand whose input source is gone on this frame counts as lost (see
+    // trackingAge).
     const lastTracked = drag.hand ? this.lastTracked[drag.hand] : null;
-    const msSinceTracked = trackingAge(immersive, lastTracked, performance.now());
+    const handPresent = drag.hand ? Boolean(this.input.xr.getPrimaryInputSource(drag.hand)) : true;
+    const msSinceTracked = trackingAge(immersive, lastTracked, performance.now(), handPresent);
 
     if (shouldLaunch({ overBoard, msSinceTracked })) {
       game.setPlacement(drag.bodyId, clampToDisc([drag.rawX, drag.rawZ]));

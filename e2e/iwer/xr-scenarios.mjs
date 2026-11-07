@@ -151,6 +151,7 @@ export async function trackingLoss() {
   xr('set-select-value', { device: DEVICE, value: 0 });
   await sleep(800);
   const after = snapshot();
+  const back = bodyOf(after, body.id).board;
   return {
     held: true,
     attemptsBefore: before.attempts,
@@ -161,6 +162,8 @@ export async function trackingLoss() {
     attemptsAfterLetGo: after.attempts,
     placementsUnchanged: samePlacements(after.placements, snap.placements),
     phase: after.phase,
+    boardAfterLetGo: round(back, 6),
+    snapBackError: round(Math.hypot(back[0] - body.board[0], back[2] - body.board[2]), 6),
   };
 }
 

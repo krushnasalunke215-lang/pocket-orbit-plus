@@ -43,4 +43,27 @@ describe('trackingAge', () => {
     expect(age).toBe(Infinity);
     expect(shouldLaunch({ overBoard: true, msSinceTracked: age })).toBe(false);
   });
+
+  it('snaps back when the holding hand is missing on the release frame', () => {
+    // Posed 10 ms ago, but the input source vanished on release (D1).
+    const age = trackingAge(true, 990, 1000, false);
+    expect(age).toBe(Infinity);
+    expect(shouldLaunch({ overBoard: true, msSinceTracked: age })).toBe(false);
+  });
+
+  it('keeps the age for a present hand posed 60 ms ago', () => {
+    const age = trackingAge(true, 940, 1000, true);
+    expect(age).toBe(60);
+    expect(shouldLaunch({ overBoard: true, msSinceTracked: age })).toBe(true);
+  });
+
+  it('snaps back for a present hand left unposed for 150 ms', () => {
+    const age = trackingAge(true, 850, 1000, true);
+    expect(age).toBe(150);
+    expect(shouldLaunch({ overBoard: true, msSinceTracked: age })).toBe(false);
+  });
+
+  it('ignores hand presence for the mouse', () => {
+    expect(trackingAge(false, null, 1000, false)).toBeNull();
+  });
 });
