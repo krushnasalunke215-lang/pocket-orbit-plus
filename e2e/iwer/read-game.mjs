@@ -22,6 +22,9 @@ const METHODS = new Set([
   'watchLaunch.start',
   'watchLaunch.read',
   'iwer.setPrimaryInputMode',
+  'iwer.setVisibility',
+  'saveNow',
+  'clearSave',
   'audio.state',
   'audio.events',
   'audio.expectedNotes',
@@ -63,6 +66,24 @@ export default async function run({ frame, page, workspaceRoot }) {
         if (!device) return { error: 'window.IWER_DEVICE is not installed' };
         device.primaryInputMode = args[0];
         return { value: device.primaryInputMode, perfNow: performance.now() };
+      }
+      // IWER's XR visibility ('visible' | 'visible-blurred' | 'hidden'). With
+      // { launch: true } it launches first in the same call, so a short
+      // flight cannot end during the CLI round trip.
+      if (method === 'iwer.setVisibility') {
+        const device = window.IWER_DEVICE;
+        if (!device) return { error: 'window.IWER_DEVICE is not installed' };
+        if (typeof device.updateVisibilityState !== 'function') {
+          return { error: 'IWER_DEVICE.updateVisibilityState is not a function' };
+        }
+        const launched = args[1]?.launch === true;
+        if (launched) game.launch();
+        device.updateVisibilityState(args[0]);
+        const s = game.snapshot();
+        return {
+          value: { state: args[0], launched, attempts: s.attempts, phase: s.phase, flightTime: s.flightTime },
+          perfNow: performance.now(),
+        };
       }
       const parts = method.split('.');
       const owner = parts.length === 2 ? game[parts[0]] : game;

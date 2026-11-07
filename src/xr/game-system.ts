@@ -3,7 +3,6 @@ import {
   DistanceGrabbable,
   MovementMode,
   RayInteractable,
-  VisibilityState,
 } from '@iwsdk/core';
 import { colliderLocalRadius } from '../game/board-math.js';
 import { GameController } from '../game/controller.js';
@@ -13,15 +12,18 @@ import { createTargetVisual } from '../render/target-visual.js';
 import { createTrailVisual } from '../render/trail-visual.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
 import { BoardBody } from './components.js';
-import { getBoard, setGame, setVisuals, type BoardRuntime, type GameVisuals } from './runtime.js';
+import { getBoard, getPause, setGame, setVisuals, type BoardRuntime, type GameVisuals } from './runtime.js';
+
+/** Most flight time (seconds) one frame may play back. */
+const MAX_TICK = 0.1;
 
 /**
  * Owns the GameController and the level's entities. Each body becomes an
  * entity under the board root; movable ones are grabbed with the built-in
  * ray / distance grab (RayInteractable + DistanceGrabbable MoveFromTarget),
  * which serves hand rays, near pinches (via the oversized collider), gaze
- * and the desktop mouse. Advances flight playback every frame, paused while
- * the XR session is blurred or hidden.
+ * and the desktop mouse. Advances flight playback every frame, except while
+ * paused (XR blurred or hidden, page hidden; see LifecycleSystem).
  */
 export class GameSystem extends createSystem({
   bodies: { required: [BoardBody] },
@@ -52,9 +54,9 @@ export class GameSystem extends createSystem({
 
   update(delta: number): void {
     if (this.game.levelRevision !== this.builtRevision) this.buildLevel();
-    const visibility = this.visibilityState.peek();
-    if (visibility === VisibilityState.VisibleBlurred || visibility === VisibilityState.Hidden) return;
-    this.game.tick(delta);
+    if (getPause(this.world).paused) return;
+    // A long frame (after a pause, a hitch) plays at most MAX_TICK of the flight.
+    this.game.tick(Math.min(delta, MAX_TICK));
   }
 
   /** Replaces the body entities with the current level's bodies. */

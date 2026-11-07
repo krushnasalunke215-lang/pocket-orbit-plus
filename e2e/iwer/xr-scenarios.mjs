@@ -477,4 +477,71 @@ export async function handsCdn() {
   };
 }
 
+/**
+ * XR visibility (F4): solve level 1 by hand ray, replay it and blur the
+ * session in the same page call (window.IWER_DEVICE.updateVisibilityState),
+ * then check the pause: reason, frozen flight time, suspended audio, and a
+ * hand-ray grab and release over the board that must not launch (IWER
+ * reports no input sources while the session is not 'visible', in which case
+ * the grab simply never happens). 'visible' then resumes the flight to its end.
+ */
+export async function visibilityPause() {
+  const { body } = await freshLevel(0);
+  const levels = game('levels').value;
+  xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+  const solve = await rayDrag(DEVICE, body.id, levels[0].solution[body.id]);
+  const audioBefore = game('audio.state').value;
+
+  const blur = game('iwer.setVisibility', 'visible-blurred', { launch: true }).value;
+  const paused = await waitFor('the pause after blurring', () => {
+    const s = snapshot();
+    return s.pause.paused ? s : null;
+  }, 10_000).catch(() => snapshot());
+  await sleep(1000);
+  const later = snapshot();
+  const audioBlurred = await waitFor('a suspended audio context', () => {
+    const a = game('audio.state').value;
+    return a.contextState === 'suspended' ? a : null;
+  }, 5000).catch(() => game('audio.state').value);
+
+  // A hand-ray grab of planet 1, carried over the board and released.
+  const p = bodyOf(snapshot(), body.id).world;
+  const grab = await rayGrab(DEVICE, p, (s) => bodyOf(s, body.id).held);
+  if (grab.held) await rayMoveTo(DEVICE, toWorld(paused.board, [0.1, 0, -0.2]), grab.distance);
+  await letGo(DEVICE);
+  await sleep(600);
+  const afterInput = snapshot();
+
+  game('iwer.setVisibility', 'visible');
+  const resumed = await waitFor('the resume', () => {
+    const s = snapshot();
+    return s.pause.paused ? null : s;
+  }, 10_000).catch(() => snapshot());
+  const end = await waitNotFlying(30_000).catch(() => snapshot());
+  const audioAfter = await waitFor('a running audio context', () => {
+    const a = game('audio.state').value;
+    return a.contextState === 'running' ? a : null;
+  }, 5000).catch(() => game('audio.state').value);
+
+  return {
+    solved: solve.solved,
+    blur,
+    paused: { paused: paused.pause.paused, reason: paused.pause.reason, phase: paused.phase, flightTime: round(paused.flightTime, 4), visibility: paused.session.visibility },
+    later: { phase: later.phase, flightTime: round(later.flightTime, 4) },
+    audio: { before: audioBefore.contextState, blurred: audioBlurred.contextState, after: audioAfter.contextState, unlocked: audioAfter.unlocked },
+    input: {
+      hovered: grab.hovered,
+      held: grab.held,
+      inputStopped: !grab.held && !grab.hovered.includes(`Body ${body.id}`),
+      attemptsBefore: blur.attempts,
+      attemptsAfter: afterInput.attempts,
+      phaseAfter: afterInput.phase,
+      flightTimeAfter: round(afterInput.flightTime, 4),
+      placementsUnchanged: samePlacements(afterInput.placements, paused.placements),
+    },
+    resumed: { paused: resumed.pause.paused, reason: resumed.pause.reason, visibility: resumed.session.visibility },
+    end: { phase: end.phase, attempts: end.attempts, flightTime: round(end.flightTime, 4), flightDuration: round(end.flightDuration, 4), lastOutcome: end.lastOutcome },
+  };
+}
+
 export { enterXR, exitXR };

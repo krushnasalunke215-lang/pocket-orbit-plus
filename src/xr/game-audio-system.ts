@@ -7,9 +7,11 @@ import { BoardBody } from './components.js';
 import {
   getBoard,
   getGame,
+  getPause,
   getSettings,
   getSettingsRevision,
   getVisuals,
+  onPauseChange,
   setAudio,
   type BoardRuntime,
 } from './runtime.js';
@@ -30,7 +32,8 @@ const SPEED_SMOOTHING = 8;
  * and the whoosh follows the comet. A solve replays the rung notes as a
  * phrase and closes on the chord; a failure plays the miss glide; picking up
  * and dropping a body ticks. Audio unlocks on the first pointerdown or
- * keydown, or when an XR session starts. Named GameAudioSystem so it does
+ * keydown, or when an XR session starts, and the context is suspended while
+ * the game is paused (see LifecycleSystem). Named GameAudioSystem so it does
  * not clash with IWSDK's built-in AudioSystem, which owns the listener on
  * the head. Every sound is recorded in the engine's event log.
  */
@@ -72,6 +75,9 @@ export class GameAudioSystem extends createSystem({
     this.cleanupFuncs.push(
       removeGestureListeners,
       () => xr.removeEventListener('sessionstart', onSessionStart),
+      // Pause (XR blurred or hidden, page hidden): suspend the context and
+      // silence the whoosh; resume only if audio was ever unlocked.
+      onPauseChange(this.world, (pause) => (pause.paused ? engine.suspend() : engine.resume())),
       this.queries.held.subscribe('qualify', (entity) => this.onHold(entity, true)),
       this.queries.held.subscribe('disqualify', (entity) => this.onHold(entity, false)),
     );
@@ -88,6 +94,8 @@ export class GameAudioSystem extends createSystem({
       engine.applySettings(getSettings(this.world));
       this.lastSettingsRevision = settingsRevision;
     }
+    // Paused: playback is frozen and the context suspended; keep the whoosh silent.
+    if (getPause(this.world).paused) return;
 
     if (game.flightId !== this.lastFlightId || game.levelRevision !== this.lastLevelRevision) {
       this.cursor = 0;

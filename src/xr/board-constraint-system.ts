@@ -12,7 +12,7 @@ import { clampToDisc, intersectRayWithBoardPlane } from '../game/board-math.js';
 import { isOverBoard, shouldLaunch, trackingAge } from '../game/launch-gate.js';
 import type { Vec2 } from '../sim/vec.js';
 import { BoardBody } from './components.js';
-import { getBoard, getGame } from './runtime.js';
+import { getBoard, getGame, getPause } from './runtime.js';
 
 type Hand = 'left' | 'right';
 
@@ -34,6 +34,8 @@ interface DragState {
   previewX: number;
   previewZ: number;
   hand: Hand | null;
+  /** The grab began while the game was paused (its release never launches). */
+  readonly grabbedWhilePaused: boolean;
 }
 
 const PREVIEW_STEP = 0.002;
@@ -50,6 +52,8 @@ const PREVIEW_STEP = 0.002;
  * exists on the release frame, and that hand was tracked within the last
  * 100 ms; otherwise the planet snaps back to where it was. A hand that
  * disappears (tracking lost) ends the pinch, so its release never launches.
+ * Nothing launches while the game is paused: such a release snaps back too,
+ * and a grab during a pause leaves the frozen flight alone.
  */
 export class BoardConstraintSystem extends createSystem({
   held: { required: [BoardBody, Grabbed] },
@@ -137,7 +141,9 @@ export class BoardConstraintSystem extends createSystem({
     const bodyId = entity.getValue(BoardBody, 'bodyId') as string;
     const committed = game.placements[bodyId];
     if (!committed) return;
-    if (game.phase !== 'placing') game.cancelFlight();
+    // While paused the frozen flight is kept, so it can play on after the resume.
+    const paused = getPause(this.world).paused;
+    if (game.phase !== 'placing' && !paused) game.cancelFlight();
     // The grab may already have moved the object this frame (GrabSystem
     // updates its handle before tagging Grabbed), so take the height from
     // the game, not from the object.
@@ -155,6 +161,7 @@ export class BoardConstraintSystem extends createSystem({
       previewX: committed[0],
       previewZ: committed[1],
       hand: null,
+      grabbedWhilePaused: paused,
     });
   }
 
@@ -178,7 +185,9 @@ export class BoardConstraintSystem extends createSystem({
     const handPresent = drag.hand ? Boolean(this.input.xr.getPrimaryInputSource(drag.hand)) : true;
     const msSinceTracked = trackingAge(immersive, lastTracked, performance.now(), handPresent);
 
-    if (shouldLaunch({ overBoard, msSinceTracked })) {
+    // Paused (or grabbed while paused): never launch; snap back like an untracked release.
+    const paused = drag.grabbedWhilePaused || getPause(this.world).paused;
+    if (!paused && shouldLaunch({ overBoard, msSinceTracked })) {
       game.setPlacement(drag.bodyId, clampToDisc([drag.rawX, drag.rawZ]));
       game.launch();
     } else {

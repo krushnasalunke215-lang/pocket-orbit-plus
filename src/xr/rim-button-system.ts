@@ -11,7 +11,7 @@ import {
 } from '@iwsdk/core';
 import { rimButtonPose } from '../game/hud-layout.js';
 import { BoardBody } from './components.js';
-import { getBoard, getGame, setRimButton, type RimButtonRuntime } from './runtime.js';
+import { getBoard, getGame, getPause, setRimButton, type RimButtonRuntime } from './runtime.js';
 
 /** Authored in Horizon kit pixel units like the HUD: 10 units = 1 cm. */
 const UNIT_SCALE = 0.1;
@@ -31,7 +31,8 @@ const FORWARD: readonly [number, number, number] = [0, 0, -1];
  * fingertip (PokeInteractable) and by hand rays, gaze and the mouse
  * (RayInteractable). A click launches unless a planet or the board handle is
  * held, so a poke with one hand never fires a flight mid-drag with the
- * other. The HUD keeps its own Launch/Replay button.
+ * other, or while the game is paused. The HUD keeps its own Launch/Replay
+ * button.
  */
 export class RimButtonSystem extends createSystem({
   heldBodies: { required: [BoardBody, Grabbed] },
@@ -70,7 +71,7 @@ export class RimButtonSystem extends createSystem({
 
   private onClick(): void {
     const game = getGame(this.world);
-    if (!game) return;
+    if (!game || getPause(this.world).paused) return;
     if (this.queries.heldBodies.entities.size > 0) return;
     if (getBoard(this.world)?.handleEntity.hasComponent(Grabbed)) return;
     game.launch();

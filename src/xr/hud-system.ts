@@ -12,7 +12,7 @@ import { APP_NAME } from '../config.js';
 import type { GameController, GamePhase } from '../game/controller.js';
 import { hudPose } from '../game/hud-layout.js';
 import type { SimOutcome } from '../sim/bodies.js';
-import { getBoard, getGame, setHud } from './runtime.js';
+import { getBoard, getGame, getPause, setHud } from './runtime.js';
 import { detectXRSupport, enterXR, type XRSupport } from './session.js';
 
 /** The UIKitML is authored in Horizon kit pixel units: 10 units = 1 cm. */
@@ -89,7 +89,10 @@ export class HudSystem extends createSystem({}) {
     const element = (id: string) => panel.requireElementById<UIKit.Text>(id);
     const onClick = (id: string, action: () => void) => {
       const target = element(id);
-      const listener = () => action();
+      // Clicks are ignored while paused (XR blurred or hidden, page hidden).
+      const listener = () => {
+        if (!getPause(this.world).paused) action();
+      };
       target.addEventListener('click', listener);
       this.cleanupFuncs.push(() => target.removeEventListener('click', listener));
       return target;

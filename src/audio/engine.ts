@@ -230,6 +230,23 @@ export class AudioEngine {
     this.padGain.gain.linearRampToValueAtTime(PAD_LEVEL, t + PAD_FADE_SECONDS);
   }
 
+  /** Pause: silences the whoosh at once and suspends the context. */
+  suspend(): void {
+    const t = this.context.currentTime;
+    this.whooshGain.gain.cancelScheduledValues(t);
+    this.whooshGain.gain.setValueAtTime(0, t);
+    this.whooshOn = false;
+    // Unconditional (not only when 'running'): the context queues suspend and
+    // resume in call order, so a quick pause/resume pair still ends running.
+    if (this.context.state !== 'closed') void this.context.suspend().catch(() => undefined);
+  }
+
+  /** Resume after a pause; does nothing before unlock() (no sound before a gesture). */
+  resume(): void {
+    if (!this.isUnlocked || this.context.state === 'closed') return;
+    void this.context.resume().catch(() => undefined);
+  }
+
   setMuted(muted: boolean): void {
     this.muted = muted;
     this.applyMaster();

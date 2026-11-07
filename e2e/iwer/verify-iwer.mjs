@@ -5,7 +5,8 @@
 // real-object probes), gate (off-board snap-back), near-pinch, tracking (hand
 // lost mid-hold), levels (2-3 by hand), handle (the board handle), rim (the
 // near-rim Launch button), audio (context running in XR, flyby and chord
-// events after a hand solve), hands-cdn (hand models from our own origin) and
+// events after a hand solve), visibility (visible-blurred pauses the flight
+// and audio), hands-cdn (hand models from our own origin) and
 // vr (the immersive-vr fallback, also from a fresh desktop page).
 // Setup, placement and the runtime teardown always run; the runtime is always
 // stopped.
@@ -38,6 +39,7 @@ import {
   rimButton,
   solveLevelsByHand,
   trackingLoss,
+  visibilityPause,
   vrFromFreshPage,
   vrStarfield,
 } from './xr-scenarios.mjs';
@@ -65,6 +67,7 @@ const GROUPS = [
   'handle',
   'rim',
   'audio',
+  'visibility',
   'hands-cdn',
   'vr',
 ];
@@ -430,7 +433,46 @@ const GROUP_RUNNERS = {
     );
   },
 
-  // 15. Hand models from our own origin (D3) in an immersive-ar hands session.
+  // 15. XR visibility (F4): visible-blurred pauses the flight and the audio,
+  // nothing launches while blurred, and 'visible' plays the flight to its end.
+  async visibility() {
+    await seat();
+    const v = await visibilityPause();
+    summary.data.visibility = v;
+    check('visibility: level-1 solve by hand ray, then a replay', v.solved && v.blur.launched && v.blur.phase === 'flying', { solved: v.solved, blur: v.blur });
+    check(
+      "visibility: visible-blurred pauses with reason 'xr-blurred'",
+      v.paused.paused && v.paused.reason === 'xr-blurred' && v.paused.visibility === 'visible-blurred',
+      v.paused,
+    );
+    check(
+      'visibility: flight time frozen for 1 s while blurred',
+      v.paused.phase === 'flying' && v.later.phase === 'flying' && v.later.flightTime === v.paused.flightTime,
+      { paused: v.paused.flightTime, later: v.later.flightTime },
+    );
+    check('visibility: audio context suspended while blurred', v.audio.before === 'running' && v.audio.blurred === 'suspended', v.audio);
+    check(
+      'visibility: no launch while blurred (input stops, or the release snaps back)',
+      v.input.attemptsAfter === v.input.attemptsBefore &&
+        v.input.phaseAfter === 'flying' &&
+        v.input.flightTimeAfter === v.paused.flightTime &&
+        v.input.placementsUnchanged &&
+        (v.input.inputStopped || v.input.held),
+      v.input,
+    );
+    check(
+      "visibility: 'visible' resumes the flight to its end",
+      !v.resumed.paused &&
+        v.resumed.reason === 'none' &&
+        v.end.phase === 'solved' &&
+        v.end.attempts === v.blur.attempts &&
+        Math.abs(v.end.flightTime - v.end.flightDuration) < 1e-6,
+      { resumed: v.resumed, end: v.end },
+    );
+    check('visibility: audio context running again after the resume', v.audio.after === 'running', v.audio);
+  },
+
+  // 16. Hand models from our own origin (D3) in an immersive-ar hands session.
   async 'hands-cdn'() {
     const r = await handsCdn();
     summary.data.handsCdn = r;
@@ -441,7 +483,7 @@ const GROUP_RUNNERS = {
     check('hands-cdn: right hand visual loaded', r.handVisuals?.right === true, r.handVisuals);
   },
 
-  // 16. The immersive-vr fallback: opaque session with the starfield, then
+  // 17. The immersive-vr fallback: opaque session with the starfield, then
   // VR from a fresh desktop page (R5).
   async vr() {
     const vr = await vrStarfield(() => screenshot('iwer-vr-starfield.png'));
