@@ -24,6 +24,11 @@ const SWIFTSHADER = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '
 /** Vendored @webxr-input-profiles/assets 1.0.20 generic-hand models (byte sizes). */
 const VENDOR = 'vendor/webxr-input-profiles/generic-hand/';
 const EXPECTED_BYTES = { 'left.glb': 94_572, 'right.glb': 94_004 };
+/** The package LICENSE sits one level above generic-hand/ (public/vendor/webxr-input-profiles/). */
+const LICENSE = 'vendor/webxr-input-profiles/LICENSE.md';
+const LICENSE_TEXT = ['MIT License', 'Copyright (c) 2019 Amazon'];
+/** vite preview answers a missing file with index.html and status 200 (SPA fallback). */
+const looksLikeIndexHtml = (text) => /^\s*<!doctype html/i.test(text);
 
 const failures = [];
 const results = { pages: [], assets: [] };
@@ -124,17 +129,21 @@ async function checkPage(browser, url, { debug }) {
 
 async function checkAssets(api) {
   const ui = readdirSync(path.join(ROOT, 'public', 'ui')).filter((f) => f.endsWith('.uikitml'));
-  const files = [...Object.keys(EXPECTED_BYTES).map((f) => VENDOR + f), `${VENDOR}LICENSE.md`, ...ui.map((f) => `ui/${f}`)];
+  const files = [...Object.keys(EXPECTED_BYTES).map((f) => VENDOR + f), LICENSE, ...ui.map((f) => `ui/${f}`)];
   for (const file of files) {
     const url = `${SITE}${file}`;
     const r = await api.get(url);
-    const bytes = (await r.body()).length;
+    const body = await r.body();
+    const bytes = body.length;
     const name = path.posix.basename(file);
     const expected = file.startsWith(VENDOR) ? EXPECTED_BYTES[name] : undefined;
+    const text = file.endsWith('.glb') ? '' : body.toString('utf8');
     results.assets.push({ file, status: r.status(), bytes, expected: expected ?? null });
     if (r.status() !== 200) fail(`${url}: status ${r.status()}`);
+    else if (looksLikeIndexHtml(text)) fail(`${url}: served index.html (file missing under the base path)`);
     else if (expected !== undefined && bytes !== expected) fail(`${url}: ${bytes} bytes, expected ${expected}`);
     else if (bytes === 0) fail(`${url}: empty`);
+    else if (file === LICENSE && !LICENSE_TEXT.every((t) => text.includes(t))) fail(`${url}: not the MIT license text`);
   }
 }
 
