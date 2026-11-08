@@ -1,5 +1,13 @@
 import { Color, DoubleSide, ShaderMaterial } from '@iwsdk/core';
-import { SHARED_TIME } from './common.js';
+import {
+  linkOcclusion,
+  OCCLUSION_FRAGMENT,
+  OCCLUSION_FRAGMENT_PARS,
+  OCCLUSION_VERTEX,
+  OCCLUSION_VERTEX_PARS,
+  SHARED_TIME,
+  withOcclusion,
+} from './common.js';
 
 /*
  * Flat body rings drawn on a RingGeometry lying in local XZ. The pattern
@@ -11,11 +19,12 @@ export const RING_PATTERN = { solid: 0, dotted: 1, dashedOutward: 2 } as const;
 export type RingPattern = (typeof RING_PATTERN)[keyof typeof RING_PATTERN];
 
 /** GLSL vertex: passes the ring-local XZ so the fragment can compute radius and angle. */
-const vertexShader = /* glsl */ `
+const vertexShader = /* glsl */ `${OCCLUSION_VERTEX_PARS}
 varying vec2 vLocal;
 void main() {
   vLocal = position.xz;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  ${OCCLUSION_VERTEX}
 }
 `;
 
@@ -23,7 +32,7 @@ void main() {
  * GLSL fragment: radial position t in [0, 1] across the band, angular
  * dashes/dots by pattern, soft band edges.
  */
-const fragmentShader = /* glsl */ `
+const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uInner;
@@ -33,6 +42,7 @@ uniform float uTime;
 varying vec2 vLocal;
 const float TAU = 6.28318530718;
 void main() {
+  ${OCCLUSION_FRAGMENT}
   float r = length(vLocal);
   float t = clamp((r - uInner) / (uOuter - uInner), 0.0, 1.0);
   float a = atan(vLocal.y, vLocal.x) / TAU + 0.5;
@@ -59,14 +69,14 @@ void main() {
 
 const ringTemplate = new ShaderMaterial({
   name: 'BodyRing',
-  uniforms: {
+  uniforms: withOcclusion({
     uColor: { value: new Color(0xffffff) },
     uOpacity: { value: 0.8 },
     uInner: { value: 1.4 },
     uOuter: { value: 1.9 },
     uPattern: { value: 0 },
     uTime: SHARED_TIME,
-  },
+  }),
   vertexShader,
   fragmentShader,
   transparent: true,
@@ -83,7 +93,7 @@ export function createRingMaterial(
   outer: number,
   opacity = 0.8,
 ): ShaderMaterial {
-  const material = ringTemplate.clone();
+  const material = linkOcclusion(ringTemplate.clone());
   material.uniforms.uTime = SHARED_TIME;
   (material.uniforms.uColor.value as Color).setHex(color);
   material.uniforms.uPattern.value = pattern;

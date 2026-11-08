@@ -1,5 +1,12 @@
 import { AdditiveBlending, ShaderMaterial } from '@iwsdk/core';
-import { SHARED_TIME } from './common.js';
+import {
+  OCCLUSION_FRAGMENT,
+  OCCLUSION_FRAGMENT_PARS,
+  OCCLUSION_VERTEX,
+  OCCLUSION_VERTEX_PARS,
+  SHARED_TIME,
+  withOcclusion,
+} from './common.js';
 
 /*
  * Pull rings: instanced flat quads lying on the board, each drawing a thin
@@ -17,7 +24,7 @@ import { SHARED_TIME } from './common.js';
 export const PULL_PATTERN = { solid: 0, dotted: 1, outward: 2, inward: 3 } as const;
 
 /** GLSL vertex: scales the unit quad (XZ) by the ring radius and moves it to the body. */
-const vertexShader = /* glsl */ `
+const vertexShader = /* glsl */ `${OCCLUSION_VERTEX_PARS}
 attribute vec3 aOffset;
 attribute float aSize;
 attribute vec3 aColor;
@@ -36,6 +43,7 @@ void main() {
   vRadius = aSize;
   vec3 p = aOffset + position * aSize;
   gl_Position = aSize > 0.0 ? projectionMatrix * modelViewMatrix * vec4(p, 1.0) : vec4(0.0, 0.0, 2.0, 1.0);
+  ${OCCLUSION_VERTEX}
 }
 `;
 
@@ -44,7 +52,7 @@ void main() {
  * well; patterns 2 and 3 add concentric ripples whose phase 4r -/+ 0.6t
  * moves them outward (2) or inward (3).
  */
-const fragmentShader = /* glsl */ `
+const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform float uTime;
 varying vec2 vLocal;
 varying vec3 vColor;
@@ -53,6 +61,7 @@ varying float vPattern;
 varying float vRadius;
 const float TAU = 6.28318530718;
 void main() {
+  ${OCCLUSION_FRAGMENT}
   float r = length(vLocal);
   if (r > 1.0) discard;
   float width = 0.006 / max(vRadius, 1e-4);
@@ -82,7 +91,7 @@ void main() {
 /** Shared pull-ring material (one per module). */
 export const pullRingMaterial = new ShaderMaterial({
   name: 'PullRing',
-  uniforms: { uTime: SHARED_TIME },
+  uniforms: withOcclusion({ uTime: SHARED_TIME }),
   vertexShader,
   fragmentShader,
   transparent: true,

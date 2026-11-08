@@ -1,5 +1,12 @@
 import { Color, ShaderMaterial } from '@iwsdk/core';
 import { ROLE_COLORS } from '../palette.js';
+import {
+  OCCLUSION_FRAGMENT,
+  OCCLUSION_FRAGMENT_PARS,
+  OCCLUSION_VERTEX,
+  OCCLUSION_VERTEX_PARS,
+  withOcclusion,
+} from './common.js';
 
 /*
  * Holographic board disc: a dark translucent glass disc in the board's XZ
@@ -9,7 +16,7 @@ import { ROLE_COLORS } from '../palette.js';
  */
 
 /** GLSL vertex: passes the disc-local XZ, the world position and the world up axis. */
-const vertexShader = /* glsl */ `
+const vertexShader = /* glsl */ `${OCCLUSION_VERTEX_PARS}
 varying vec2 vLocal;
 varying vec3 vWorldPos;
 varying vec3 vUp;
@@ -19,11 +26,12 @@ void main() {
   vWorldPos = world.xyz;
   vUp = normalize((modelMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
   gl_Position = projectionMatrix * viewMatrix * world;
+  ${OCCLUSION_VERTEX}
 }
 `;
 
 /** GLSL fragment: gradient glass + guide rings + rim band/glow + fresnel lift. */
-const fragmentShader = /* glsl */ `
+const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform vec3 uBase;
 uniform vec3 uRim;
 uniform float uOpacity;
@@ -36,6 +44,7 @@ float ringLine(float r, float at, float width) {
 }
 
 void main() {
+  ${OCCLUSION_FRAGMENT}
   float r = length(vLocal);
   float inside = 1.0 - smoothstep(0.985, 0.995, r);
 
@@ -69,11 +78,11 @@ void main() {
 /** The one board material (created once per module). */
 export const boardMaterial = new ShaderMaterial({
   name: 'BoardGlass',
-  uniforms: {
+  uniforms: withOcclusion({
     uBase: { value: new Color(ROLE_COLORS.board) },
     uRim: { value: new Color(ROLE_COLORS.boardRim) },
     uOpacity: { value: 0.55 },
-  },
+  }),
   vertexShader,
   fragmentShader,
   transparent: true,

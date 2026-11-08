@@ -1,6 +1,7 @@
 import {
   CapsuleGeometry,
   createSystem,
+  DepthOccludable,
   DistanceGrabbable,
   DoubleSide,
   Grabbed,
@@ -8,6 +9,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MovementMode,
+  OcclusionShadersMode,
   Quaternion,
   RayInteractable,
   Vector3,
@@ -70,6 +72,8 @@ export class BoardPlacementSystem extends createSystem({
     const boardEntity = this.world.createTransformEntity(new Group());
     boardEntity.object3D!.name = 'BoardRoot';
     boardEntity.object3D!.add(createBoardVisual().root);
+    // The board root's materials share the occlusion uniforms (src/render/shaders/common.ts).
+    boardEntity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.HardOcclusion });
 
     const handleRoot = new Group();
     handleRoot.name = 'BoardHandle';

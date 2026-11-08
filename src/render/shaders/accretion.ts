@@ -1,6 +1,14 @@
 import { AdditiveBlending, Color, DoubleSide, ShaderMaterial } from '@iwsdk/core';
 import { PALETTE } from '../palette.js';
-import { NOISE_GLSL, SHARED_TIME } from './common.js';
+import {
+  NOISE_GLSL,
+  OCCLUSION_FRAGMENT,
+  OCCLUSION_FRAGMENT_PARS,
+  OCCLUSION_VERTEX,
+  OCCLUSION_VERTEX_PARS,
+  SHARED_TIME,
+  withOcclusion,
+} from './common.js';
 
 /*
  * Black-hole accretion disc (reads as danger): a thick flat ring of noise
@@ -14,11 +22,12 @@ export const ACCRETION_INNER = 1.15;
 export const ACCRETION_OUTER = 2.6;
 
 /** GLSL vertex: ring-local XZ for polar coordinates. */
-const vertexShader = /* glsl */ `
+const vertexShader = /* glsl */ `${OCCLUSION_VERTEX_PARS}
 varying vec2 vLocal;
 void main() {
   vLocal = position.xz;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  ${OCCLUSION_VERTEX}
 }
 `;
 
@@ -28,7 +37,7 @@ void main() {
  * 3a + 1.6 ln r + 0.5 t is constant along each arm, so as time grows an arm
  * moves to smaller r (inward). Inner-to-outer color and brightness falloff.
  */
-const fragmentShader = /* glsl */ `
+const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform vec3 uHot;
 uniform vec3 uCool;
 uniform float uInner;
@@ -38,6 +47,7 @@ varying vec2 vLocal;
 ${NOISE_GLSL}
 const float TAU = 6.28318530718;
 void main() {
+  ${OCCLUSION_FRAGMENT}
   float r = length(vLocal);
   float t = clamp((r - uInner) / (uOuter - uInner), 0.0, 1.0);
   float a = atan(vLocal.y, vLocal.x) / TAU;
@@ -57,13 +67,13 @@ void main() {
 /** Shared by every black hole (created once per module). */
 export const accretionMaterial = new ShaderMaterial({
   name: 'Accretion',
-  uniforms: {
+  uniforms: withOcclusion({
     uHot: { value: new Color(PALETTE.yellow) },
     uCool: { value: new Color(PALETTE.vermillion) },
     uInner: { value: ACCRETION_INNER },
     uOuter: { value: ACCRETION_OUTER },
     uTime: SHARED_TIME,
-  },
+  }),
   vertexShader,
   fragmentShader,
   transparent: true,

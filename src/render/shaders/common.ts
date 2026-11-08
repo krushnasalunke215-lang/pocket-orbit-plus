@@ -1,9 +1,134 @@
-import type { BufferAttribute, IUniform } from '@iwsdk/core';
+import { Vector2, type BufferAttribute, type IUniform, type Material, type ShaderMaterial, type Texture } from '@iwsdk/core';
 
 /*
  * Shared shader pieces. Every animated material references SHARED_TIME, so
  * one write per frame (from the visuals' update(t)) drives all of them.
  */
+
+/**
+ * Depth-occlusion uniforms, shared by every custom material (the same
+ * objects, like SHARED_TIME). IWSDK's DepthSensingSystem writes these names
+ * each frame into the uniforms of DepthOccludable entities' materials; its
+ * own shader patch replaces built-in three chunks that these ShaderMaterials
+ * do not contain, so it skips materials that already declare
+ * `occlusionEnabled` and only updates the values. Because the objects are
+ * shared, one occludable entity (the board root) keeps all of them current.
+ * Every name the system writes or clears must exist here.
+ */
+export const OCCLUSION_UNIFORMS = {
+  occlusionEnabled: { value: false } as IUniform<boolean>,
+  uXRDepthTextureArray: { value: null } as IUniform<Texture | null>,
+  uRawValueToMeters: { value: 0.001 } as IUniform<number>,
+  uIsGPUDepth: { value: false } as IUniform<boolean>,
+  uDepthNear: { value: 0 } as IUniform<number>,
+  uViewportSize: { value: new Vector2() } as IUniform<Vector2>,
+  uOcclusionBlurRadius: { value: 20 } as IUniform<number>,
+  uOcclusionHardMode: { value: false } as IUniform<boolean>,
+  uOcclusionMinMaxMode: { value: false } as IUniform<boolean>,
+  uMinMaxTexture0: { value: null } as IUniform<Texture | null>,
+  uMinMaxTexture1: { value: null } as IUniform<Texture | null>,
+};
+
+/** `uniforms` plus the shared occlusion uniforms (for a ShaderMaterial's `uniforms`). */
+export function withOcclusion<T extends Record<string, IUniform>>(uniforms: T): T & typeof OCCLUSION_UNIFORMS {
+  return { ...uniforms, ...OCCLUSION_UNIFORMS };
+}
+
+/** Re-links the shared occlusion uniforms after material.clone() deep-copied them. */
+export function linkOcclusion(material: ShaderMaterial): ShaderMaterial {
+  Object.assign(material.uniforms, OCCLUSION_UNIFORMS);
+  return material;
+}
+
+/** GLSL vertex declarations of the occlusion chunk. */
+export const OCCLUSION_VERTEX_PARS = /* glsl */ `
+varying float vOcclusionViewDepth;
+`;
+
+/**
+ * GLSL vertex statement, after gl_Position is written: for a perspective
+ * projection clip w is the view-space distance along -Z, which is what the
+ * depth texture stores.
+ */
+export const OCCLUSION_VERTEX = /* glsl */ `
+vOcclusionViewDepth = gl_Position.w;
+`;
+
+/**
+ * GLSL fragment declarations: the uniform names DepthSensingSystem writes,
+ * and po_occluded(), a hard single-sample test like IWSDK's
+ * OcclusionGetSample, but with a distance-scaled margin (about 5.5 cm at
+ * 1.15 m): IWSDK's test
+ * (smoothstep over 5 cm, hidden below 1%) hid the whole board in IWER,
+ * because the table it lies on is within a few millimeters of it, and a
+ * fixed 2 cm margin still cut the board into bands there.
+ * With occlusionEnabled false (no depth data, occlusion off, desktop) it
+ * returns false before touching the texture.
+ */
+export const OCCLUSION_FRAGMENT_PARS = /* glsl */ `
+uniform bool occlusionEnabled;
+uniform float uRawValueToMeters;
+uniform bool uIsGPUDepth;
+uniform float uDepthNear;
+uniform vec2 uViewportSize;
+uniform sampler2DArray uXRDepthTextureArray;
+varying float vOcclusionViewDepth;
+#ifndef VIEW_ID
+#define VIEW_ID 0
+#endif
+// The board lies on the table 4 mm up: a fragment is hidden only when the
+// real surface is PO_OCCLUSION_BIAS + PO_OCCLUSION_BIAS_PER_M * distance
+// (meters) in front of it, so the table under the board never hides it
+// (depth error grows with distance; IWER's depth steps by several cm at
+// table range) while a cup standing on it still does.
+#define PO_OCCLUSION_BIAS 0.02
+#define PO_OCCLUSION_BIAS_PER_M 0.03
+float po_depthMeters(vec2 uv) {
+  float raw = texture(uXRDepthTextureArray, vec3(uv.x, uv.y, float(VIEW_ID))).r;
+  if (uIsGPUDepth) return uRawValueToMeters * uDepthNear / (1.0 - raw);
+  return raw * uRawValueToMeters;
+}
+bool po_occluded() {
+  if (!occlusionEnabled) return false;
+  vec2 screenUV = gl_FragCoord.xy / uViewportSize;
+  vec2 depthUV = uIsGPUDepth ? screenUV : vec2(screenUV.x, 1.0 - screenUV.y);
+  float bias = PO_OCCLUSION_BIAS + PO_OCCLUSION_BIAS_PER_M * vOcclusionViewDepth;
+  return po_depthMeters(depthUV) < vOcclusionViewDepth - bias;
+}
+`;
+
+/**
+ * Gives a built-in material (MeshBasicMaterial and the like) this module's
+ * occlusion chunk and shared uniforms, so DepthSensingSystem's own patch
+ * (which has no bias) skips it and it is occluded exactly like the custom
+ * shaders. Call once per module material.
+ */
+export function occludeBuiltin<M extends Material>(material: M): M {
+  material.onBeforeCompile = (shader: OcclusionShader) => {
+    Object.assign(shader.uniforms, OCCLUSION_UNIFORMS);
+    shader.vertexShader = OCCLUSION_VERTEX_PARS + shader.vertexShader.replace(
+      '#include <project_vertex>',
+      '#include <project_vertex>\nvOcclusionViewDepth = -mvPosition.z;',
+    );
+    shader.fragmentShader = OCCLUSION_FRAGMENT_PARS + shader.fragmentShader.replace(
+      'void main() {',
+      `void main() {\n${OCCLUSION_FRAGMENT}`,
+    );
+  };
+  return material;
+}
+
+/** The parts of three's onBeforeCompile shader object occludeBuiltin edits. */
+export interface OcclusionShader {
+  uniforms: { [name: string]: IUniform };
+  vertexShader: string;
+  fragmentShader: string;
+}
+
+/** GLSL fragment statement, first in main(): drops fragments behind real surfaces. */
+export const OCCLUSION_FRAGMENT = /* glsl */ `
+if (po_occluded()) discard;
+`;
 
 /** Seconds; written by the visuals' update(t) calls each frame. */
 export const SHARED_TIME: IUniform<number> = { value: 0 };

@@ -12,7 +12,7 @@ import {
 } from '@iwsdk/core';
 import { HALOS } from './halo-sprites.js';
 import { ROLE_COLORS } from './palette.js';
-import { markRange, noRaycast, setSharedTime } from './shaders/common.js';
+import { markRange, noRaycast, occludeBuiltin, setSharedTime } from './shaders/common.js';
 import { tailMaterial } from './shaders/tail.js';
 import type { CometVisual } from './visual-types.js';
 
@@ -33,13 +33,13 @@ const HALO_SIZE = 0.17;
 const HALO_ALPHA = 0.6;
 
 const headGeometry = new SphereGeometry(0.026, 16, 12);
-const headMaterial = new MeshBasicMaterial({
+const headMaterial = occludeBuiltin(new MeshBasicMaterial({
   color: ROLE_COLORS.comet,
   transparent: true,
   blending: AdditiveBlending,
   depthWrite: false,
   toneMapped: false,
-});
+}));
 
 /** Deterministic jitter source (mulberry32). */
 function mulberry32(seed: number): () => number {

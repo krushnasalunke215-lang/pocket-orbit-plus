@@ -9,7 +9,7 @@ import {
 } from '@iwsdk/core';
 import { HALOS } from './halo-sprites.js';
 import { PALETTE, ROLE_COLORS } from './palette.js';
-import { noRaycast, setSharedTime } from './shaders/common.js';
+import { noRaycast, occludeBuiltin, setSharedTime } from './shaders/common.js';
 import type { TargetVisual } from './visual-types.js';
 
 // Target: a thin yellow ring at the capture radius and a five-point star
@@ -30,20 +30,20 @@ function starShape(points: number, outer: number, inner: number): Shape {
 
 const ringGeometry = new RingGeometry(0.92, 1, 64).rotateX(-Math.PI / 2);
 const starGeometry = new ShapeGeometry(starShape(5, 0.62, 0.25)).rotateX(-Math.PI / 2);
-const ringMaterial = new MeshBasicMaterial({
+const ringMaterial = occludeBuiltin(new MeshBasicMaterial({
   color: ROLE_COLORS.target,
   transparent: true,
   opacity: 0.75,
   depthWrite: false,
   toneMapped: false,
-});
-const starMaterial = new MeshBasicMaterial({
+}));
+const starMaterial = occludeBuiltin(new MeshBasicMaterial({
   color: ROLE_COLORS.target,
   transparent: true,
   blending: AdditiveBlending,
   depthWrite: false,
   toneMapped: false,
-});
+}));
 
 const HALO_IDLE = 2.4;
 const HALO_SOLVED = 4.2;

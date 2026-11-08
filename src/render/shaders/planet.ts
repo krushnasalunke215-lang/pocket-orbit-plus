@@ -1,5 +1,14 @@
 import { Color, ShaderMaterial } from '@iwsdk/core';
-import { NOISE_GLSL, SHARED_TIME } from './common.js';
+import {
+  linkOcclusion,
+  NOISE_GLSL,
+  OCCLUSION_FRAGMENT,
+  OCCLUSION_FRAGMENT_PARS,
+  OCCLUSION_VERTEX,
+  OCCLUSION_VERTEX_PARS,
+  SHARED_TIME,
+  withOcclusion,
+} from './common.js';
 
 /*
  * Body surface: unlit fresnel-rim shading with procedural latitude bands.
@@ -8,7 +17,7 @@ import { NOISE_GLSL, SHARED_TIME } from './common.js';
  */
 
 /** GLSL vertex: world normal and position for the fresnel term, object position for the bands. */
-const vertexShader = /* glsl */ `
+const vertexShader = /* glsl */ `${OCCLUSION_VERTEX_PARS}
 varying vec3 vNormalW;
 varying vec3 vWorldPos;
 varying vec3 vLocal;
@@ -18,6 +27,7 @@ void main() {
   vWorldPos = world.xyz;
   vNormalW = normalize(mat3(modelMatrix) * normal);
   gl_Position = projectionMatrix * viewMatrix * world;
+  ${OCCLUSION_VERTEX}
 }
 `;
 
@@ -25,7 +35,7 @@ void main() {
  * GLSL fragment: latitude bands from warped value noise (slowly drifting),
  * a soft fake key light from above, and a fresnel rim pow(1 - N.V, 3).
  */
-const fragmentShader = /* glsl */ `
+const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform vec3 uColor;
 uniform vec3 uBandColor;
 uniform vec3 uRimColor;
@@ -39,6 +49,7 @@ varying vec3 vWorldPos;
 varying vec3 vLocal;
 ${NOISE_GLSL}
 void main() {
+  ${OCCLUSION_FRAGMENT}
   vec3 N = normalize(vNormalW);
   vec3 V = normalize(cameraPosition - vWorldPos);
 
@@ -64,7 +75,7 @@ void main() {
 /** Template material; clone it per body and set the colors and seed. */
 export const planetMaterial = new ShaderMaterial({
   name: 'BodySurface',
-  uniforms: {
+  uniforms: withOcclusion({
     uColor: { value: new Color(0xffffff) },
     uBandColor: { value: new Color(0xffffff) },
     uRimColor: { value: new Color(0xffffff) },
@@ -73,7 +84,7 @@ export const planetMaterial = new ShaderMaterial({
     uBandScale: { value: 6 },
     uRimPower: { value: 3 },
     uRimStrength: { value: 1.3 },
-  },
+  }),
   vertexShader,
   fragmentShader,
   toneMapped: false,
@@ -93,7 +104,7 @@ export interface SurfaceColors {
 
 /** Per-body clone sharing the program and the clock. */
 export function createSurfaceMaterial(colors: SurfaceColors): ShaderMaterial {
-  const material = planetMaterial.clone();
+  const material = linkOcclusion(planetMaterial.clone());
   material.uniforms.uTime = SHARED_TIME;
   (material.uniforms.uColor.value as Color).setHex(colors.color);
   (material.uniforms.uBandColor.value as Color).setHex(colors.band);

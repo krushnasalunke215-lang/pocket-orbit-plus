@@ -1,4 +1,4 @@
-import { createSystem } from '@iwsdk/core';
+import { createSystem, DepthSensingSystem } from '@iwsdk/core';
 import { setRenderStats, type RenderCounts, type RenderStats } from './runtime.js';
 
 function zero(counts: RenderCounts): void {
@@ -13,16 +13,21 @@ function zero(counts: RenderCounts): void {
  * renderer.info.autoReset (true by default) the counters are cleared at the
  * start of each render, so in update(), which runs before this frame's
  * render, they hold the previous frame's totals (both eyes in stereo XR).
- * Copies them into preallocated last/max records; never allocates.
+ * Copies them into preallocated last/max records; never allocates. Also
+ * counts the frames on which DepthSensingSystem (registered before this,
+ * with a lower priority) received XR depth data.
  */
 export class RenderStatsSystem extends createSystem({}) {
   private stats!: RenderStats;
+  private depth: DepthSensingSystem | undefined;
 
   init(): void {
+    this.depth = this.world.getSystem(DepthSensingSystem);
     this.stats = {
       last: { calls: 0, triangles: 0, points: 0, lines: 0 },
       max: { calls: 0, triangles: 0, points: 0, lines: 0 },
       frames: 0,
+      depthFrames: 0,
       programs: 0,
       geometries: 0,
       textures: 0,
@@ -30,12 +35,15 @@ export class RenderStatsSystem extends createSystem({}) {
       reset: () => {
         zero(this.stats.max);
         this.stats.frames = 0;
+        this.stats.depthFrames = 0;
       },
     };
     setRenderStats(this.world, this.stats);
   }
 
   update(): void {
+    const depth = this.depth;
+    if (depth && (depth.gpuDepthData.length > 0 || depth.cpuDepthData.length > 0)) this.stats.depthFrames++;
     const info = this.world.renderer.info;
     const render = info.render;
     if (render.calls === 0 && render.triangles === 0) return; // nothing rendered yet

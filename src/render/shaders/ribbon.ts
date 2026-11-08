@@ -9,7 +9,16 @@ import {
   InstancedMesh,
   ShaderMaterial,
 } from '@iwsdk/core';
-import { noRaycast, SHARED_TIME } from './common.js';
+import {
+  linkOcclusion,
+  noRaycast,
+  OCCLUSION_FRAGMENT,
+  OCCLUSION_FRAGMENT_PARS,
+  OCCLUSION_VERTEX,
+  OCCLUSION_VERTEX_PARS,
+  SHARED_TIME,
+  withOcclusion,
+} from './common.js';
 
 /*
  * Instanced ribbon segments: every instance is one straight segment from
@@ -19,7 +28,7 @@ import { noRaycast, SHARED_TIME } from './common.js';
  */
 
 /** GLSL vertex: expands a segment into a camera-facing strip; computes alpha from age, dash and aAlpha. */
-const vertexShader = /* glsl */ `
+const vertexShader = /* glsl */ `${OCCLUSION_VERTEX_PARS}
 attribute vec3 aStart;
 attribute vec3 aEnd;
 attribute float aAge;
@@ -52,15 +61,17 @@ void main() {
   vSide = position.y;
   // Hidden segments collapse outside the clip volume.
   gl_Position = vAlpha > 0.001 ? projectionMatrix * vec4(p, 1.0) : vec4(0.0, 0.0, 2.0, 1.0);
+  ${OCCLUSION_VERTEX}
 }
 `;
 
 /** GLSL fragment: soft edges across the strip with a hot white core. */
-const fragmentShader = /* glsl */ `
+const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform vec3 uColor;
 varying float vSide;
 varying float vAlpha;
 void main() {
+  ${OCCLUSION_FRAGMENT}
   float core = 1.0 - abs(vSide);
   float alpha = pow(core, 1.3) * vAlpha;
   vec3 color = mix(uColor, vec3(1.0), pow(core, 6.0) * 0.45);
@@ -71,7 +82,7 @@ void main() {
 
 const ribbonTemplate = new ShaderMaterial({
   name: 'Ribbon',
-  uniforms: {
+  uniforms: withOcclusion({
     uColor: { value: new Color(0xffffff) },
     uWidth: { value: 0.02 },
     uTime: SHARED_TIME,
@@ -79,7 +90,7 @@ const ribbonTemplate = new ShaderMaterial({
     uFloor: { value: 0.3 },
     uDash: { value: 0 },
     uDashCount: { value: 14 },
-  },
+  }),
   vertexShader,
   fragmentShader,
   transparent: true,
@@ -101,7 +112,7 @@ export interface RibbonStyle {
 
 /** A ribbon material sharing the program and the clock; create once per module. */
 export function createRibbonMaterial(style: RibbonStyle): ShaderMaterial {
-  const material = ribbonTemplate.clone();
+  const material = linkOcclusion(ribbonTemplate.clone());
   material.uniforms.uTime = SHARED_TIME;
   (material.uniforms.uColor.value as Color).setHex(style.color);
   material.uniforms.uWidth.value = style.width;
