@@ -46,6 +46,9 @@ const METHODS = new Set([
   'audio.expectedNotes',
   'audio.setSettings',
   'audio.renderOffline',
+  'page.setSearch',
+  'page.search',
+  'page.debugOverlayText',
 ]);
 
 export default async function run({ frame, page, workspaceRoot }) {
@@ -71,6 +74,20 @@ export default async function run({ frame, page, workspaceRoot }) {
         }, 4);
         setTimeout(() => clearInterval(id), 30_000);
         return { value: { base: watch.base }, perfNow: performance.now() };
+      }
+      // Page URL and the ?debug=1 overlay's DOM text. setSearch navigates
+      // after this call returns (a timer), so the evaluate is not cut off.
+      if (method === 'page.setSearch') {
+        const search = String(args[0] ?? '');
+        setTimeout(() => {
+          location.search = search;
+        }, 50);
+        return { value: { from: location.search, to: search }, perfNow: performance.now() };
+      }
+      if (method === 'page.search') return { value: location.search, perfNow: performance.now() };
+      if (method === 'page.debugOverlayText') {
+        const el = document.getElementById('debug-overlay');
+        return { value: el ? { text: el.textContent, display: el.style.display } : null, perfNow: performance.now() };
       }
       if (method === 'watchLaunch.read') {
         return { value: window.__iwerLaunchWatch ?? null, perfNow: performance.now() };
@@ -119,7 +136,8 @@ export default async function run({ frame, page, workspaceRoot }) {
           clearInterval(id);
         }, 5);
         hold.stop = () => clearInterval(id);
-        setTimeout(() => clearInterval(id), 60_000);
+        // Armed before the last drag, which can take minutes under load.
+        setTimeout(() => clearInterval(id), 600_000);
         return { value: { fraction: hold.fraction }, perfNow: performance.now() };
       }
       // Same hold, once the ghost hand is between args[0] and args[1] seconds
@@ -139,7 +157,7 @@ export default async function run({ frame, page, workspaceRoot }) {
           clearInterval(id);
         }, 5);
         hold.stop = () => clearInterval(id);
-        setTimeout(() => clearInterval(id), 60_000);
+        setTimeout(() => clearInterval(id), 600_000);
         return { value: { from, to }, perfNow: performance.now() };
       }
       if (method === 'hold.read') {

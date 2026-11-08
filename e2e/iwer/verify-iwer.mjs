@@ -10,8 +10,9 @@
 // events after a hand solve), visibility (visible-blurred pauses the flight
 // and audio), real-object (Your Table: a well on the cup, the puck fallback,
 // clear, story levels untouched), occlusion (depth occlusion status and its
-// cost on and off), hands-cdn (hand models from our own origin) and
-// vr (the immersive-vr fallback, also from a fresh desktop page).
+// cost on and off), hands-cdn (hand models from our own origin),
+// vr (the immersive-vr fallback, also from a fresh desktop page) and
+// debug-overlay (the ?debug=1 tester overlay on desktop and in XR).
 // Setup, placement and the runtime teardown always run; the runtime is always
 // stopped.
 // Usage: npm run verify:iwer
@@ -36,6 +37,7 @@ import {
   xr,
 } from './xr-helpers.mjs';
 import {
+  debugOverlay,
   handleDrag,
   handsCdn,
   nearPinch,
@@ -84,6 +86,8 @@ const GROUPS = [
   'occlusion',
   'hands-cdn',
   'vr',
+  // After vr: it navigates the page to ?debug=1 and back.
+  'debug-overlay',
 ];
 const ALWAYS = new Set(['placement']);
 
@@ -638,6 +642,25 @@ const GROUP_RUNNERS = {
         fresh.aheadM >= 0.2,
       fresh,
     );
+  },
+
+  // 18. The ?debug=1 tester overlay (F6): DOM on desktop, panel in XR.
+  async 'debug-overlay'() {
+    const d = await debugOverlay({ cup: CUP, tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name) });
+    summary.data.debugOverlay = d;
+    check('debug-overlay: the page URL carries ?debug=1', d.search === '?debug=1', d.search);
+    check('debug-overlay: desktop DOM overlay shows fps', /fps \d+\.\d avg/.test(d.desktop?.text ?? ''), d.desktop);
+    check('debug-overlay: ecs find finds the overlay panel entity', d.entityIndex !== null && d.entityIndex !== undefined, d.entity);
+    check('debug-overlay: XR panel shows fps and the 1% low', /fps \d+\.\d avg \| 1% low \d+\.\d/.test(d.fpsText), d.fpsText.slice(0, 300));
+    check('debug-overlay: XR panel shows calls and triangles', /calls \d+ \| tris \d+k/.test(d.renderText), d.renderText.slice(0, 300));
+    check('debug-overlay: DOM overlay hidden in XR', d.domInXr?.display === 'none', d.domInXr);
+    check(
+      'debug-overlay: armed in Your Table the hit line shows the height and jitter',
+      /hit \d+\.\d cm above board \| jitter \d+\.\d mm \(\d+ frames\)/.test(d.hitText),
+      { hitText: d.hitText.slice(0, 300), hitLog: d.hitLog, reticle: d.reticle?.hit },
+    );
+    check('debug-overlay: screenshot saved', Boolean(d.shot), d.shot);
+    check('debug-overlay: without ?debug=1 there is no overlay', d.plain === null && !String(d.searchAfter).includes('debug'), { search: d.searchAfter, plain: d.plain });
   },
 };
 

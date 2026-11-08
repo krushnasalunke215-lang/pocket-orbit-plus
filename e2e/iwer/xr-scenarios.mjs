@@ -14,6 +14,7 @@ import {
   handAtChest,
   hoveredNames,
   letGo,
+  navigateSearch,
   rayDrag,
   rayGrab,
   rayMoveTo,
@@ -953,4 +954,79 @@ export async function occlusionCost({ cup, tableHead, takeShot }) {
   return { status, on, off, shotOn, shotOff, shaderErrors: logs, shaderWarnings: warnings.map((w) => w.slice(0, 300)) };
 }
 
+/** UIKit text of one element of the panel entity (ui inspect), as a flat string. */
+function inspectText(entityIndex, selector) {
+  try {
+    return JSON.stringify(call(['ui', 'inspect'], { input: { entityIndex, selector } }).result);
+  } catch (error) {
+    return `inspect failed: ${String(error?.message ?? error).slice(0, 200)}`;
+  }
+}
+
+/**
+ * The ?debug=1 tester overlay (F6): navigate the managed page to ?debug=1,
+ * read the desktop DOM overlay, enter XR seated at the table, find the
+ * overlay panel entity and read its fps and render lines; then Your Table
+ * armed with the right hand ray on the cup's top for the hit line, a
+ * screenshot, and back to the plain URL.
+ */
+export async function debugOverlay({ cup, tableHead, takeShot }) {
+  if (xr('status').sessionActive) await exitXR();
+  const nav = await navigateSearch('?debug=1');
+  await sleep(1500);
+  const desktop = game('page.debugOverlayText').value;
+
+  await enterXR();
+  // Seated at the table, then place the board there.
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  await sleep(300);
+  game('placeBoard');
+  await sleep(1500);
+  const board = snapshot().board;
+  const found = call(['ecs', 'find'], { input: { namePattern: '^debug-overlay$' } }).result.entities;
+  const entity = found[0] ?? null;
+  const entityIndex = entity ? (entity.entityIndex ?? entity.index) : null;
+  const domInXr = game('page.debugOverlayText').value;
+  const fpsText = entityIndex === null ? '' : inspectText(entityIndex, '#fps-text');
+  const renderText = entityIndex === null ? '' : inspectText(entityIndex, '#render-text');
+
+  // Your Table, armed, the right hand ray on the cup's top.
+  game('sandbox.enter', 0);
+  await sleep(500);
+  game('sandbox.arm', 'right');
+  const cupTop = { x: cup.x, y: cup.y + cup.height / 2, z: cup.z };
+  handAtChest(DEVICE);
+  xr('look-at', { device: DEVICE, target: cupTop });
+  await sleep(2500);
+  const s = snapshot();
+  const hitText = entityIndex === null ? '' : inspectText(entityIndex, '#hit-text');
+  // Frame the board, the HUD and the overlay on its left.
+  const c = s.board.center;
+  xr('look-at', { device: 'headset', target: { x: c[0] - 0.15, y: c[1] + 0.1, z: c[2] - 0.25 } });
+  await sleep(1200);
+  const shot = takeShot('iwer-debug-overlay.png');
+
+  game('sandbox.disarm');
+  game('sandbox.clear');
+  game('sandbox.exit');
+  await exitXR();
+  const back = await navigateSearch('');
+  const plain = game('page.debugOverlayText').value;
+  return {
+    search: nav.search,
+    desktop,
+    board: { source: board.source, center: round(board.center) },
+    entity,
+    entityIndex,
+    domInXr,
+    fpsText,
+    renderText,
+    hitLog: s.sandbox.hitLog,
+    reticle: s.sandbox.reticle,
+    hitText,
+    shot,
+    searchAfter: back.search,
+    plain,
+  };
+}
 export { enterXR, exitXR };

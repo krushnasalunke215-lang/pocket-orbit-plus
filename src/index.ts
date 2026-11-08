@@ -10,6 +10,7 @@ import projectOptions from 'virtual:iwsdk-project';
 import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
 import { ChapterSystem } from './xr/chapter-system.js';
+import { DebugOverlaySystem, debugOverlayRequested } from './xr/debug-overlay-system.js';
 import { GameAudioSystem } from './xr/game-audio-system.js';
 import { GameSystem } from './xr/game-system.js';
 import { installLocalHandVisuals } from './xr/hand-visuals.js';
@@ -70,6 +71,12 @@ async function main(): Promise<void> {
     .registerSystem(LevelSelectSystem, { priority: 32 })
     .registerSystem(SandboxPanelSystem, { priority: 33 })
     .registerSystem(RenderStatsSystem, { priority: 40 });
+
+  // Tester overlay (fps, render counts, hit-test log): only with ?debug=1,
+  // in production builds too.
+  if (debugOverlayRequested(window.location.search)) {
+    world.registerSystem(DebugOverlaySystem, { priority: 41 });
+  }
 
   if (import.meta.env.DEV || import.meta.env.MODE === 'e2e') {
     const { installDebugApi } = await import('./debug/debug-api.js');

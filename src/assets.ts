@@ -31,4 +31,9 @@ export default defineAssets({
     type: AssetType.UIKitML,
     name: 'Your Table Panel',
   },
+  'debug-overlay': {
+    url: publicAssetUrl('ui/debug-overlay.uikitml'),
+    type: AssetType.UIKitML,
+    name: 'Debug Overlay',
+  },
 });

@@ -140,6 +140,26 @@ export function sandboxPanelPose(board: BoardPose, head: HeadPose): Pose {
   return { position, quaternion: quatLookAt(position, head.position) };
 }
 
+/**
+ * World size of the ?debug=1 overlay panel (meters): the UIKitML root is
+ * 22 cm wide and about 10 cm tall with the hit line wrapped (rounded up).
+ */
+export const DEBUG_OVERLAY_SIZE = { width: 0.22, height: 0.11 } as const;
+/** Gap between the HUD and the debug overlay (meters). */
+export const DEBUG_OVERLAY_GAP = 0.02;
+
+/**
+ * The ?debug=1 overlay panel: beside the HUD beyond the far rim, on the
+ * player's left (board-local -X, opposite the Your Table panel), at the
+ * HUD's height, facing the head.
+ */
+export function debugOverlayPose(board: BoardPose, head: HeadPose): Pose {
+  const hud = hudPose(board, head).position;
+  const side = quatRotate(board.quaternion, [-(HUD_SIZE.width / 2 + DEBUG_OVERLAY_GAP + DEBUG_OVERLAY_SIZE.width / 2), 0, 0]);
+  const position: Vec3 = [hud[0] + side[0], hud[1] + side[1], hud[2] + side[2]];
+  return { position, quaternion: quatLookAt(position, head.position) };
+}
+
 function handleOffset(board: BoardPose): Vec3 {
   return quatRotate(board.quaternion, [0, HANDLE_RISE, board.radius + HANDLE_GAP]);
 }

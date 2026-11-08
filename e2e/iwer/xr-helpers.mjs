@@ -80,6 +80,23 @@ export async function reloadPage() {
   return { snapshot: fresh, reloadMs: Date.now() - before };
 }
 
+/**
+ * Navigates the managed app page to the same URL with `search` (for
+ * example '?debug=1', or '' for none) and waits like reloadPage. The CLI has
+ * no navigate action, so the page itself assigns location.search.
+ */
+export async function navigateSearch(search) {
+  const before = Date.now();
+  game('page.setSearch', search);
+  await sleep(2000);
+  const fresh = await waitFor('a fresh desktop page', () => {
+    const s = snapshot();
+    return s.levelBuilt && s.board.source === 'desktop' ? s : null;
+  }, 120_000, 1000);
+  await waitFor('the XR runtime after navigation', () => xr('status').sessionOffered, 60_000, 1000);
+  return { snapshot: fresh, search: game('page.search').value, navigateMs: Date.now() - before };
+}
+
 export async function exitXR() {
   xr('exit');
   await waitFor('session end', () => !xr('status').sessionActive, 10_000);

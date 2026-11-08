@@ -13,6 +13,8 @@ import {
 } from './board-math.js';
 import {
   boardHandlePose,
+  DEBUG_OVERLAY_SIZE,
+  debugOverlayPose,
   HUD_SIZE,
   hudPose,
   LEVEL_SELECT_SIZE,
@@ -242,6 +244,47 @@ describe('level-select panel', () => {
         expect(v, `corner ${sx},${sy} vertical ${v.toFixed(1)}°`).toBeGreaterThanOrEqual(-43);
         expect(v, `corner ${sx},${sy} vertical ${v.toFixed(1)}°`).toBeLessThanOrEqual(25);
       }
+    });
+
+    it(`${c.name}: faces the head`, () => {
+      const normal = quatRotate(panel.quaternion, [0, 0, 1]);
+      expect(dot(normal, unit(sub(head, panel.position)))).toBeGreaterThan(0.999);
+    });
+  }
+});
+
+/*
+ * The ?debug=1 overlay (F6) beside the HUD: inside the Meta VR Glasses view
+ * at both poses, clear of the HUD, facing the head.
+ */
+describe('debug overlay panel', () => {
+  for (const c of RIM_CASES) {
+    const panel = debugOverlayPose(c.board, c.head);
+    const head = c.head.position;
+
+    it(`${c.name}: all 4 corners fit the Meta VR Glasses view`, () => {
+      const f = unit(c.gaze);
+      const right = unit(cross(f, [0, 1, 0]));
+      const up = cross(right, f);
+      const hw = DEBUG_OVERLAY_SIZE.width / 2;
+      const hh = DEBUG_OVERLAY_SIZE.height / 2;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const corner = add(panel.position, quatRotate(panel.quaternion, [sx * hw, sy * hh, 0]));
+        const d = sub(corner, head);
+        const z = dot(d, f);
+        const h = Math.atan2(dot(d, right), z) * DEG;
+        const v = Math.atan2(dot(d, up), z) * DEG;
+        expect(Math.abs(h), `corner ${sx},${sy} horizontal ${h.toFixed(1)}°`).toBeLessThanOrEqual(37);
+        expect(v, `corner ${sx},${sy} vertical ${v.toFixed(1)}°`).toBeGreaterThanOrEqual(-43);
+        expect(v, `corner ${sx},${sy} vertical ${v.toFixed(1)}°`).toBeLessThanOrEqual(25);
+      }
+    });
+
+    it(`${c.name}: sits left of the HUD without overlapping it`, () => {
+      const hud = hudPose(c.board, c.head).position;
+      const gap = length(sub(panel.position, hud)) - HUD_SIZE.width / 2 - DEBUG_OVERLAY_SIZE.width / 2;
+      expect(gap).toBeGreaterThan(0.015);
+      expect(panel.position[0]).toBeLessThan(hud[0]);
     });
 
     it(`${c.name}: faces the head`, () => {

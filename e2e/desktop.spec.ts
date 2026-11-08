@@ -636,6 +636,29 @@ test('Your Table sandbox with the puck', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('debug overlay with ?debug=1', async ({ page }) => {
+  const info: string[] = [];
+  page.on('console', (m) => {
+    if (m.type() === 'info') info.push(m.text());
+  });
+  await page.goto('/?debug=1');
+  await expect(page.locator('#debug-overlay')).toContainText('fps', { timeout: 5_000 });
+  // The 2 Hz refresh writes real numbers and the render counts.
+  await expect(page.locator('#debug-overlay')).toContainText(/fps (?!0\.0 )\d+\.\d avg \| 1% low \d+\.\d/, { timeout: 30_000 });
+  await expect(page.locator('#debug-overlay')).toContainText(/calls \d+ \| tris \d+k/);
+  // One JSON line every 5 s for testers to paste.
+  await expect
+    .poll(() => info.find((t) => t.startsWith('{"fps":')) ?? null, { timeout: 20_000 })
+    .not.toBeNull();
+  const line = JSON.parse(info.find((t) => t.startsWith('{"fps":'))!) as Record<string, unknown>;
+  expect(Object.keys(line)).toEqual(['fps', 'low1', 'calls', 'triangles', 'hitHeightCm', 'jitterMm']);
+  await page.screenshot({ path: screenshotPath('desktop-debug-overlay.png') });
+
+  await openGame(page);
+  await page.waitForTimeout(1000);
+  await expect(page.locator('#debug-overlay')).toHaveCount(0);
+});
+
 test('makes no external requests', async ({ page, baseURL }) => {
   const origin = new URL(baseURL!).origin;
   const urls: string[] = [];
