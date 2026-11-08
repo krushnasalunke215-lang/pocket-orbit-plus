@@ -1,11 +1,13 @@
-import { Grabbed, Hovered, Vector3, type World } from '@iwsdk/core';
+import { DepthOccludable, DepthSensingSystem, Grabbed, Hovered, Vector3, type World } from '@iwsdk/core';
+import { OCCLUSION_UNIFORMS } from '../render/shaders/common.js';
+import { HIT_LOG_SIZE as HIT_LOG_CAPACITY } from '../xr/runtime.js';
 import type { AudioEngineState, AudioEvent } from '../audio/engine.js';
 import { renderVoiceOffline, type OfflineRender, type OfflineVoice } from '../audio/voices.js';
 import { APP_NAME } from '../config.js';
 import { DEFAULT_PAR } from '../game/song.js';
 import type { BodyKind, SimOutcome } from '../sim/bodies.js';
 import type { Placements } from '../sim/level.js';
-import { BoardBody } from '../xr/components.js';
+import { BoardBody, WellPuck } from '../xr/components.js';
 import {
   getAudio,
   getBoard,
@@ -17,7 +19,10 @@ import {
   getOnboardingSession,
   getPause,
   getRenderStats,
+  getHitLog,
   getRimButton,
+  getSandbox,
+  getSandboxPanel,
   getSave,
   getVisuals,
   setOnboarding,
@@ -28,6 +33,7 @@ import {
   type PauseReason,
   type RenderCounts,
   type RimButtonRuntime,
+  type SandboxPanelRuntime,
 } from '../xr/runtime.js';
 import { currentSessionMode, enterXR } from '../xr/session.js';
 import { createSpikeApi, type SpikeApi } from './spike.js';
@@ -52,7 +58,25 @@ export interface BodySnapshot {
   world: Triple;
 }
 
+export interface SandboxWellSnapshot {
+  id: string;
+  kind: 'object' | 'puck';
+  source: string;
+  /** Board position [x, 0, z]. */
+  position: Triple;
+  /** World position of the well's board point (meters). */
+  world: Triple;
+  heightM: number;
+  measuredHeightM: number;
+  mass: number;
+  /** Pucks only: the puck is held or hovered. */
+  held: boolean;
+  hovered: boolean;
+}
+
 export interface GameSnapshot {
+  /** 'story' or 'sandbox' (Your Table). */
+  mode: string;
   level: { id: string; index: number; title: string; count: number };
   /** The level's body entities exist (they are rebuilt on the frame after a load). */
   levelBuilt: boolean;
@@ -105,6 +129,23 @@ export interface GameSnapshot {
   handVisuals: { left: boolean; right: boolean };
   /** Stars of the current flight (0 until solved), best per level id, and the solving flight's rung order. */
   stars: { last: number; best: Record<string, number>; rung: string[] };
+  /** pathHash of the last launched flight (null before one). */
+  lastPathHash: string | null;
+  /** Your Table: target, wells, arming, reticle, the panel and the hit log. */
+  sandbox: {
+    targetId: string | null;
+    wells: SandboxWellSnapshot[];
+    /** Wells the game's flights use now (0 in story mode). */
+    activeWells: number;
+    armed: boolean;
+    armHand: string | null;
+    pucks: number;
+    selectedId: string | null;
+    status: string | null;
+    reticle: { visible: boolean; hit: string; world: Triple; board: Triple; heightM: number } | null;
+    panel: { shown: boolean; position: Triple | null; size: [number, number] | null };
+    hitLog: { count: number; total: number; armed: boolean; lastHeightM: number | null };
+  };
   /** The Pause record (LifecycleSystem). */
   pause: { paused: boolean; reason: PauseReason };
   /** SaveSystem: page clock (performance.now) of the last write, and the load or write problem. */
@@ -167,6 +208,8 @@ export interface GameDebugApi {
   loadLevel(index: number): Promise<void>;
   nextLevel(): Promise<void>;
   launch(): void;
+  /** Commits placements for movable bodies (as a release would, without launching). */
+  setPlacements(placements: Placements): void;
   placeBoard(): void;
   /** Requests the immersive-vr (starfield) fallback session, as enterXR does without AR. */
   enterVR(): void;
@@ -190,16 +233,57 @@ export interface GameDebugApi {
   saveNow(): boolean;
   /** Removes the stored save (the running game is unchanged; the next change saves again). */
   clearSave(): boolean;
+  /** Your Table sandbox controls (the same actions as the panel buttons). */
+  readonly sandbox: SandboxDebugApi;
+  /** Depth occlusion status: system, granted feature, depth frames, occludable entities, uniforms. */
+  occlusion(): OcclusionStatus;
+  /** Turns occlusion on or off (DepthSensingSystem enableOcclusion); returns the new status. */
+  setOcclusion(on: boolean): OcclusionStatus;
   /** Real-object gravity spike probes (room features, planes, meshes, hit-test). */
   readonly spike: SpikeApi;
   /** The game audio engine: state, event log, expected notes, settings and offline renders. */
   readonly audio: AudioDebugApi;
 }
 
+export interface SandboxDebugApi {
+  /** Loads Your Table target index (default 0); resolves once it is built. */
+  enter(index?: number): Promise<void>;
+  /** Back to the story level the sandbox was entered from; resolves once it is built. */
+  exit(): Promise<void>;
+  arm(hand?: 'left' | 'right'): void;
+  disarm(): void;
+  addPuck(): void;
+  stepHeight(steps: number): void;
+  clear(): void;
+}
+
+export interface OcclusionStatus {
+  systemRegistered: boolean;
+  /** The session granted 'depth-sensing'. */
+  featureEnabled: boolean;
+  depthUsage: string | null;
+  /** DepthSensingSystem enableOcclusion. */
+  enabled: boolean;
+  /** Frames with XR depth data since the last render-stats reset. */
+  depthFrames: number;
+  /** Depth data this frame. */
+  depthNow: boolean;
+  occludableEntities: number;
+  /** The shared occlusion uniforms hold a depth texture and occlusionEnabled. */
+  uniformsBound: boolean;
+  occlusionEnabledUniform: boolean;
+  viewportSize: [number, number];
+  rawValueToMeters: number;
+  /** XRWebGLDepthInformation.depthNear and the depth texture size this frame (GPU path). */
+  depthNear: number | null;
+  depthSize: [number, number] | null;
+}
+
 export interface RenderStatsSnapshot {
   last: RenderCounts;
   max: RenderCounts;
   frames: number;
+  depthFrames: number;
   programs: number;
   geometries: number;
   textures: number;
@@ -247,10 +331,11 @@ export function installDebugApi(world: World): GameDebugApi {
   const uiElement = (elementId: string) =>
     getHud(world)?.panel.getElementById(elementId) ??
     getRimButton(world)?.panel.getElementById(elementId) ??
-    getLevelSelect(world)?.panel.getElementById(elementId);
+    getLevelSelect(world)?.panel.getElementById(elementId) ??
+    getSandboxPanel(world)?.panel.getElementById(elementId);
 
   /** UIKit units are centimeters before the panel entity's own scale. */
-  const panelSize = (panel: HudRuntime | RimButtonRuntime | LevelSelectRuntime | undefined): [number, number] | null => {
+  const panelSize = (panel: HudRuntime | RimButtonRuntime | LevelSelectRuntime | SandboxPanelRuntime | undefined): [number, number] | null => {
     const size = panel?.panel.document.computedSize;
     if (!panel || !size) return null;
     const s = panel.entity.object3D!.getWorldScale(new Vector3()).x * 0.01;
@@ -280,10 +365,42 @@ export function installDebugApi(world: World): GameDebugApi {
       check();
     });
 
+  const sandboxPucks = world.queryManager.registerQuery({ required: [WellPuck] });
+  const occludables = world.queryManager.registerQuery({ required: [DepthOccludable] });
+  const puckEntity = (id: string) => {
+    for (const entity of sandboxPucks.entities) if (entity.getValue(WellPuck, 'wellId') === id) return entity;
+    return undefined;
+  };
+  const sandboxRuntime = () => {
+    const s = getSandbox(world);
+    if (!s) throw new Error('RealObjectSystem is not registered');
+    return s;
+  };
+  const occlusionStatus = (): OcclusionStatus => {
+    const depth = world.getSystem(DepthSensingSystem);
+    const session = world.session as (XRSession & { enabledFeatures?: string[]; depthUsage?: string }) | undefined;
+    const vp = OCCLUSION_UNIFORMS.uViewportSize.value;
+    return {
+      systemRegistered: Boolean(depth),
+      featureEnabled: Boolean(session?.enabledFeatures?.includes('depth-sensing')),
+      depthUsage: session ? (session.depthUsage ?? null) : null,
+      enabled: depth?.config.enableOcclusion.value ?? false,
+      depthFrames: getRenderStats(world)?.depthFrames ?? 0,
+      depthNow: Boolean(depth && (depth.gpuDepthData.length > 0 || depth.cpuDepthData.length > 0)),
+      occludableEntities: occludables.entities.size,
+      uniformsBound: OCCLUSION_UNIFORMS.occlusionEnabled.value && OCCLUSION_UNIFORMS.uXRDepthTextureArray.value !== null,
+      occlusionEnabledUniform: OCCLUSION_UNIFORMS.occlusionEnabled.value,
+      viewportSize: [vp.x, vp.y],
+      rawValueToMeters: depth?.rawValueToMeters ?? 0,
+      depthNear: (depth?.gpuDepthData[0] as { depthNear?: number } | undefined)?.depthNear ?? null,
+      depthSize: depth?.gpuDepthData[0] ? [depth.gpuDepthData[0].width, depth.gpuDepthData[0].height] : null,
+    };
+  };
+
   const api: GameDebugApi = {
     get ready() {
       return Boolean(
-        getGame(world) && getBoard(world) && getVisuals(world) && getHud(world) && getRimButton(world) && getLevelSelect(world),
+        getGame(world) && getBoard(world) && getVisuals(world) && getHud(world) && getRimButton(world) && getLevelSelect(world) && getSandboxPanel(world),
       );
     },
     appName: APP_NAME,
@@ -326,7 +443,12 @@ export function installDebugApi(world: World): GameDebugApi {
       const onboarding = getOnboardingSession(world);
       const levelSelect = getLevelSelect(world);
       const chapter = getChapter(world);
+      const sandbox = getSandbox(world);
+      const sandboxPanel = getSandboxPanel(world);
+      const hitLog = getHitLog(world);
+      const root2 = board.entity.object3D!;
       return {
+        mode: game.mode,
         level: { id: game.level.id, index: game.levelIndex, title: game.level.title, count: game.levels.length },
         levelBuilt: visuals?.builtRevision === game.levelRevision,
         phase: game.phase,
@@ -395,6 +517,42 @@ export function installDebugApi(world: World): GameDebugApi {
         },
         handVisuals: { left: handVisualLoaded('left'), right: handVisualLoaded('right') },
         stars: { last: game.lastStars, best: Object.fromEntries(game.bestStars), rung: [...game.lastRung] },
+        lastPathHash: game.lastResult?.pathHash ?? null,
+        sandbox: {
+          targetId: game.mode === 'sandbox' ? game.level.id : null,
+          wells: (sandbox?.wells ?? []).map((w) => ({
+            id: w.id,
+            kind: w.kind,
+            source: game.externalWells.find((e) => e.id === w.id)?.source ?? '',
+            position: [...w.position] as Triple,
+            world: triple(root2.localToWorld(v.set(w.position[0], 0, w.position[2]))),
+            heightM: w.heightM,
+            measuredHeightM: w.measuredHeightM,
+            mass: w.mass,
+            held: puckEntity(w.id)?.hasComponent(Grabbed) ?? false,
+            hovered: puckEntity(w.id)?.hasComponent(Hovered) ?? false,
+          })),
+          activeWells: game.activeWells.length,
+          armed: sandbox?.armed ?? false,
+          armHand: sandbox?.armHand ?? null,
+          pucks: sandboxPucks.entities.size,
+          selectedId: sandbox?.selectedId ?? null,
+          status: sandbox?.status ?? null,
+          reticle: sandbox
+            ? { ...sandbox.reticle, world: [...sandbox.reticle.world] as Triple, board: [...sandbox.reticle.board] as Triple }
+            : null,
+          panel: {
+            shown: sandboxPanel?.shown ?? false,
+            position: sandboxPanel ? triple(sandboxPanel.entity.object3D!.getWorldPosition(v)) : null,
+            size: panelSize(sandboxPanel),
+          },
+          hitLog: {
+            count: hitLog.count,
+            total: hitLog.total,
+            armed: hitLog.armed,
+            lastHeightM: hitLog.count > 0 ? hitLog.heights[(hitLog.next + HIT_LOG_CAPACITY - 1) % HIT_LOG_CAPACITY] : null,
+          },
+        },
         pause: { paused: pause.paused, reason: pause.reason },
         save: { lastSavedAt: save?.lastSavedAt ?? null, problem: save?.problem ?? null },
         renderer: {
@@ -433,6 +591,11 @@ export function installDebugApi(world: World): GameDebugApi {
 
     launch() {
       core().game.launch();
+    },
+
+    setPlacements(placements) {
+      const { game } = core();
+      for (const [id, p] of Object.entries(placements)) game.setPlacement(id, p);
     },
 
     placeBoard() {
@@ -481,6 +644,7 @@ export function installDebugApi(world: World): GameDebugApi {
         last: { ...stats.last },
         max: { ...stats.max },
         frames: stats.frames,
+        depthFrames: stats.depthFrames,
         programs: stats.programs,
         geometries: stats.geometries,
         textures: stats.textures,
@@ -502,6 +666,44 @@ export function installDebugApi(world: World): GameDebugApi {
       const save = getSave(world);
       if (!save) throw new Error('SaveSystem is not registered');
       return save.clear();
+    },
+
+    sandbox: {
+      enter(index = 0) {
+        core().game.loadSandbox(index);
+        return levelBuilt();
+      },
+      exit() {
+        getSandbox(world)?.disarm();
+        core().game.exitSandbox();
+        return levelBuilt();
+      },
+      arm(hand) {
+        sandboxRuntime().arm(hand);
+      },
+      disarm() {
+        sandboxRuntime().disarm();
+      },
+      addPuck() {
+        sandboxRuntime().addPuck();
+      },
+      stepHeight(steps) {
+        sandboxRuntime().stepHeight(steps);
+      },
+      clear() {
+        sandboxRuntime().clear();
+      },
+    },
+
+    occlusion() {
+      return occlusionStatus();
+    },
+
+    setOcclusion(on) {
+      const depth = world.getSystem(DepthSensingSystem);
+      if (!depth) throw new Error('DepthSensingSystem is not registered');
+      depth.config.enableOcclusion.value = Boolean(on);
+      return occlusionStatus();
     },
 
     spike: createSpikeApi(world),

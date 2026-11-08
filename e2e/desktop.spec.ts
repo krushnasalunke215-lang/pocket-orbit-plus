@@ -551,6 +551,90 @@ test('near-rim button launches', async ({ page }) => {
   await page.screenshot({ path: screenshotPath('desktop-rim-button.png') });
 });
 
+test('Your Table sandbox with the puck', async ({ page }) => {
+  test.setTimeout(240_000);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openGame(page);
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  await page.waitForTimeout(300);
+
+  // Level select -> Your Table.
+  await clickUi(page, 'levels-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(true);
+  await clickUi(page, 'sandbox-button');
+  await expect.poll(async () => (await snapshot(page)).mode, { timeout: 5_000 }).toBe('sandbox');
+  await expect.poll(async () => (await snapshot(page)).sandbox.panel.shown, { timeout: 5_000 }).toBe(true);
+  let snap = await snapshot(page);
+  expect(snap.level.id).toBe('table-1');
+  expect(snap.levelSelect.open).toBe(false);
+  expect(snap.sandbox.wells).toEqual([]);
+
+  const rimLaunch = async () => {
+    await clickUi(page, 'rim-launch-button');
+    await expect.poll(async () => (await snapshot(page)).phase, { timeout: 5_000 }).not.toBe('placing');
+    await waitUntilNotFlying(page);
+    return snapshot(page);
+  };
+  // A flight with no wells.
+  const plain = await rimLaunch();
+  expect(plain.lastPathHash).not.toBeNull();
+
+  // Add a puck (at the board center), drag it with the mouse, then raise it twice.
+  await clickUi(page, 'add-puck');
+  await expect.poll(async () => (await snapshot(page)).sandbox.pucks, { timeout: 5_000 }).toBe(1);
+  snap = await snapshot(page);
+  const puck = snap.sandbox.wells[0];
+  expect(puck.kind).toBe('puck');
+  expect(puck.source).toBe('well-puck');
+  expect(snap.sandbox.activeWells).toBe(1);
+  const from = await screenPoint(page, puck.position);
+  const goal = [-0.3, 0, -0.15];
+  const to = await screenPoint(page, goal);
+  await page.mouse.move(from.x - 2, from.y);
+  await page.mouse.move(from.x, from.y);
+  await expect.poll(async () => (await snapshot(page)).sandbox.wells[0].hovered, { timeout: 10_000 }).toBe(true);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 15 });
+  await expect.poll(async () => (await snapshot(page)).sandbox.wells[0].held, { timeout: 10_000 }).toBe(true);
+  await page.mouse.up();
+  await expect.poll(async () => (await snapshot(page)).sandbox.wells[0].held, { timeout: 10_000 }).toBe(false);
+  snap = await snapshot(page);
+  const moved = snap.sandbox.wells[0].position;
+  expect(Math.hypot(moved[0] - goal[0], moved[2] - goal[2])).toBeLessThan(0.05);
+  expect(moved[1]).toBe(0);
+  expect(snap.attempts).toBe(plain.attempts); // dragging a puck never launches
+
+  const heightBefore = snap.sandbox.wells[0].heightM;
+  await clickUi(page, 'height-up');
+  await expect.poll(async () => (await snapshot(page)).sandbox.wells[0].heightM, { timeout: 5_000 }).toBeCloseTo(heightBefore + 0.01, 6);
+  snap = await snapshot(page);
+  expect(snap.sandbox.wells[0].mass).toBeGreaterThan(puck.mass);
+
+  const withPuck = await rimLaunch();
+  expect(withPuck.lastPathHash).not.toBe(plain.lastPathHash);
+  expect(withPuck.attempts).toBe(plain.attempts + 1);
+  await page.screenshot({ path: screenshotPath('desktop-sandbox-puck.png') });
+
+  await clickUi(page, 'clear-wells');
+  await expect.poll(async () => (await snapshot(page)).sandbox.wells.length, { timeout: 5_000 }).toBe(0);
+  snap = await snapshot(page);
+  expect(snap.sandbox.pucks).toBe(0);
+  expect(snap.sandbox.activeWells).toBe(0);
+
+  // Back to the story: level 1 still solves.
+  await clickUi(page, 'exit-sandbox');
+  await expect.poll(async () => (await snapshot(page)).mode, { timeout: 5_000 }).toBe('story');
+  await expect.poll(async () => (await snapshot(page)).levelBuilt, { timeout: 5_000 }).toBe(true);
+  expect((await snapshot(page)).level.id).toBe('c1-l1');
+  expect((await snapshot(page)).sandbox.panel.shown).toBe(false);
+  const levels = await page.evaluate(() => window.__game!.levels());
+  const solved = await solveWith(page, levels[0].solution);
+  expect(solved.level.id).toBe('c1-l1');
+  expect(solved.stars.last).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+});
+
 test('makes no external requests', async ({ page, baseURL }) => {
   const origin = new URL(baseURL!).origin;
   const urls: string[] = [];

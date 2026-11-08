@@ -8,7 +8,9 @@
 // onboarding (ghost hand on a fresh save, level select by poke and ray),
 // audio (context running in XR, flyby and chord
 // events after a hand solve), visibility (visible-blurred pauses the flight
-// and audio), hands-cdn (hand models from our own origin) and
+// and audio), real-object (Your Table: a well on the cup, the puck fallback,
+// clear, story levels untouched), occlusion (depth occlusion status and its
+// cost on and off), hands-cdn (hand models from our own origin) and
 // vr (the immersive-vr fallback, also from a fresh desktop page).
 // Setup, placement and the runtime teardown always run; the runtime is always
 // stopped.
@@ -37,8 +39,10 @@ import {
   handleDrag,
   handsCdn,
   nearPinch,
+  occlusionCost,
   offBoardRelease,
   onboardingAndLevelSelect,
+  realObjectWells,
   rimButton,
   solveLevels456ByHand,
   solveLevelsByHand,
@@ -50,6 +54,8 @@ import {
 
 const { boardRadiusForTable } = await tsImport('../../src/game/placement.ts', import.meta.url);
 const { BOARD, RENDER_BUDGET } = await tsImport('../../src/config.ts', import.meta.url);
+const { wellMassForHeight } = await tsImport('../../src/game/real-object.ts', import.meta.url);
+const { WELL_INFLUENCE_RADIUS } = await tsImport('../../src/sim/wells.ts', import.meta.url);
 
 const TABLE_HEAD = { x: 0, y: 1.15, z: -1.2 };
 // The cup on the sunlit_living_room coffee table: group at z = -1.95, cup at
@@ -74,6 +80,8 @@ const GROUPS = [
   'onboarding',
   'audio',
   'visibility',
+  'real-object',
+  'occlusion',
   'hands-cdn',
   'vr',
 ];
@@ -527,6 +535,77 @@ const GROUP_RUNNERS = {
       { resumed: v.resumed, end: v.end },
     );
     check('visibility: audio context running again after the resume', v.audio.after === 'running', v.audio);
+  },
+
+  // 15b. Your Table (F5): a hand-ray pinch on the cup makes a 'real-object'
+  // well, the puck fallback, clear, and story levels stay untouched.
+  async 'real-object'() {
+    const r = await realObjectWells({ cup: CUP, tableHead: TABLE_HEAD, expectedMass: wellMassForHeight, takeShot: (name) => screenshot(name) });
+    summary.data.realObject = r;
+    check(
+      "real-object: the level select's Your Table button (ray) opens the sandbox, Next target loads table-2",
+      r.entered.opened && r.entered.mode === 'sandbox' && r.entered.panelShown && r.target.levelId === 'table-2',
+      { entered: r.entered, target: r.target },
+    );
+    const w = r.cupWell.well;
+    check(
+      'real-object: Make well arms the right hand and the reticle sees the cup as an object',
+      r.cupWell.armed.armed && r.cupWell.armed.armHand === 'right' && r.cupWell.reticle?.hit === 'object',
+      { armed: r.cupWell.armed, reticle: r.cupWell.reticle },
+    );
+    check(
+      "real-object: a pinch on the cup places one 'real-object' well on the cup's axis",
+      r.cupWell.wells === 1 && w?.kind === 'object' && w.source === 'real-object' && r.cupWell.axisDistanceM <= CUP.radius + 0.02 && !r.cupWell.armedAfter,
+      { well: w, axisDistanceM: r.cupWell.axisDistanceM },
+    );
+    check(
+      'real-object: well height >= 0.10 m and mass = wellMassForHeight(height)',
+      Boolean(w) && w.measuredHeightM >= 0.1 && Math.abs(w.mass - r.cupWell.expectedMass) < 1e-9,
+      { measuredHeightM: w?.measuredHeightM, heightM: w?.heightM, mass: w?.mass, expected: r.cupWell.expectedMass },
+    );
+    check('real-object: the cup well changes the comet path', r.withCup.pathHash && r.withCup.pathHash !== r.plain.pathHash, { plain: r.plain, withCup: r.withCup.pathHash });
+    console.log(`real-object: well flybys ${JSON.stringify(r.withCup.wellFlybys)} (influence radius ${WELL_INFLUENCE_RADIUS})`);
+    check(
+      'real-object: a flyby note rang for the well whenever the flight passed it',
+      r.withCup.expectedWellNotes.length === 0 || r.withCup.wellFlybys.length > 0,
+      { expected: r.withCup.expectedWellNotes.length, rang: r.withCup.wellFlybys },
+    );
+    const f = r.fallback;
+    check('real-object: a pinch on bare table inside the board spawns a puck', f.puck?.kind === 'puck' && f.reticle?.hit === 'too-low', { reticle: f.reticle, puck: f.puck });
+    check('real-object: the puck moves about 0.3 board units by hand ray', Boolean(f.drag?.held) && f.drag.movedBoard >= 0.2, f.drag);
+    check(
+      'real-object: two height-up ray clicks raise the puck 2 cm',
+      f.heights[0] !== null && f.heights[1] !== null && Math.abs(f.heights[1] - f.heights[0] - 0.02) < 1e-6,
+      { heights: f.heights, hovered: f.upHovered },
+    );
+    check('real-object: the puck changes the path again', r.withPuck.pathHash && r.withPuck.pathHash !== r.withCup.pathHash, { withCup: r.withCup.pathHash, withPuck: r.withPuck.pathHash });
+    check(
+      'real-object: with wells still set, the c1-l1 stored solution solves with the same pathHash as before',
+      r.story.wellsBeforeExit >= 2 && r.story.after.mode === 'story' && r.story.after.activeWells === 0 && r.story.after.outcome === 'solved' && r.story.after.pathHash === r.story.before.pathHash,
+      r.story,
+    );
+    check('real-object: Clear wells (ray) removes every well and puck', r.cleared.wells === 0 && r.cleared.pucks === 0 && r.cleared.activeWells === 0, r.cleared);
+  },
+
+  // 15c. Depth occlusion: registered, feature-detected, its cost on and off.
+  async occlusion() {
+    await seat();
+    const o = await occlusionCost({ cup: CUP, tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name) });
+    const file = path.join(RESULTS, 'render-stats-occlusion.json');
+    const fpsDrop = o.on.fps && o.off.fps ? round((o.off.fps - o.on.fps) / o.off.fps, 3) : null;
+    writeFileSync(file, JSON.stringify({ room: 'sunlit_living_room', head: TABLE_HEAD, budget: BUDGET, status: o.status, on: o.on, off: o.off, fpsDrop, shaderErrors: o.shaderErrors }, null, 2));
+    summary.data.occlusion = { file, ...o, fpsDrop };
+    check('occlusion: DepthSensingSystem registered and depth-sensing granted', o.status.systemRegistered && o.status.featureEnabled, o.status);
+    check('occlusion: occludable board entities', o.status.occludableEntities >= 4, o.status.occludableEntities);
+    console.log(`occlusion: depth frames on ${o.on.depthFrames}, off ${o.off.depthFrames}; uniforms bound ${o.on.status.uniformsBound}`);
+    if (o.on.depthFrames > 0) {
+      check('occlusion: the shared uniforms get occlusionEnabled and a depth texture', o.on.status.uniformsBound, o.on.status);
+      check('occlusion: setOcclusion(false) clears occlusionEnabled', o.off.status.enabled === false && o.off.status.occlusionEnabledUniform === false, o.off.status);
+      check('occlusion: screenshots on and off', Boolean(o.shotOn && o.shotOff), { on: o.shotOn, off: o.shotOff });
+    }
+    check('occlusion: no shader errors in the console', o.shaderErrors.length === 0, o.shaderErrors.slice(0, 5));
+    check('occlusion: XR calls and triangles within budget with occlusion on', o.on.max.calls <= BUDGET.calls && o.on.max.triangles <= BUDGET.triangles, o.on.max);
+    check('occlusion: frame rate drop with occlusion on at most 30%', fpsDrop === null || fpsDrop <= 0.3, { on: o.on.fps, off: o.off.fps, fpsDrop });
   },
 
   // 16. Hand models from our own origin (D3) in an immersive-ar hands session.
