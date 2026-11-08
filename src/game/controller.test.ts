@@ -3,12 +3,16 @@ import { PREVIEW_FRACTION } from '../config.js';
 import { SIM_DT } from '../sim/constants.js';
 import { startPlacements, type LevelDef, type Placements } from '../sim/level.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
+import { SANDBOX_LEVELS } from '../sim/levels/sandbox.js';
 import { simulate } from '../sim/simulate.js';
 import { WORMHOLE_EXIT, WORMHOLE_LEVEL, withStubWormhole } from '../sim/test-fixtures.js';
 import { GameController } from './controller.js';
 import { segmentCrossesBreak } from './path-breaks.js';
 import { DEFAULT_PAR, flightNotes, rungSequence, WELL_NOTE_MIDI } from './song.js';
 import { deserializeGameState, serializeGameState } from './state.js';
+
+/** A cup-sized well near the middle of the board. */
+const MUG = { id: 'mug', position: [-0.3, 0, 0.15], radius: 0.06, source: 'real-object' } as const;
 
 function flyToEnd(game: GameController): void {
   for (let i = 0; i < 2000 && game.phase === 'flying'; i++) game.tick(1 / 60);
@@ -192,26 +196,110 @@ describe('GameController', () => {
     expect(new GameController(ALL_LEVELS).preview().breakCount).toBe(0);
   });
 
-  it('keeps external wells across level loads and refuses ids any level uses', () => {
-    const game = new GameController(ALL_LEVELS);
+  it('never lets external wells change a story flight', () => {
+    const game = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
     const plain = new GameController(ALL_LEVELS);
-    const mug = { id: 'mug', position: [-0.3, 0, 0.15], radius: 0.06, source: 'real-object' } as const;
-    game.setExternalWells([mug]);
+    game.setExternalWells([MUG]);
     for (let i = 0; i < ALL_LEVELS.length; i++) {
       game.loadLevel(i);
       plain.loadLevel(i);
-      expect(game.externalWells).toEqual([mug]);
-      expect(game.launch().pathHash, game.level.id).not.toBe(plain.launch().pathHash);
+      expect(game.mode).toBe('story');
+      expect(game.externalWells).toEqual([MUG]);
+      expect(game.activeWells).toEqual([]);
+      for (const g of [game, plain]) for (const [id, p] of Object.entries(g.level.solution)) g.setPlacement(id, p);
+      // The preview and the launch both ignore the wells.
+      expect(game.preview().count, game.level.id).toBe(plain.preview().count);
+      const withWells = game.launch();
+      const without = plain.launch();
+      expect(withWells.pathHash, game.level.id).toBe(without.pathHash);
+      expect(withWells.flybys.some((f) => f.bodyId === MUG.id)).toBe(false);
+      flyToEnd(game);
+      flyToEnd(plain);
+      expect(game.phase, game.level.id).toBe('solved');
+      expect(game.lastStars).toBe(plain.lastStars);
     }
+  });
 
-    // 'moon' is a body of c1-l3 only: refused while c1-l1 is loaded, and nothing changes.
-    game.loadLevel(0);
+  it('feeds external wells into sandbox flights and keeps them across target changes', () => {
+    const game = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
+    const plain = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
+    game.setExternalWells([MUG]);
+    for (let i = 0; i < SANDBOX_LEVELS.length; i++) {
+      game.loadSandbox(i);
+      plain.loadSandbox(i);
+      expect(game.mode).toBe('sandbox');
+      expect(game.level.id).toBe(SANDBOX_LEVELS[i].id);
+      expect(game.externalWells).toEqual([MUG]);
+      expect(game.activeWells).toEqual([MUG]);
+      const withWells = game.launch();
+      expect(withWells.pathHash, game.level.id).not.toBe(plain.launch().pathHash);
+      expect(withWells.flybys.some((f) => f.bodyId === MUG.id && f.source === 'real-object')).toBe(true);
+      expect(game.lastNotes.find((n) => n.bodyId === MUG.id)?.midi).toBe(WELL_NOTE_MIDI);
+    }
+    // nextLevel cycles the sandbox targets and wraps; wells stay.
+    game.loadSandbox(SANDBOX_LEVELS.length - 1);
+    game.nextLevel();
+    expect(game.mode).toBe('sandbox');
+    expect(game.sandboxIndex).toBe(0);
+    expect(game.externalWells).toEqual([MUG]);
+  });
+
+  it('refuses well ids that any story level or sandbox target uses, changing nothing', () => {
+    const game = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
+    game.setExternalWells([MUG]);
+    game.loadSandbox(0);
     const revision = game.levelRevision;
-    expect(() => game.setExternalWells([{ ...mug, id: 'moon' }])).toThrow(/moon/);
-    expect(game.externalWells).toEqual([mug]);
+    // 'moon' is a body of c1-l3 only, 'p1' the sandbox planet.
+    for (const id of ['moon', 'p1']) {
+      expect(() => game.setExternalWells([{ ...MUG, id }])).toThrow(new RegExp(id));
+      expect(game.externalWells).toEqual([MUG]);
+    }
     expect(game.levelRevision).toBe(revision);
+    expect(() => game.setExternalWells([{ id: 'bad', position: [0, 0, 0], source: 'real-object' }])).toThrow();
     game.loadLevel(ALL_LEVELS.findIndex((l) => l.id === 'c1-l3'));
     expect(game.level.id).toBe('c1-l3');
+  });
+
+  it('gives sandbox solves no stars and keeps saving and resuming the story level', () => {
+    const game = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
+    const settings = { muted: false, volume: 0.8, quiet: false };
+    const onboarding = { ghostHandDone: true };
+    game.loadLevel(2);
+    game.setPlacement('p1', [0.1, 0.2]);
+    game.launch();
+    flyToEnd(game);
+    const story = game.toState(settings, onboarding);
+
+    const index = SANDBOX_LEVELS.findIndex((l) => l.id === 'table-2');
+    game.loadSandbox(index);
+    const target = SANDBOX_LEVELS[index];
+    game.setExternalWells(target.wellSolution!.wells);
+    for (const [id, p] of Object.entries(target.wellSolution!.placements)) game.setPlacement(id, p);
+    game.launch();
+    flyToEnd(game);
+    expect(game.phase).toBe('solved');
+    expect(game.lastStars).toBe(0);
+    expect(game.solvedLevelIds.has('table-2')).toBe(false);
+    expect(game.bestStars.has('table-2')).toBe(false);
+    // The save still names the story level, with its placements and attempts.
+    expect(game.toState(settings, onboarding)).toEqual(story);
+    game.nextLevel();
+    expect(game.toState(settings, onboarding)).toEqual(story);
+
+    const restored = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
+    restored.fromState(game.toState(settings, onboarding));
+    expect(restored.mode).toBe('story');
+    expect(restored.level.id).toBe('c1-l3');
+
+    // Exiting returns to that story level as it was left; the wells stay set but do nothing there.
+    game.exitSandbox();
+    expect(game.mode).toBe('story');
+    expect(game.level.id).toBe('c1-l3');
+    expect(game.placements.p1).toEqual([0.1, 0.2]);
+    expect(game.attempts).toBe(story.attempts);
+    expect(game.lastOutcome).toBe(story.lastOutcome);
+    expect(game.externalWells).toEqual(target.wellSolution!.wells);
+    expect(game.activeWells).toEqual([]);
   });
 
   it('round-trips through GameState JSON with stars, settings and onboarding', () => {
@@ -363,30 +451,16 @@ describe('GameController', () => {
     expect(game.lastRung).toEqual([]);
   });
 
-  it('never counts external-well flybys toward the melody', () => {
-    const game = new GameController(ALL_LEVELS);
-    // A small well by the comet's start: c1-l1 still solves and the well rings first.
+  it('rings no well notes in a story flight, so the melody and stars are untouched', () => {
+    const game = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
+    // A small well by the comet's start would ring first if story flights used it.
     game.setExternalWells([{ id: 'mug', position: [-0.6, 0, -0.3], radius: 0.02, source: 'real-object' }]);
     game.setPlacement('p1', game.level.solution.p1);
     game.launch();
-    expect(game.lastNotes.map((n) => [n.bodyId, n.midi])).toEqual([
-      ['mug', WELL_NOTE_MIDI],
-      ['p1', 72],
-    ]);
+    expect(game.lastNotes.map((n) => [n.bodyId, n.midi])).toEqual([['p1', 72]]);
     flyToEnd(game);
     expect(game.phase).toBe('solved');
     expect(game.lastRung).toEqual(['p1']);
     expect(game.lastStars).toBe(3);
-  });
-
-  it('feeds external wells into launches', () => {
-    const game = new GameController(ALL_LEVELS);
-    game.setPlacement('p1', [-0.075, -0.4]);
-    const plain = game.launch().pathHash;
-    game.setExternalWells([{ id: 'mug', position: [-0.3, 0, 0.15], radius: 0.06, source: 'real-object' }]);
-    const withWell = game.launch();
-    expect(withWell.pathHash).not.toBe(plain);
-    expect(withWell.flybys.some((f) => f.bodyId === 'mug')).toBe(true);
-    expect(() => game.setExternalWells([{ id: 'bad', position: [0, 0, 0], source: 'real-object' }])).toThrow();
   });
 });
