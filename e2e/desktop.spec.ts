@@ -642,6 +642,9 @@ test('debug overlay with ?debug=1', async ({ page }) => {
     if (m.type() === 'info') info.push(m.text());
   });
   await page.goto('/?debug=1');
+  // World.create can take over 5 s under SwiftShader load; the overlay is
+  // registered right after it, before the debug API reports ready.
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 60_000 });
   await expect(page.locator('#debug-overlay')).toContainText('fps', { timeout: 5_000 });
   // The 2 Hz refresh writes real numbers and the render counts.
   await expect(page.locator('#debug-overlay')).toContainText(/fps (?!0\.0 )\d+\.\d avg \| 1% low \d+\.\d/, { timeout: 30_000 });
