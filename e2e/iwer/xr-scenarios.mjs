@@ -938,14 +938,19 @@ export async function occlusionCost({ cup, tableHead, takeShot }) {
   const off = await measure(false);
   const shotOff = on.depthFrames > 0 ? takeShot('iwer-occlusion-off.png') : null;
   game('setOcclusion', true);
+  // Compile or link failures only: three also prints the driver's "Program
+  // Info Log" when it holds mere warnings (ANGLE/D3D X4122 precision notes),
+  // which are kept as data, not counted as errors.
   let logs = [];
+  let warnings = [];
   try {
-    const reply = call(['browser', 'logs'], { input: { count: 200 } });
-    logs = JSON.stringify(reply).match(/[^"]*(WebGLProgram|Shader Error|shader error|ERROR: 0:)[^"]*/g) ?? [];
+    const text = JSON.stringify(call(['browser', 'logs'], { input: { count: 200 } }));
+    logs = text.match(/[^"]*(Shader Error|shader error|ERROR: 0:|VALIDATE_STATUS false)[^"]*/g) ?? [];
+    warnings = text.match(/[^"]*Program Info Log[^"]*/g) ?? [];
   } catch (error) {
     logs = [`could not read logs: ${String(error?.message ?? error).slice(0, 200)}`];
   }
-  return { status, on, off, shotOn, shotOff, shaderErrors: logs };
+  return { status, on, off, shotOn, shotOff, shaderErrors: logs, shaderWarnings: warnings.map((w) => w.slice(0, 300)) };
 }
 
 export { enterXR, exitXR };

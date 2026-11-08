@@ -562,6 +562,7 @@ test('Your Table sandbox with the puck', async ({ page }) => {
   // Level select -> Your Table.
   await clickUi(page, 'levels-button');
   await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(true);
+  await page.waitForTimeout(400); // the panel is posed on the next frames (a click before that misses)
   await clickUi(page, 'sandbox-button');
   await expect.poll(async () => (await snapshot(page)).mode, { timeout: 5_000 }).toBe('sandbox');
   await expect.poll(async () => (await snapshot(page)).sandbox.panel.shown, { timeout: 5_000 }).toBe(true);

@@ -593,7 +593,7 @@ const GROUP_RUNNERS = {
     const o = await occlusionCost({ cup: CUP, tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name) });
     const file = path.join(RESULTS, 'render-stats-occlusion.json');
     const fpsDrop = o.on.fps && o.off.fps ? round((o.off.fps - o.on.fps) / o.off.fps, 3) : null;
-    writeFileSync(file, JSON.stringify({ room: 'sunlit_living_room', head: TABLE_HEAD, budget: BUDGET, status: o.status, on: o.on, off: o.off, fpsDrop, shaderErrors: o.shaderErrors }, null, 2));
+    writeFileSync(file, JSON.stringify({ room: 'sunlit_living_room', head: TABLE_HEAD, budget: BUDGET, status: o.status, on: o.on, off: o.off, fpsDrop, shaderErrors: o.shaderErrors, shaderWarnings: o.shaderWarnings }, null, 2));
     summary.data.occlusion = { file, ...o, fpsDrop };
     check('occlusion: DepthSensingSystem registered and depth-sensing granted', o.status.systemRegistered && o.status.featureEnabled, o.status);
     check('occlusion: occludable board entities', o.status.occludableEntities >= 4, o.status.occludableEntities);
@@ -603,7 +603,7 @@ const GROUP_RUNNERS = {
       check('occlusion: setOcclusion(false) clears occlusionEnabled', o.off.status.enabled === false && o.off.status.occlusionEnabledUniform === false, o.off.status);
       check('occlusion: screenshots on and off', Boolean(o.shotOn && o.shotOff), { on: o.shotOn, off: o.shotOff });
     }
-    check('occlusion: no shader errors in the console', o.shaderErrors.length === 0, o.shaderErrors.slice(0, 5));
+    check('occlusion: no shader compile or link errors in the console', o.shaderErrors.length === 0, { errors: o.shaderErrors.slice(0, 5), warnings: o.shaderWarnings.length });
     check('occlusion: XR calls and triangles within budget with occlusion on', o.on.max.calls <= BUDGET.calls && o.on.max.triangles <= BUDGET.triangles, o.on.max);
     check('occlusion: frame rate drop with occlusion on at most 30%', fpsDrop === null || fpsDrop <= 0.3, { on: o.on.fps, off: o.off.fps, fpsDrop });
   },
