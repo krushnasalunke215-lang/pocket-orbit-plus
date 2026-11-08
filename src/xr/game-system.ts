@@ -1,7 +1,9 @@
 import {
   createSystem,
+  DepthOccludable,
   DistanceGrabbable,
   MovementMode,
+  OcclusionShadersMode,
   RayInteractable,
 } from '@iwsdk/core';
 import { colliderLocalRadius } from '../game/board-math.js';
@@ -11,6 +13,7 @@ import { createCometVisual } from '../render/comet-visual.js';
 import { createTargetVisual } from '../render/target-visual.js';
 import { createTrailVisual } from '../render/trail-visual.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
+import { SANDBOX_LEVELS } from '../sim/levels/sandbox.js';
 import { BoardBody } from './components.js';
 import { getBoard, getPause, setGame, setVisuals, type BoardRuntime, type GameVisuals } from './runtime.js';
 
@@ -38,14 +41,15 @@ export class GameSystem extends createSystem({
     const board = getBoard(this.world);
     if (!board) throw new Error('GameSystem needs BoardPlacementSystem registered first');
     this.board = board;
-    this.game = new GameController(ALL_LEVELS);
+    this.game = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
     setGame(this.world, this.game);
 
     const comet = createCometVisual();
     const target = createTargetVisual();
     const trail = createTrailVisual();
     for (const visual of [trail, target, comet]) {
-      this.world.createTransformEntity(visual.root, { parent: board.entity });
+      const entity = this.world.createTransformEntity(visual.root, { parent: board.entity });
+      entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.HardOcclusion });
     }
     this.visuals = { bodies: new Map(), builtRevision: -1, comet, target, trail };
     setVisuals(this.world, this.visuals);
@@ -75,6 +79,8 @@ export class GameSystem extends createSystem({
       visual.collider?.scale.setScalar(colliderRadius);
       const entity = this.world.createTransformEntity(visual.root, { parent: this.board.entity });
       entity.addComponent(BoardBody, { bodyId: def.id, movable: Boolean(def.movable) });
+      // Real objects hide the body where they stand in front of it (DepthSensingSystem).
+      entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.HardOcclusion });
       if (def.movable) {
         entity.addComponent(RayInteractable);
         entity.addComponent(DistanceGrabbable, {

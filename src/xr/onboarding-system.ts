@@ -92,7 +92,7 @@ export class OnboardingSystem extends createSystem({
         game.placements !== this.attractPlacements
       ) {
         // An event, not per frame: a level load or a committed placement.
-        this.attractResult = simulate(game.level, game.placements, { externalWells: game.externalWells });
+        this.attractResult = simulate(game.level, game.placements, { externalWells: game.activeWells });
         this.attractLevelRevision = game.levelRevision;
         this.attractPlacements = game.placements;
         this.attractTime = 0;
@@ -110,7 +110,7 @@ export class OnboardingSystem extends createSystem({
     override.active = attract;
     session.attract = attract;
 
-    const show = game.levelIndex === 0 && game.phase === 'placing' && !getOnboarding(this.world).ghostHandDone;
+    const show = game.mode === 'story' && game.levelIndex === 0 && game.phase === 'placing' && !getOnboarding(this.world).ghostHandDone;
     if (show && this.ghostTargets()) {
       this.ghostTime += dt;
       this.ghost.update(this.ghostTime, this.from, this.to);

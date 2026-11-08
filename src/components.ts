@@ -6,6 +6,6 @@
  */
 
 import { defineComponents } from '@iwsdk/core';
-import { BoardBody } from './xr/components.js';
+import { BoardBody, WellMarker, WellPuck } from './xr/components.js';
 
-export default defineComponents([BoardBody]);
+export default defineComponents([BoardBody, WellPuck, WellMarker]);

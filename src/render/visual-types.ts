@@ -57,6 +57,31 @@ export interface GhostHandVisual {
   update(t: number, from: XYZLike, to: XYZLike): void;
 }
 
+/**
+ * A Your Table well under the board root, centered on its board point: a
+ * pulsing ring on the board plane, a pull ring at the well's influence
+ * radius and a halo at the object's top. The puck variant adds a disc and
+ * an invisible grab collider.
+ */
+export interface WellVisual {
+  readonly root: Object3D;
+  /** The puck's invisible, oversized grab target (scale it to the collider radius). */
+  readonly collider?: Mesh;
+  /** Height of the object's top above the board plane, in board units (the halo sits there). */
+  setHeight(height: number): void;
+  /** The well the height buttons change glows brighter. */
+  setSelected(selected: boolean): void;
+  setVisible(visible: boolean): void;
+  update(t: number): void;
+  /** Frees its sprite slots (geometry and materials are shared). */
+  dispose(): void;
+}
+/** The hit-test reticle, in world meters on the hit surface (local +Y is the surface normal). */
+export interface ReticleVisual {
+  readonly root: Object3D;
+  /** Shows the ring and dot; `onObject` picks bluish green (a well) or orange (puck fallback). */
+  show(visible: boolean, onObject: boolean): void;
+}
 export interface TargetVisual {
   readonly root: Object3D;
   setSolved(solved: boolean): void;

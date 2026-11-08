@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import { World } from '@iwsdk/core';
+import { DepthSensingSystem, World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
 import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
@@ -17,9 +17,11 @@ import { HudSystem } from './xr/hud-system.js';
 import { LevelSelectSystem } from './xr/level-select-system.js';
 import { LifecycleSystem } from './xr/lifecycle-system.js';
 import { OnboardingSystem } from './xr/onboarding-system.js';
+import { RealObjectSystem } from './xr/real-object-system.js';
 import { RenderStatsSystem } from './xr/render-stats-system.js';
 import { RenderSyncSystem } from './xr/render-sync-system.js';
 import { RimButtonSystem } from './xr/rim-button-system.js';
+import { SandboxPanelSystem } from './xr/sandbox-panel-system.js';
 import { SaveSystem } from './xr/save-system.js';
 
 async function main(): Promise<void> {
@@ -37,10 +39,24 @@ async function main(): Promise<void> {
     // First every frame (before Input and Grab), so a release and the game
     // tick see this frame's pause state.
     .registerSystem(LifecycleSystem, { priority: -5 })
+    // Depth occlusion before any occludable entity exists. It disables itself
+    // when the session lacks 'depth-sensing' (Quest 2, glasses); depthSensing
+    // stays optional in iwsdk.config.json. ?occlusion=0 starts it off.
+    .registerSystem(DepthSensingSystem, {
+      priority: 1,
+      configData: {
+        enableDepthTexture: true,
+        enableOcclusion: new URLSearchParams(window.location.search).get('occlusion') !== '0',
+        useFloat32: true,
+        blurRadius: 20,
+      },
+    })
     .registerSystem(BoardPlacementSystem, { priority: 5 })
     .registerSystem(GameSystem, { priority: 10 })
     // Right after GameSystem: restores the save before other systems read state.
     .registerSystem(SaveSystem, { priority: 11 })
+    // Your Table wells (sandbox mode): reticles, hit-test pinch, pucks.
+    .registerSystem(RealObjectSystem, { priority: 12 })
     .registerSystem(BoardConstraintSystem, { priority: 0 })
     // Attract loop and ghost hand, then the chapter-complete moment: both
     // write the comet override before RenderSync draws it.
@@ -52,6 +68,7 @@ async function main(): Promise<void> {
     .registerSystem(HudSystem, { priority: 30 })
     .registerSystem(RimButtonSystem, { priority: 31 })
     .registerSystem(LevelSelectSystem, { priority: 32 })
+    .registerSystem(SandboxPanelSystem, { priority: 33 })
     .registerSystem(RenderStatsSystem, { priority: 40 });
 
   if (import.meta.env.DEV || import.meta.env.MODE === 'e2e') {

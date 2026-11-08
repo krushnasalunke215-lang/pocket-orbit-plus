@@ -154,7 +154,8 @@ export class HudSystem extends createSystem({}) {
     const game = getGame(this.world);
     if (!game) return;
     const chapter = getChapter(this.world);
-    if (chapter && isChapterEnd(game)) chapter.show(game.level.chapter);
+    if (game.mode === 'sandbox') game.nextLevel();
+    else if (chapter && isChapterEnd(game)) chapter.show(game.level.chapter);
     else game.nextLevel();
   }
 
@@ -179,7 +180,9 @@ export class HudSystem extends createSystem({}) {
     const chapter = getChapter(this.world);
     const chapterRevision = chapter?.revision ?? 0;
     if (game.levelRevision !== this.lastLevelRevision) {
-      elements.level.setProperties({ text: `Level ${game.levelIndex + 1}: ${game.level.title}` });
+      elements.level.setProperties({
+        text: game.mode === 'sandbox' ? game.level.title : `Level ${game.levelIndex + 1}: ${game.level.title}`,
+      });
     }
     if (
       game.phase !== this.lastPhase ||

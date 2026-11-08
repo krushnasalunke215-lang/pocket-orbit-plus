@@ -34,4 +34,10 @@ export const ROLE_COLORS = {
   ghost: 0xcfe9fb,
   /** Thin event-horizon rim of the black hole: white-hot, a touch warm. */
   eventHorizon: 0xffe8c8,
+  /** Your Table wells (real objects and pucks): bluish green lifted toward white. */
+  well: 0x7fe3c6,
+  /** Reticle on a real object (a pinch makes a well). */
+  reticleObject: PALETTE.bluishGreen,
+  /** Reticle where a pinch falls back to a puck (too flat, off the board, no hit). */
+  reticleFallback: PALETTE.orange,
 } as const;

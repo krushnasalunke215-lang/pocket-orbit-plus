@@ -53,6 +53,77 @@ export interface RimButtonRuntime {
   label: string;
 }
 
+/** One Your Table well (RealObjectSystem). */
+export interface SandboxWell {
+  readonly id: string;
+  /** 'object': a hit-tested real object; 'puck': the draggable fallback puck. */
+  readonly kind: 'object' | 'puck';
+  /** Board position [x, 0, z] (written in place when a puck moves). */
+  readonly position: [number, number, number];
+  /** Height above the board plane (meters), clamped; sets the mass. */
+  heightM: number;
+  /** The hit's measured height before clamping (meters; the start height for a puck). */
+  readonly measuredHeightM: number;
+  mass: number;
+}
+
+/** What the armed reticle points at: see classifyHit, or 'miss' without a hit. */
+export type ReticleHit = 'object' | 'too-low' | 'off-board' | 'miss';
+
+/** The Your Table sandbox controls and wells (RealObjectSystem). */
+export interface SandboxRuntime {
+  /** A confirming pinch of `armHand` turns the aimed object into a well. */
+  armed: boolean;
+  armHand: 'left' | 'right' | null;
+  /** Status line the sandbox panel shows. */
+  status: string;
+  /** Wells in placement order (the game's external wells carry the same ids). */
+  readonly wells: SandboxWell[];
+  /** The well the height buttons change: the last placed or grabbed one. */
+  selectedId: string | null;
+  /** The armed hand's reticle this frame. */
+  readonly reticle: {
+    visible: boolean;
+    hit: ReticleHit;
+    readonly world: [number, number, number];
+    readonly board: [number, number, number];
+    heightM: number;
+  };
+  /** Increments whenever what the panel shows changes (wells, selection, status, armed). */
+  revision: number;
+  /** Arms well placement for `hand` (default: the hand that just clicked, else right). */
+  arm(hand?: 'left' | 'right'): void;
+  disarm(): void;
+  /** Adds a well puck at the board center. */
+  addPuck(): void;
+  /** Changes the selected well's height by `steps` HEIGHT_STEP_M presses. */
+  stepHeight(steps: number): void;
+  /** Removes every well, puck and marker. */
+  clear(): void;
+}
+
+/** Number of hit-test samples HitLog keeps. */
+export const HIT_LOG_SIZE = 30;
+
+/**
+ * The last HIT_LOG_SIZE reticle hits while in the sandbox (for the debug
+ * overlay's hit height and jitter). Ring buffers written in place.
+ */
+export interface HitLog {
+  /** Height above the board plane per sample (meters). */
+  readonly heights: Float32Array;
+  /** World xyz per sample (meters), packed. */
+  readonly positions: Float32Array;
+  /** Valid samples (at most HIT_LOG_SIZE). */
+  count: number;
+  /** Next slot to write. */
+  next: number;
+  /** Total hits logged. */
+  total: number;
+  /** Well placement was armed when the last sample was taken. */
+  armed: boolean;
+}
+
 /** renderer.info.render counters of one frame. */
 export interface RenderCounts {
   calls: number;
@@ -66,11 +137,13 @@ export interface RenderStats {
   readonly last: RenderCounts;
   readonly max: RenderCounts;
   frames: number;
+  /** Frames on which DepthSensingSystem had XR depth data (occlusion input). */
+  depthFrames: number;
   programs: number;
   geometries: number;
   textures: number;
   readonly autoReset: boolean;
-  /** Clears max and the frame counter. */
+  /** Clears max and the frame counters. */
   reset(): void;
 }
 
@@ -194,7 +267,48 @@ const KEYS = {
   levelSelect: 'levelSelect',
   chapter: 'chapter',
   chapterListeners: 'chapterListeners',
+  sandbox: 'sandbox',
+  sandboxPanel: 'sandboxPanel',
+  hitLog: 'hitLog',
 } as const;
+
+export function setSandbox(world: World, sandbox: SandboxRuntime): void {
+  world.globals[KEYS.sandbox] = sandbox;
+}
+export function getSandbox(world: World): SandboxRuntime | undefined {
+  return world.globals[KEYS.sandbox] as SandboxRuntime | undefined;
+}
+
+/** The Your Table panel (SandboxPanelSystem). */
+export interface SandboxPanelRuntime {
+  readonly panel: UIKitMLAsset;
+  readonly entity: Entity;
+  /** Shown (sandbox mode). */
+  shown: boolean;
+}
+export function setSandboxPanel(world: World, panel: SandboxPanelRuntime): void {
+  world.globals[KEYS.sandboxPanel] = panel;
+}
+export function getSandboxPanel(world: World): SandboxPanelRuntime | undefined {
+  return world.globals[KEYS.sandboxPanel] as SandboxPanelRuntime | undefined;
+}
+
+/** The sandbox hit log (created on first use; RealObjectSystem writes it). */
+export function getHitLog(world: World): HitLog {
+  let log = world.globals[KEYS.hitLog] as HitLog | undefined;
+  if (!log) {
+    log = {
+      heights: new Float32Array(HIT_LOG_SIZE),
+      positions: new Float32Array(HIT_LOG_SIZE * 3),
+      count: 0,
+      next: 0,
+      total: 0,
+      armed: false,
+    };
+    world.globals[KEYS.hitLog] = log;
+  }
+  return log;
+}
 
 export function getCometOverride(world: World): CometOverride {
   let o = world.globals[KEYS.cometOverride] as CometOverride | undefined;
