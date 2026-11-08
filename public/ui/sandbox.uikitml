@@ -1,0 +1,93 @@
+<!--
+  Your Table sandbox panel (SandboxPanelSystem). Horizon kit, authored in
+  kit pixel units and scaled by 0.1 like the HUD (10 units = 1 cm): about
+  26 x 33 cm (SANDBOX_PANEL_SIZE in src/game/hud-layout.ts). Shown only in
+  sandbox mode, beside the HUD beyond the far rim. Button labels ignore
+  pointers (set in code) so a fingertip press and release land on the
+  same button. The "-" placeholders are written at runtime.
+-->
+<style>
+  .sandbox-root {
+    flex-direction: column;
+    width: 260;
+    padding-top: 12;
+    padding-bottom: 12;
+    padding-left: 14;
+    padding-right: 14;
+    gap: 7;
+  }
+
+  .title {
+    color: #fafaf7;
+    font-size: 22;
+    font-weight: 700;
+  }
+
+  .info {
+    color: #dddfe3;
+    font-size: 16;
+    line-height: 1.25;
+  }
+
+  .row {
+    flex-direction: row;
+    align-items: center;
+    gap: 8;
+  }
+
+  .button {
+    height: 44;
+    flex-grow: 1;
+    flex-basis: 0;
+    justify-content: center;
+  }
+
+  .small-button {
+    height: 44;
+    justify-content: center;
+  }
+
+  .label {
+    font-size: 16;
+    line-height: 1.2;
+  }
+
+  .value {
+    color: #dddfe3;
+    font-size: 16;
+    flex-grow: 1;
+    text-align: center;
+  }
+</style>
+<Panel id="sandbox-root" class="sandbox-root">
+  <div id="sandbox-title" class="title">Your Table</div>
+  <div id="sandbox-status" class="info">-</div>
+  <div class="row">
+    <Button id="make-well" class="button">
+      <ButtonLabel id="make-well-label" class="label">Make well</ButtonLabel>
+    </Button>
+    <Button id="add-puck" class="button">
+      <ButtonLabel id="add-puck-label" class="label">Add puck</ButtonLabel>
+    </Button>
+  </div>
+  <div class="row">
+    <Button id="height-down" class="small-button">
+      <ButtonLabel id="height-down-label" class="label">-</ButtonLabel>
+    </Button>
+    <div id="height-label" class="value">Height -</div>
+    <Button id="height-up" class="small-button">
+      <ButtonLabel id="height-up-label" class="label">+</ButtonLabel>
+    </Button>
+  </div>
+  <div class="row">
+    <Button id="clear-wells" class="button">
+      <ButtonLabel id="clear-wells-label" class="label">Clear wells</ButtonLabel>
+    </Button>
+    <Button id="next-target" class="button">
+      <ButtonLabel id="next-target-label" class="label">Next target</ButtonLabel>
+    </Button>
+  </div>
+  <Button id="exit-sandbox" class="button">
+    <ButtonLabel id="exit-sandbox-label" class="label">Back to the levels</ButtonLabel>
+  </Button>
+</Panel>

@@ -5,8 +5,8 @@
   src/game/hud-layout.ts); it opens 0.45 m from the head, within poke reach.
   Level buttons level-1 .. level-6 hold a label (the system writes
   "n  Title") and three Star icons, hidden until that level is solved and
-  lit by its best stars. The Your Table button stays hidden until the
-  sandbox exists (FEAT-006).
+  lit by its best stars. The Your Table button (header) opens the sandbox
+  (GameController.loadSandbox(0)).
 -->
 <style>
   .levels-root {
@@ -29,6 +29,11 @@
     color: #fafaf7;
     font-size: 26;
     font-weight: 700;
+  }
+
+  .header-buttons {
+    flex-direction: row;
+    gap: 8;
   }
 
   .grid-row {
@@ -94,9 +99,14 @@
 <Panel id="levels-root" class="levels-root">
   <div class="header">
     <div id="levels-title" class="title">Chapter 1</div>
-    <Button id="close-levels" class="small-button">
-      <ButtonLabel class="small-label">Close</ButtonLabel>
-    </Button>
+    <div class="header-buttons">
+      <Button id="sandbox-button" class="small-button">
+        <ButtonLabel id="sandbox-label" class="small-label">Your Table</ButtonLabel>
+      </Button>
+      <Button id="close-levels" class="small-button">
+        <ButtonLabel class="small-label">Close</ButtonLabel>
+      </Button>
+    </div>
   </div>
   <div class="grid-row">
     <Button id="level-1" class="level-button">
@@ -150,9 +160,6 @@
       </div>
     </Button>
   </div>
-  <Button id="sandbox-button" class="wide-button" style="display: none">
-    <ButtonLabel class="small-label">Your Table</ButtonLabel>
-  </Button>
   <div class="settings-row">
     <Button id="mute-button" class="small-button">
       <ButtonLabel id="mute-label" class="small-label">Mute</ButtonLabel>

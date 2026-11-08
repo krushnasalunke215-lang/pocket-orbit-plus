@@ -26,4 +26,9 @@ export default defineAssets({
     type: AssetType.UIKitML,
     name: 'Level Select',
   },
+  'sandbox-panel': {
+    url: publicAssetUrl('ui/sandbox.uikitml'),
+    type: AssetType.UIKitML,
+    name: 'Your Table Panel',
+  },
 });

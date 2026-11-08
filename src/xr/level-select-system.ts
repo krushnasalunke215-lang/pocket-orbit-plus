@@ -44,7 +44,7 @@ interface SlotElements {
 /**
  * The level-select panel: a 3 x 2 grid of the chapter's levels with each
  * solved level's best stars (unsolved levels show none; nothing is
- * locked), a hidden Your Table button (FEAT-006) and the audio settings
+ * locked), the Your Table button (opens the sandbox) and the audio settings
  * (mute, volume, quiet), which edit the runtime AppSettings that SaveSystem
  * persists and GameAudioSystem applies. Hidden by default; the HUD Levels
  * button opens it (show()). A level click loads that level and closes it.
@@ -119,6 +119,13 @@ export class LevelSelectSystem extends createSystem({}) {
       this.slots.push(slot);
     }
     onClick('close-levels', () => this.hide());
+    onClick('sandbox-button', () => {
+      const game = getGame(this.world);
+      if (!game || game.sandboxLevels.length === 0) return;
+      game.loadSandbox(0);
+      this.hide();
+    });
+    element('sandbox-label').setProperties({ pointerEvents: 'none' });
     onClick('mute-button', () => setSettings(this.world, { muted: !getSettings(this.world).muted }));
     onClick('volume-down', () => this.stepVolume(-VOLUME_STEP));
     onClick('volume-up', () => this.stepVolume(VOLUME_STEP));

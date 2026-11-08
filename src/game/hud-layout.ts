@@ -89,7 +89,8 @@ export function rimButtonPose(board: BoardPose, head: HeadPose): Pose {
 
 /**
  * World size of the level-select panel (meters): the UIKitML root is 46 cm
- * wide and about 27 cm tall at the 10 units = 1 cm scale (height rounded up).
+ * wide and about 27 cm tall (the Your Table button shares the header row),
+ * at the 10 units = 1 cm scale (height rounded up).
  */
 export const LEVEL_SELECT_SIZE = { width: 0.46, height: 0.28 } as const;
 /** Distance of the level-select panel from the head (meters): a fingertip reaches it. */
@@ -120,6 +121,22 @@ export function levelSelectPose(board: BoardPose, head: HeadPose): Pose {
     hy + dy * LEVEL_SELECT_DISTANCE,
     hz + dz * LEVEL_SELECT_DISTANCE,
   ];
+  return { position, quaternion: quatLookAt(position, head.position) };
+}
+
+/** World size of the Your Table panel (meters): 26 cm wide, about 33 cm tall (rounded up). */
+export const SANDBOX_PANEL_SIZE = { width: 0.26, height: 0.34 } as const;
+/** Gap between the HUD and the Your Table panel (meters). */
+export const SANDBOX_PANEL_GAP = 0.02;
+
+/**
+ * The Your Table panel: beside the HUD beyond the far rim, on the player's
+ * right (board-local +X), at the HUD's height, facing the head.
+ */
+export function sandboxPanelPose(board: BoardPose, head: HeadPose): Pose {
+  const hud = hudPose(board, head).position;
+  const side = quatRotate(board.quaternion, [HUD_SIZE.width / 2 + SANDBOX_PANEL_GAP + SANDBOX_PANEL_SIZE.width / 2, 0, 0]);
+  const position: Vec3 = [hud[0] + side[0], hud[1] + side[1], hud[2] + side[2]];
   return { position, quaternion: quatLookAt(position, head.position) };
 }
 
