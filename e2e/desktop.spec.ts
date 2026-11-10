@@ -460,8 +460,32 @@ test('chapter complete after level 6', async ({ page }) => {
   const hudSize = (await snapshot(page)).hud.size!;
   expect(hudSize[0]).toBeLessThanOrEqual(HUD_SIZE.width + 1e-6);
   expect(hudSize[1]).toBeLessThanOrEqual(HUD_SIZE.height + 1e-6);
+  expect((await snapshot(page)).rimButton.shown, 'near-rim button hidden during the moment').toBe(false);
   await page.screenshot({ path: screenshotPath('chapter-complete.png') });
   console.log('chapter complete', JSON.stringify({ chapter: moment.chapterComplete, hud: moment.hud }));
+
+  // Nothing launches under the moment: a click where the near-rim button
+  // was, and a drag on a planet (it takes no hover or grab), change nothing.
+  const rim = await page.evaluate(() => window.__game!.hudScreenPoint('rim-launch-button'));
+  expect(rim).not.toBeNull();
+  await page.mouse.move(rim!.x - 2, rim!.y);
+  await page.mouse.move(rim!.x, rim!.y);
+  await page.mouse.click(rim!.x, rim!.y);
+  const planet = moment.bodies.findIndex((b) => b.movable);
+  const at = await screenPoint(page, moment.bodies[planet].board);
+  await page.mouse.move(at.x - 2, at.y);
+  await page.mouse.move(at.x, at.y);
+  await page.waitForTimeout(500);
+  expect((await snapshot(page)).bodies[planet].hovered, 'planet takes no hover during the moment').toBe(false);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 60, at.y + 30, { steps: 10 });
+  await page.mouse.up();
+  await page.waitForTimeout(800);
+  const still = await snapshot(page);
+  expect(still.attempts, 'no launch under the moment').toBe(moment.attempts);
+  expect(still.phase).toBe('solved');
+  expect(still.placements).toEqual(moment.placements);
+  expect(still.chapterComplete.shown).toBe(true);
 
   // Play again loads level 1 and ends the moment.
   await clickUi(page, 'play-again-button');
@@ -470,6 +494,7 @@ test('chapter complete after level 6', async ({ page }) => {
   const again = await snapshot(page);
   expect(again.phase).toBe('placing');
   await expect.poll(async () => (await snapshot(page)).hud.status, { timeout: 5_000 }).not.toMatch(/^Chapter/);
+  await expect.poll(async () => (await snapshot(page)).rimButton.shown, { timeout: 5_000 }).toBe(true);
 });
 
 test('render budget', async ({ page }) => {

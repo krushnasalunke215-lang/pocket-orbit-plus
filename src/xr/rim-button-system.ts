@@ -13,6 +13,7 @@ import { rimButtonPose } from '../game/hud-layout.js';
 import { BoardBody } from './components.js';
 import {
   getBoard,
+  getChapter,
   getGame,
   getLevelSelect,
   getPause,
@@ -41,6 +42,8 @@ const FORWARD: readonly [number, number, number] = [0, 0, -1];
  * held, so a poke with one hand never fires a flight mid-drag with the
  * other, or while the game is paused, or while the level select is open
  * (at the table pose it sits a few centimeters in front of this button).
+ * During the chapter-complete moment it is hidden and takes no input, like
+ * the HUD's Launch/Replay (the moment offers only Levels and Play again).
  * The HUD keeps its own Launch/Replay button.
  */
 export class RimButtonSystem extends createSystem({
@@ -74,13 +77,26 @@ export class RimButtonSystem extends createSystem({
 
     this.label = panel.requireElementById<UIKit.Text>('rim-launch-label');
     this.entity = entity;
-    this.runtime = { panel, entity, label: 'Launch' };
+    this.runtime = { panel, entity, label: 'Launch', shown: true };
     setRimButton(this.world, this.runtime);
+  }
+
+  /** Shows the button with its input components, or hides it with none (as LevelSelectSystem). */
+  private setShown(entity: Entity, runtime: RimButtonRuntime, shown: boolean): void {
+    runtime.shown = shown;
+    entity.object3D!.visible = shown;
+    if (shown) {
+      entity.addComponent(RayInteractable);
+      entity.addComponent(PokeInteractable);
+    } else {
+      entity.removeComponent(RayInteractable);
+      entity.removeComponent(PokeInteractable);
+    }
   }
 
   private onClick(): void {
     const game = getGame(this.world);
-    if (!game || getPause(this.world).paused) return;
+    if (!game || getPause(this.world).paused || !this.runtime?.shown) return;
     // The open level select sits just in front of this button; a poke through it must not launch.
     if (getLevelSelect(this.world)?.open) return;
     markInteracted(this.world);
@@ -96,6 +112,10 @@ export class RimButtonSystem extends createSystem({
     const label = this.label;
     const runtime = this.runtime;
     if (!game || !board || !entity || !label || !runtime) return;
+
+    // No launch under the chapter-complete moment (it ends on any level load).
+    const show = !getChapter(this.world)?.shown;
+    if (show !== runtime.shown) this.setShown(entity, runtime, show);
 
     if (game.attempts !== this.lastAttempts) {
       runtime.label = game.attempts > 0 ? 'Replay' : 'Launch';

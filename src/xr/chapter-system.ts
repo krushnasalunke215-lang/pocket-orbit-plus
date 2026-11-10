@@ -1,7 +1,9 @@
 import { createSystem } from '@iwsdk/core';
 import { HALOS } from '../render/halo-sprites.js';
 import { ROLE_COLORS } from '../render/palette.js';
+import { BoardBody } from './components.js';
 import { playChapterArpeggio } from './game-audio-system.js';
+import { setRayGrabbable } from './ray-grab.js';
 import {
   emitChapterComplete,
   getCometOverride,
@@ -35,9 +37,14 @@ const easeOut = (x: number): number => 1 - (1 - Math.min(1, Math.max(0, x))) ** 
  * for about CELEBRATION_SECONDS, then holds until a choice: the HUD shows
  * 'Chapter N complete: S of M stars' with Levels and Play again. Loading any
  * level hides it. ChapterEvents listeners (onChapterComplete in runtime.ts,
- * the Phase 3 sky gallery hook) are told on every show.
+ * the Phase 3 sky gallery hook) are told on every show. Nothing launches
+ * under the moment: the planets take no ray grab while it shows (so no
+ * release can start a flight; restored on hide, and a level load rebuilds
+ * them anyway), and the near-rim button hides (RimButtonSystem).
  */
-export class ChapterSystem extends createSystem({}) {
+export class ChapterSystem extends createSystem({
+  bodies: { required: [BoardBody] },
+}) {
   private runtime!: ChapterRuntime;
   private readonly slots: number[] = [];
   private readonly best = new Array<number>(MAX_STARS).fill(0);
@@ -82,6 +89,7 @@ export class ChapterSystem extends createSystem({}) {
     runtime.revision++;
     this.time = 0;
     this.shownLevelRevision = game.levelRevision;
+    this.setPlanetsGrabbable(false);
     playChapterArpeggio(this.world, chapter);
     emitChapterComplete(this.world, chapter, stars);
   }
@@ -90,8 +98,16 @@ export class ChapterSystem extends createSystem({}) {
     if (!this.runtime.shown) return;
     for (const slot of this.slots) HALOS.release(slot);
     this.slots.length = 0;
+    this.setPlanetsGrabbable(true);
     this.runtime.shown = false;
     this.runtime.revision++;
+  }
+
+  /** Turns the movable bodies' ray grab on or off (story mode only, so the sandbox arming never overlaps). */
+  private setPlanetsGrabbable(on: boolean): void {
+    for (const entity of this.queries.bodies.entities) {
+      if (entity.getValue(BoardBody, 'movable')) setRayGrabbable(entity, on);
+    }
   }
 
   update(delta: number): void {

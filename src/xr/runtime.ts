@@ -51,6 +51,8 @@ export interface RimButtonRuntime {
   readonly entity: Entity;
   /** The label text last written ('Launch' or 'Replay'). */
   label: string;
+  /** Visible and pressable (hidden during the chapter-complete moment). */
+  shown: boolean;
 }
 
 /** One Your Table well (RealObjectSystem). */

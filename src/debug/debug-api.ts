@@ -123,8 +123,8 @@ export interface GameSnapshot {
   };
   /** The chapter-complete moment. */
   chapterComplete: { shown: boolean; chapter: number; stars: number; maxStars: number };
-  /** Near-rim Launch/Replay button: world position, size (meters) and label. */
-  rimButton: { ready: boolean; position: Triple | null; size: [number, number] | null; label: string | null };
+  /** Near-rim Launch/Replay button: world position, size (meters), label and whether it is shown. */
+  rimButton: { ready: boolean; position: Triple | null; size: [number, number] | null; label: string | null; shown: boolean };
   /** Whether each hand adapter has a loaded visual whose model is in the scene. */
   handVisuals: { left: boolean; right: boolean };
   /** Stars of the current flight (0 until solved), best per level id, and the solving flight's rung order. */
@@ -514,6 +514,7 @@ export function installDebugApi(world: World): GameDebugApi {
           position: rim ? triple(rim.entity.object3D!.getWorldPosition(v)) : null,
           size: panelSize(rim),
           label: rim?.label ?? null,
+          shown: rim?.shown ?? false,
         },
         handVisuals: { left: handVisualLoaded('left'), right: handVisualLoaded('right') },
         stars: { last: game.lastStars, best: Object.fromEntries(game.bestStars), rung: [...game.lastRung] },
