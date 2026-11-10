@@ -1,11 +1,4 @@
-import {
-  createSystem,
-  DepthOccludable,
-  DistanceGrabbable,
-  MovementMode,
-  OcclusionShadersMode,
-  RayInteractable,
-} from '@iwsdk/core';
+import { createSystem, DepthOccludable, OcclusionShadersMode } from '@iwsdk/core';
 import { colliderLocalRadius } from '../game/board-math.js';
 import { GameController } from '../game/controller.js';
 import { createBodyVisual } from '../render/body-visuals.js';
@@ -15,6 +8,7 @@ import { createTrailVisual } from '../render/trail-visual.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
 import { SANDBOX_LEVELS } from '../sim/levels/sandbox.js';
 import { BoardBody } from './components.js';
+import { setRayGrabbable } from './ray-grab.js';
 import { getBoard, getPause, setGame, setVisuals, type BoardRuntime, type GameVisuals } from './runtime.js';
 
 /** Most flight time (seconds) one frame may play back. */
@@ -81,16 +75,7 @@ export class GameSystem extends createSystem({
       entity.addComponent(BoardBody, { bodyId: def.id, movable: Boolean(def.movable) });
       // Real objects hide the body where they stand in front of it (DepthSensingSystem).
       entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.HardOcclusion });
-      if (def.movable) {
-        entity.addComponent(RayInteractable);
-        entity.addComponent(DistanceGrabbable, {
-          movementMode: MovementMode.MoveFromTarget,
-          translate: true,
-          rotate: false,
-          scale: false,
-          returnToOrigin: false,
-        });
-      }
+      if (def.movable) setRayGrabbable(entity, true);
       this.visuals.bodies.set(def.id, visual);
     }
 

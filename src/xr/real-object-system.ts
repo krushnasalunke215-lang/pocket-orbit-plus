@@ -1,12 +1,9 @@
 import {
   createSystem,
   DepthOccludable,
-  DistanceGrabbable,
   EnvironmentRaycastTarget,
   Grabbed,
-  MovementMode,
   OcclusionShadersMode,
-  RayInteractable,
   Vector2,
   Vector3,
   VisibilityState,
@@ -29,10 +26,12 @@ import type { ReticleVisual, WellVisual } from '../render/visual-types.js';
 import { createWellVisual } from '../render/well-visual.js';
 import type { ExternalWell } from '../sim/wells.js';
 import { BoardBody, WellMarker, WellPuck } from './components.js';
+import { setRayGrabbable } from './ray-grab.js';
 import {
   getBoard,
   getGame,
   getHitLog,
+  getPause,
   HIT_LOG_SIZE,
   setSandbox,
   type SandboxRuntime,
@@ -68,9 +67,9 @@ interface WellEntry {
  * Your Table (sandbox mode): real objects on the player's table become
  * gravity wells. arm() shows the arming hand's hit-test reticle (built-in
  * EnvironmentRaycastTarget on that hand's target ray; bluish green on an
- * object, orange where a pinch falls back to a puck) and takes
- * RayInteractable off the planets, the board handle and the pucks, so the
- * confirming pinch grabs nothing. That pinch (select start) turns the hit
+ * object, orange where a pinch falls back to a puck) and takes the ray
+ * grab off the planets, the board handle and the pucks, so the confirming
+ * pinch grabs nothing. That pinch (select start) turns the hit
  * into a well under the object, as heavy as the object is tall
  * (wellMassForHeight); a hit on the table itself or no hit spawns a
  * draggable well puck instead (DistanceGrabbable, kept on the board plane
@@ -152,7 +151,7 @@ export class RealObjectSystem extends createSystem({
     const sandbox = game.mode === 'sandbox';
     if (sandbox !== this.reticlesOn) this.setReticleTargets(sandbox);
     if (game.levelRevision !== this.lastLevelRevision) {
-      // A level load rebuilt the bodies with RayInteractable: arming ends.
+      // A level load rebuilt the bodies with their ray grab: arming ends.
       if (this.runtime.armed) this.disarm();
       this.lastLevelRevision = game.levelRevision;
       for (const entry of this.entries) entry.visual.setVisible(sandbox);
@@ -171,8 +170,16 @@ export class RealObjectSystem extends createSystem({
 
     this.updateReticle(sandbox, immersive, board.pose.radius);
 
+    // No confirm while paused (XR blurred or hidden): like every click, a
+    // pinch then belongs to the system UI, not to the game.
     const armHand = this.runtime.armHand;
-    if (this.runtime.armed && armHand && this.frame > this.armedFrame && this.input.xr.getSelectState(armHand).start) {
+    if (
+      this.runtime.armed &&
+      armHand &&
+      this.frame > this.armedFrame &&
+      !getPause(this.world).paused &&
+      this.input.xr.getSelectState(armHand).start
+    ) {
       this.confirm();
     }
 
@@ -279,18 +286,14 @@ export class RealObjectSystem extends createSystem({
     runtime.revision++;
   }
 
-  /** Takes RayInteractable off (or back onto) the movable planets, the board handle and the pucks. */
+  /** Takes the ray grab off (or back onto) the movable planets, the board handle and the pucks (see setRayGrabbable). */
   private setInteractable(on: boolean): void {
     const targets: Entity[] = [];
     for (const entity of this.queries.bodies.entities) if (entity.getValue(BoardBody, 'movable')) targets.push(entity);
     for (const entity of this.queries.pucks.entities) targets.push(entity);
     const handle = getBoard(this.world)?.handleEntity;
     if (handle) targets.push(handle);
-    for (const entity of targets) {
-      const has = entity.hasComponent(RayInteractable);
-      if (on && !has) entity.addComponent(RayInteractable);
-      else if (!on && has) entity.removeComponent(RayInteractable);
-    }
+    for (const entity of targets) setRayGrabbable(entity, on);
   }
 
   /** The confirming pinch: a well on the aimed object, else a puck where it aimed (or the center). */
@@ -348,14 +351,7 @@ export class RealObjectSystem extends createSystem({
     entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.HardOcclusion });
     if (puck) {
       entity.addComponent(WellPuck, { wellId: well.id });
-      entity.addComponent(RayInteractable);
-      entity.addComponent(DistanceGrabbable, {
-        movementMode: MovementMode.MoveFromTarget,
-        translate: true,
-        rotate: false,
-        scale: false,
-        returnToOrigin: false,
-      });
+      setRayGrabbable(entity, true);
     } else {
       entity.addComponent(WellMarker, { wellId: well.id });
     }

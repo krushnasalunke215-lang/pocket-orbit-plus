@@ -2,16 +2,13 @@ import {
   CapsuleGeometry,
   createSystem,
   DepthOccludable,
-  DistanceGrabbable,
   DoubleSide,
   Grabbed,
   Group,
   Mesh,
   MeshBasicMaterial,
-  MovementMode,
   OcclusionShadersMode,
   Quaternion,
-  RayInteractable,
   Vector3,
   VisibilityState,
   XRPlane,
@@ -29,6 +26,7 @@ import {
 } from '../game/placement.js';
 import { ROLE_COLORS } from '../render/palette.js';
 import { createBoardVisual } from '../render/board-visual.js';
+import { setRayGrabbable } from './ray-grab.js';
 import { setBoard, type BoardRuntime } from './runtime.js';
 
 /** The parts of a WebXR XRPlane that placement reads. */
@@ -79,14 +77,7 @@ export class BoardPlacementSystem extends createSystem({
     handleRoot.name = 'BoardHandle';
     handleRoot.add(new Mesh(handleGeometry, handleMaterial), new Mesh(handleColliderGeometry, handleColliderMaterial));
     const handleEntity = this.world.createTransformEntity(handleRoot);
-    handleEntity.addComponent(RayInteractable);
-    handleEntity.addComponent(DistanceGrabbable, {
-      movementMode: MovementMode.MoveFromTarget,
-      translate: true,
-      rotate: false,
-      scale: false,
-      returnToOrigin: false,
-    });
+    setRayGrabbable(handleEntity, true);
 
     const initial = desktopPlacement();
     this.runtime = {
