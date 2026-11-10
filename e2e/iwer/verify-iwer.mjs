@@ -589,6 +589,11 @@ const GROUP_RUNNERS = {
       r.story,
     );
     check('real-object: Clear wells (ray) removes every well and puck', r.cleared.wells === 0 && r.cleared.pucks === 0 && r.cleared.activeWells === 0, r.cleared);
+    check(
+      'real-object: armed, a pinch with the ray on the planet grabs nothing and launches nothing (it places a well or puck)',
+      r.armedPinch.grabbed.length === 0 && r.armedPinch.movedBoard < 1e-4 && r.armedPinch.attempts[0] === r.armedPinch.attempts[1] && r.armedPinch.wells.length === 1 && !r.armedPinch.armedAfter,
+      r.armedPinch,
+    );
   },
 
   // 15c. Depth occlusion: registered, feature-detected, its cost on and off.
@@ -660,6 +665,13 @@ const GROUP_RUNNERS = {
       { hitText: d.hitText.slice(0, 300), hitLog: d.hitLog, reticle: d.reticle?.hit },
     );
     check('debug-overlay: screenshot saved', Boolean(d.shot), d.shot);
+    const samples = [...d.budget.sandboxArmed, ...d.budget.level6Flight];
+    writeFileSync(path.join(RESULTS, 'render-stats-debug-overlay.json'), JSON.stringify({ room: 'sunlit_living_room', head: TABLE_HEAD, budget: BUDGET, ...d.budget }, null, 2));
+    check(
+      'debug-overlay: XR calls and triangles within budget with the overlay shown, occlusion on and off (Your Table armed, level 6 flight)',
+      samples.length === 4 && samples.every((s) => s.frames > 0 && s.max.calls > 0 && s.max.calls <= BUDGET.calls && s.max.triangles <= BUDGET.triangles),
+      samples.map((s) => ({ occlusion: s.occlusion, level: s.level ?? 'sandbox', max: s.max, frames: s.frames })),
+    );
     check('debug-overlay: without ?debug=1 there is no overlay', d.plain === null && !String(d.searchAfter).includes('debug'), { search: d.searchAfter, plain: d.plain });
   },
 };

@@ -882,6 +882,34 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
   const clearClick = await rayClick('clear-wells');
   s = snapshot();
   const cleared = { wells: s.sandbox.wells.length, pucks: s.sandbox.pucks, activeWells: s.sandbox.activeWells, hovered: clearClick.hovered, status: s.sandbox.status };
+
+  // Armed, the confirming pinch grabs nothing even with the ray on a planet
+  // (its ray grab is off while armed): no Grabbed, no move, no launch.
+  xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+  game('sandbox.arm', 'right');
+  await sleep(300);
+  s = snapshot();
+  const planet = s.bodies.find((b) => b.movable);
+  handAtChest(DEVICE);
+  xr('look-at', { device: DEVICE, target: vec(planet.world) });
+  await sleep(600);
+  const armedHovered = hoveredNames();
+  xr('set-select-value', { device: DEVICE, value: 1 });
+  await sleep(500);
+  const armedGrabbed = grabbedNames();
+  xr('set-select-value', { device: DEVICE, value: 0 });
+  await sleep(800);
+  const afterArmed = snapshot();
+  const armedPinch = {
+    body: planet.id,
+    hovered: armedHovered,
+    grabbed: armedGrabbed,
+    movedBoard: round(dist(planet.board, bodyOf(afterArmed, planet.id).board)),
+    attempts: [s.attempts, afterArmed.attempts],
+    wells: afterArmed.sandbox.wells.map((w) => w.kind),
+    armedAfter: afterArmed.sandbox.armed,
+  };
+  game('sandbox.clear');
   game('sandbox.exit');
   await sleep(300);
 
@@ -895,6 +923,7 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
     withPuck: { outcome: withPuck.lastOutcome, pathHash: withPuck.lastPathHash },
     story: { wellsBeforeExit, before: { id: storyBefore.level.id, outcome: storyBefore.lastOutcome, pathHash: storyBefore.lastPathHash }, after: { id: storyAfter.level.id, mode: storyAfter.mode, outcome: storyAfter.lastOutcome, pathHash: storyAfter.lastPathHash, activeWells: storyAfter.sandbox.activeWells } },
     cleared,
+    armedPinch,
   };
 }
 
@@ -1006,9 +1035,23 @@ export async function debugOverlay({ cup, tableHead, takeShot }) {
   await sleep(1200);
   const shot = takeShot('iwer-debug-overlay.png');
 
+  // Render budget with the overlay shown, depth occlusion on and off: the
+  // busiest panel view (Your Table armed: HUD, Your Table panel, overlay,
+  // reticle), then level 6 (the most bodies) during its solving flight.
+  const budget = { sandboxArmed: [await budgetSample(true, 3000), await budgetSample(false, 3000)], level6Flight: [] };
   game('sandbox.disarm');
   game('sandbox.clear');
   game('sandbox.exit');
+  const levels = game('levels').value;
+  const last = levels.length - 1;
+  await game('loadLevel', last);
+  await sleep(500);
+  game('setPlacements', levels[last].solution);
+  for (const on of [true, false]) {
+    game('launch');
+    budget.level6Flight.push({ level: levels[last].id, ...(await budgetSample(on, 2500)) });
+  }
+  game('setOcclusion', true);
   await exitXR();
   const back = await navigateSearch('');
   const plain = game('page.debugOverlayText').value;
@@ -1025,8 +1068,19 @@ export async function debugOverlay({ cup, tableHead, takeShot }) {
     reticle: s.sandbox.reticle,
     hitText,
     shot,
+    budget,
     searchAfter: back.search,
     plain,
   };
+}
+
+/** Most XR render counts over `ms` of the current view with depth occlusion on or off. */
+async function budgetSample(on, ms) {
+  game('setOcclusion', on);
+  await sleep(600);
+  game('resetRenderStats');
+  await sleep(ms);
+  const stats = game('renderStats').value;
+  return { occlusion: on, max: stats.max, frames: stats.frames, programs: stats.programs, depthFrames: stats.depthFrames };
 }
 export { enterXR, exitXR };
