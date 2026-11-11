@@ -11,8 +11,10 @@
 // and audio), real-object (Your Table: a well on the cup, the puck fallback,
 // clear, story levels untouched), occlusion (depth occlusion status and its
 // cost on and off), hands-cdn (hand models from our own origin),
-// vr (the immersive-vr fallback, also from a fresh desktop page) and
-// debug-overlay (the ?debug=1 tester overlay on desktop and in XR).
+// vr (the immersive-vr fallback, also from a fresh desktop page),
+// debug-overlay (the ?debug=1 tester overlay on desktop and in XR) and
+// level-select-budget (XR draw calls with the level select open over the
+// busiest views, plain and with ?debug=1).
 // Setup, placement and the runtime teardown always run; the runtime is always
 // stopped.
 // Usage: npm run verify:iwer
@@ -26,6 +28,7 @@ import {
   exitXR,
   game,
   letGo,
+  navigateSearch,
   RESULTS,
   rayDrag,
   round,
@@ -40,6 +43,7 @@ import {
   debugOverlay,
   handleDrag,
   handsCdn,
+  levelSelectBudget,
   nearPinch,
   occlusionCost,
   offBoardRelease,
@@ -88,6 +92,7 @@ const GROUPS = [
   'vr',
   // After vr: it navigates the page to ?debug=1 and back.
   'debug-overlay',
+  'level-select-budget',
 ];
 const ALWAYS = new Set(['placement']);
 
@@ -594,6 +599,24 @@ const GROUP_RUNNERS = {
       r.armedPinch.grabbed.length === 0 && r.armedPinch.movedBoard < 1e-4 && r.armedPinch.attempts[0] === r.armedPinch.attempts[1] && r.armedPinch.wells.length === 1 && !r.armedPinch.armedAfter,
       r.armedPinch,
     );
+    check(
+      'real-object: after that confirm the hand ray grabs and moves the same planet and the board handle again',
+      r.regrab.planet.held &&
+        r.regrab.planet.grabbed.includes(`Body ${r.regrab.planet.body}`) &&
+        r.regrab.planet.movedBoard >= 0.1 &&
+        r.regrab.handle.held &&
+        r.regrab.handle.grabbed.includes('BoardHandle') &&
+        r.regrab.handle.movedM >= 0.03,
+      r.regrab,
+    );
+    check(
+      'real-object: armed, a ray pinch on Height + only presses it (no new well, height +1 cm, still armed)',
+      r.panelPinch.wells[0] === r.panelPinch.wells[1] &&
+        r.panelPinch.heights[0] !== null &&
+        Math.abs(r.panelPinch.heights[1] - r.panelPinch.heights[0] - 0.01) < 1e-6 &&
+        r.panelPinch.armedAfter,
+      r.panelPinch,
+    );
   },
 
   // 15c. Depth occlusion: registered, feature-detected, its cost on and off.
@@ -673,6 +696,41 @@ const GROUP_RUNNERS = {
       samples.map((s) => ({ occlusion: s.occlusion, level: s.level ?? 'sandbox', max: s.max, frames: s.frames })),
     );
     check('debug-overlay: without ?debug=1 there is no overlay', d.plain === null && !String(d.searchAfter).includes('debug'), { search: d.searchAfter, plain: d.plain });
+  },
+
+  // 19. XR draw calls with the level select open over the busiest views,
+  // plain and with ?debug=1 (the URL testers use).
+  async 'level-select-budget'() {
+    const runs = [];
+    for (const search of ['', '?debug=1']) {
+      if (xr('status').sessionActive) await exitXR();
+      if (game('page.search').value !== search) await navigateSearch(search);
+      const shotName = search ? 'iwer-level-select-chapter-debug.png' : 'iwer-level-select-chapter.png';
+      const r = await levelSelectBudget({ tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name), shotName });
+      runs.push({ search: game('page.search').value, ...r });
+    }
+    if (game('page.search').value !== '') await navigateSearch('');
+    summary.data.levelSelectBudget = runs;
+    writeFileSync(path.join(RESULTS, 'render-stats-level-select.json'), JSON.stringify({ room: 'sunlit_living_room', head: TABLE_HEAD, budget: BUDGET, runs }, null, 2));
+    const views = runs.flatMap((r) => r.views.map((v) => ({ search: r.search, ...v })));
+    const intended = {
+      'level 1, ghost hand': (v) => v.level === 'c1-l1' && v.mode === 'story' && v.ghostHand,
+      'level 6 placing': (v) => v.level === 'c1-l6' && v.mode === 'story' && !v.chapter,
+      'chapter complete': (v) => v.chapter,
+      'Your Table armed': (v) => v.mode === 'sandbox' && v.armed,
+    };
+    const brief = views.map((v) => ({ search: v.search, view: v.view, open: v.open, state: { level: v.level, mode: v.mode, ghostHand: v.ghostHand, chapter: v.chapter, armed: v.armed }, on: v.on.max, off: v.off.max, frames: [v.on.frames, v.off.frames] }));
+    check(
+      'level-select-budget: the level select opens over level 1 with the ghost hand, level 6, the chapter moment and Your Table armed (plain and ?debug=1)',
+      runs.length === 2 && runs[1].search === '?debug=1' && views.length === 8 && views.every((v) => v.open && intended[v.view]?.(v)),
+      brief,
+    );
+    check(
+      'level-select-budget: XR calls <= 100 and triangles <= 150k in each of those views, occlusion on and off',
+      views.length === 8 &&
+        views.every((v) => [v.on, v.off].every((s) => s.frames > 0 && s.max.calls > 0 && s.max.calls <= BUDGET.calls && s.max.triangles <= BUDGET.triangles)),
+      brief,
+    );
   },
 };
 

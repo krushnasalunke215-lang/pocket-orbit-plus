@@ -613,13 +613,13 @@ function press(target, done) {
 }
 
 /** A short hand-ray pinch (a click) aimed at a UI element's center. */
-async function rayClick(elementId) {
+async function rayClick(elementId, device = DEVICE) {
   const point = game('uiWorldPoint', elementId).value;
-  handAtChest(DEVICE);
-  xr('look-at', { device: DEVICE, target: vec(point) });
+  handAtChest(device);
+  xr('look-at', { device, target: vec(point) });
   await sleep(500);
   const hovered = hoveredNames();
-  xr('select', { device: DEVICE, duration: 0.2 });
+  xr('select', { device, duration: 0.2 });
   await sleep(700);
   return { point: round(point), hovered };
 }
@@ -909,7 +909,41 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
     wells: afterArmed.sandbox.wells.map((w) => w.kind),
     armedAfter: afterArmed.sandbox.armed,
   };
+
+  // Armed, a ray pinch on a panel button only presses it: Height + raises
+  // the selected puck, no well is added and the hand stays armed.
+  game('sandbox.arm', 'right');
+  await sleep(300);
+  lookPanel();
+  await sleep(400);
+  s = snapshot();
+  const heightBeforePanel = s.sandbox.wells.find((w) => w.id === s.sandbox.selectedId)?.heightM ?? null;
+  const panelClick = await rayClick('height-up');
+  s = snapshot();
+  const panelPinch = {
+    hovered: panelClick.hovered,
+    wells: [afterArmed.sandbox.wells.length, s.sandbox.wells.length],
+    heights: [heightBeforePanel, s.sandbox.wells.find((w) => w.id === s.sandbox.selectedId)?.heightM ?? null],
+    armedAfter: s.sandbox.armed,
+    status: s.sandbox.status,
+  };
+  game('sandbox.disarm');
+  // The puck from the armed pinch lies over the planet; clear it (clearing
+  // leaves the planets and the handle alone).
   game('sandbox.clear');
+  await sleep(300);
+
+  // Arming took the ray grab off the same planet and board handle, and the
+  // confirm (then the disarm) gave it back: the hand ray grabs and moves each again.
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+  await sleep(300);
+  const regrab = { planet: await regrabPlanet(planet.id), handle: await regrabHandle() };
+  // Back to the verified table pose for the next groups.
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  await sleep(300);
+  game('placeBoard');
+  await sleep(800);
   game('sandbox.exit');
   await sleep(300);
 
@@ -924,7 +958,39 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
     story: { wellsBeforeExit, before: { id: storyBefore.level.id, outcome: storyBefore.lastOutcome, pathHash: storyBefore.lastPathHash }, after: { id: storyAfter.level.id, mode: storyAfter.mode, outcome: storyAfter.lastOutcome, pathHash: storyAfter.lastPathHash, activeWells: storyAfter.sandbox.activeWells } },
     cleared,
     armedPinch,
+    regrab,
+    panelPinch,
   };
+}
+
+/** Hand-ray grab of planet `bodyId`, carried 0.15 board units; the move is read while held. */
+async function regrabPlanet(bodyId) {
+  const before = snapshot();
+  const body = bodyOf(before, bodyId);
+  const grab = await rayGrab(DEVICE, body.world, (snap) => bodyOf(snap, bodyId)?.held);
+  const grabbed = grabbedNames();
+  let movedBoard = 0;
+  if (grab.held) {
+    const sign = body.board[0] > 0 ? -1 : 1;
+    await rayMoveTo(DEVICE, toWorld(before.board, [body.board[0] + sign * 0.15, 0, body.board[2]]), grab.distance);
+    const mid = bodyOf(snapshot(), bodyId);
+    movedBoard = round(dist(body.board, mid.board));
+  }
+  await letGo(DEVICE);
+  await waitNotFlying(30_000).catch(() => null);
+  return { body: bodyId, hovered: grab.hovered, held: grab.held, grabbed, movedBoard };
+}
+
+/** Hand-ray grab of the board handle, carried 5 cm to the right; the board move is read after the release. */
+async function regrabHandle() {
+  const start = snapshot().board;
+  const grab = await rayGrab(DEVICE, start.handle, (snap) => snap.board.handleHeld);
+  const grabbed = grabbedNames();
+  if (grab.held) await rayMoveTo(DEVICE, [start.handle[0] + 0.05, start.handle[1], start.handle[2]], grab.distance);
+  await letGo(DEVICE);
+  await sleep(400);
+  const movedM = round(dist(start.center, snapshot().board.center));
+  return { hovered: grab.hovered, held: grab.held, grabbed, movedM };
 }
 
 /** Frames rendered over `ms` of the page clock (renderStats().frames between two page-clock readings). */
@@ -1072,6 +1138,102 @@ export async function debugOverlay({ cup, tableHead, takeShot }) {
     searchAfter: back.search,
     plain,
   };
+}
+
+/**
+ * XR render counts with the level select open over the busiest views, on
+ * the current page URL (the group runs it plain and with ?debug=1): level 1
+ * on a fresh save with the ghost hand, level 6 placing, the chapter-complete
+ * moment and Your Table armed. Seated at the table, the clicking hand left
+ * at the chest (in view, as after a real click), occlusion on and off.
+ * clearSave keeps the running game's stars, so the solved levels' star pips
+ * stay shown (the costliest case).
+ */
+export async function levelSelectBudget({ tableHead, takeShot, shotName }) {
+  if (xr('status').sessionActive) await exitXR();
+  await enterXR();
+  const seat = async () => {
+    xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+    await sleep(300);
+    xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+    await sleep(300);
+  };
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  await sleep(300);
+  game('placeBoard');
+  await sleep(1500);
+  await seat();
+  const levels = game('levels').value;
+  const last = levels.length - 1;
+  const views = [];
+  const openLevels = async (device = DEVICE) => {
+    if (!snapshot().levelSelect.open) await rayClick('levels-button', device);
+    await waitFor('the level select open', () => snapshot().levelSelect.open, 10_000, 300).catch(() => null);
+    await sleep(800);
+  };
+  const closeLevels = async (device = DEVICE) => {
+    if (snapshot().levelSelect.open) await rayClick('close-levels', device);
+    await sleep(400);
+  };
+  const sampleView = async (view) => {
+    const s = snapshot();
+    const state = {
+      open: s.levelSelect.open,
+      level: s.level.id,
+      mode: s.mode,
+      ghostHand: s.ghostHand.visible,
+      chapter: s.chapterComplete.shown,
+      armed: s.sandbox.armed,
+      shownStars: s.levelSelect.shownStars,
+    };
+    views.push({ view, ...state, on: await budgetSample(true, 2500), off: await budgetSample(false, 2500) });
+  };
+
+  // 1. A fresh save on level 1: the ghost hand runs until the first grab.
+  game('clearSave');
+  game('resetOnboarding');
+  await game('loadLevel', 0);
+  await sleep(500);
+  await openLevels();
+  await sampleView('level 1, ghost hand');
+  await closeLevels();
+
+  // 2. Level 6 placing (the most bodies).
+  await game('loadLevel', last);
+  await sleep(500);
+  await openLevels();
+  await sampleView('level 6 placing');
+  await closeLevels();
+
+  // 3. The chapter-complete moment: solve level 6, then Next.
+  game('setPlacements', levels[last].solution);
+  game('launch');
+  await waitFor('level 6 solved', () => snapshot().solved, 90_000, 500);
+  await seat();
+  await rayClick('next-button');
+  await waitFor('the chapter moment', () => snapshot().chapterComplete.shown, 10_000, 300).catch(() => null);
+  await sleep(1500);
+  await openLevels();
+  await sampleView('chapter complete');
+  const shot = shotName ? takeShot(shotName) : null;
+  await closeLevels();
+
+  // 4. Your Table armed with the right hand; the left hand opens the level
+  // select, so no confirming pinch can end the arming.
+  game('sandbox.enter', 0);
+  await sleep(500);
+  await seat();
+  game('sandbox.arm', 'right');
+  await sleep(300);
+  await openLevels('hand-left');
+  await sampleView('Your Table armed');
+  await closeLevels('hand-left');
+  game('sandbox.disarm');
+  game('sandbox.clear');
+  game('sandbox.exit');
+  game('setOcclusion', true);
+  await exitXR();
+  return { views, shot };
 }
 
 /** Most XR render counts over `ms` of the current view with depth occlusion on or off. */
