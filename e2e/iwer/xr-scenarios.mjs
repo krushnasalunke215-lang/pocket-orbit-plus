@@ -933,6 +933,51 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
   game('sandbox.clear');
   await sleep(300);
 
+  // Armed, a pinch at the cup's top with the HUD behind the cup places the
+  // well: the ray does not see the cup, so its first virtual hit is the HUD,
+  // but the hit-test point on the cup is nearer. The hand is 25 cm above the
+  // board plane in front of the near rim, on the line from the HUD's Launch
+  // button through the cup's top (that button gets the press too: a known
+  // issue, so the flight it may start is waited out).
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+  await sleep(300);
+  s = snapshot();
+  const behindBefore = s.attempts;
+  const launchAt = game('uiWorldPoint', 'launch-button').value;
+  const behindAim = [launchAt[0], launchAt[1] - 0.02, launchAt[2]];
+  const lowY = s.board.center[1] + 0.25;
+  const along = (lowY - behindAim[1]) / (cupTop.y - behindAim[1]);
+  const lowHand = [behindAim[0] + along * (cupTop.x - behindAim[0]), lowY, behindAim[2] + along * (cupTop.z - behindAim[2])];
+  game('sandbox.arm', 'right');
+  await sleep(300);
+  xr('set-transform', { device: DEVICE, position: vec(lowHand) });
+  xr('look-at', { device: DEVICE, target: cupTop });
+  await sleep(600);
+  const behindReticle = await waitForReticle('object');
+  const behindHovered = hoveredNames();
+  xr('select', { device: DEVICE, duration: 0.2 });
+  await sleep(800);
+  s = snapshot();
+  const behindWell = s.sandbox.wells[0] ?? null;
+  const behindPanel = {
+    hand: round(lowHand),
+    handAboveBoardM: round(lowHand[1] - s.board.center[1]),
+    handOutsideRimM: round(Math.hypot(lowHand[0] - s.board.center[0], lowHand[2] - s.board.center[2]) - s.board.radius),
+    aim: round(behindAim),
+    hovered: behindHovered,
+    reticle: behindReticle,
+    wells: s.sandbox.wells.length,
+    well: behindWell,
+    axisDistanceM: behindWell ? round(Math.hypot(behindWell.world[0] - cup.x, behindWell.world[2] - cup.z)) : null,
+    armedAfter: s.sandbox.armed,
+    status: s.sandbox.status,
+    attempts: [behindBefore, s.attempts],
+  };
+  await waitNotFlying(30_000).catch(() => null);
+  game('sandbox.clear');
+  await sleep(300);
+
   // Arming took the ray grab off the same planet and board handle, and the
   // confirm (then the disarm) gave it back: the hand ray grabs and moves each again.
   xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
@@ -960,6 +1005,7 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
     armedPinch,
     regrab,
     panelPinch,
+    behindPanel,
   };
 }
 

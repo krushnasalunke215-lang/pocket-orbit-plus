@@ -617,6 +617,16 @@ const GROUP_RUNNERS = {
         r.panelPinch.armedAfter,
       r.panelPinch,
     );
+    check(
+      "real-object: armed, the hand 25 cm above the board and the HUD behind the cup, a pinch at the cup's top places the well",
+      r.behindPanel.hovered.includes('hud-panel') &&
+        r.behindPanel.reticle?.hit === 'object' &&
+        r.behindPanel.wells === 1 &&
+        r.behindPanel.well?.kind === 'object' &&
+        r.behindPanel.axisDistanceM <= CUP.radius + 0.02 &&
+        !r.behindPanel.armedAfter,
+      r.behindPanel,
+    );
   },
 
   // 15c. Depth occlusion: registered, feature-detected, its cost on and off.
