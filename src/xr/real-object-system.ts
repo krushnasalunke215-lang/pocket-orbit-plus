@@ -52,6 +52,7 @@ export const SANDBOX_STATUS = {
   placed: 'Well placed: launch to hear it',
   full: 'Max 3 wells',
   tooFlat: 'Too flat: drag the puck instead',
+  offBoard: 'Off the board: stand the object on the board',
   noHitTest: 'No hit-test here: drag the puck instead',
   puck: 'Drag the puck, set its height with - and +',
   cleared: 'Wells cleared',
@@ -69,8 +70,8 @@ interface WellEntry {
  * EnvironmentRaycastTarget on that hand's target ray; bluish green on an
  * object, orange where a pinch falls back to a puck) and takes the ray
  * grab off the planets, the board handle and the pucks, so the confirming
- * pinch grabs nothing. That pinch (select start; not one aimed at a panel
- * button, which only presses the button) turns the hit
+ * pinch grabs nothing. That pinch (select start; not one whose ray meets a
+ * panel button before the hit-test point, which only presses the button) turns the hit
  * into a well under the object, as heavy as the object is tall
  * (wellMassForHeight); a hit on the table itself or no hit spawns a
  * draggable well puck instead (DistanceGrabbable, kept on the board plane
@@ -175,8 +176,8 @@ export class RealObjectSystem extends createSystem({
 
     // No confirm while paused (XR blurred or hidden): like every click, a
     // pinch then belongs to the system UI, not to the game. Nor while the
-    // arming hand's ray is on a ray target (armed, those are the panel
-    // buttons and new pucks): that pinch presses the button or grabs the puck.
+    // arming hand's ray reaches a ray target before the hit-test point (see
+    // rayTargetFirst): that pinch presses the button or grabs the puck.
     const armHand = this.runtime.armHand;
     if (
       this.runtime.armed &&
@@ -184,7 +185,7 @@ export class RealObjectSystem extends createSystem({
       this.frame > this.armedFrame &&
       !getPause(this.world).paused &&
       this.input.xr.getSelectState(armHand).start &&
-      !this.input.xr.multiPointers[armHand].getRayBusy()
+      !this.rayTargetFirst(armHand)
     ) {
       this.confirm();
     }
@@ -197,6 +198,23 @@ export class RealObjectSystem extends createSystem({
       }
       entry.visual.update(time);
     }
+  }
+
+  /**
+   * True when the hand's ray has a virtual hit (armed, a panel element or a
+   * new puck) and no hit-test point lies before it. The ray does not see
+   * real objects, so a panel standing behind the aimed object (the HUD or
+   * the Your Table panel behind a bottle) does not block the confirm.
+   */
+  private rayTargetFirst(hand: Hand): boolean {
+    const multiPointer = this.input.xr.multiPointers[hand];
+    if (!multiPointer.getRayBusy()) return false;
+    const reticle = this.runtime.reticle;
+    const intersection = multiPointer.getPointer('ray').getIntersection();
+    if (!reticle.visible || !intersection) return true;
+    const origin = intersection.pointerPosition;
+    this.v.set(reticle.world[0], reticle.world[1], reticle.world[2]);
+    return intersection.point.distanceToSquared(origin) <= this.v.distanceToSquared(origin);
   }
 
   /** Classifies the reticle hit of the armed (else right) hand, shows the armed reticle and logs hits in the sandbox. */
@@ -317,6 +335,8 @@ export class RealObjectSystem extends createSystem({
       );
     } else if (hit === 'too-low') {
       this.addPuck([reticle.board[0], reticle.board[2]], SANDBOX_STATUS.tooFlat);
+    } else if (hit === 'off-board') {
+      this.addPuck(null, SANDBOX_STATUS.offBoard);
     } else {
       // No hit-test result during the whole arming: the session gives none
       // here (VR fallback, or hit-test not granted), so the table is not "too flat".

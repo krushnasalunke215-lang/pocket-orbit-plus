@@ -57,7 +57,9 @@ For each item, write down what happened. Short notes are fine.
 6. **Real objects (Your Table).** Press **Levels**, then **Your Table**, then
    **Make well**. Pinch Make well with the hand you will point with: the
    aiming circle (the reticle) follows that hand (a fingertip press uses the
-   hand that pinched last). Point your hand at the top of a mug. Before you
+   hand that pinched last). Stand each object on the board, inside its rim:
+   an object beside the board gives "Off the board". Stand a mug on the
+   board and point your hand at its top. Before you
    pinch, write down the overlay's hit line
    (`hit .. cm above board | jitter .. mm`). Then pinch: did the glowing
    well ring sit on the mug? Repeat with a bottle and a book (press Make
