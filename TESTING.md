@@ -37,7 +37,8 @@ For each item, write down what happened. Short notes are fine.
 
 1. **Frame rate.** At the start of level 1, read the overlay's first line
    (`fps .. avg | 1% low ..`). Read it again while the comet is flying.
-   Report both pairs of numbers.
+   Report both pairs of numbers. The open level select covers the overlay,
+   so close it (**Close**) before you read.
 2. **Pinch-grab reliability.** Grab and move planet 1 five times. How many
    pinches grabbed on the first try? Then pinch right next to a planet
    (about 2 cm beside it, not on it): did it grab the planet, nothing, or
@@ -54,12 +55,15 @@ For each item, write down what happened. Short notes are fine.
    board's near edge). Press it once with a fingertip, and once by pinching
    while pointing at it. Did each launch the comet exactly once?
 6. **Real objects (Your Table).** Press **Levels**, then **Your Table**, then
-   **Make well**. Point your hand at the top of a mug. Before you pinch,
-   write down the overlay's hit line
+   **Make well**. Pinch Make well with the hand you will point with: the
+   aiming circle (the reticle) follows that hand (a fingertip press uses the
+   hand that pinched last). Point your hand at the top of a mug. Before you
+   pinch, write down the overlay's hit line
    (`hit .. cm above board | jitter .. mm`). Then pinch: did the glowing
    well ring sit on the mug? Repeat with a bottle and a book (press Make
-   well again each time). Measure each object's real height with a ruler.
-   Report a small table:
+   well again each time). There is room for 3 wells: if the panel says
+   "Max 3 wells", press **Clear wells** and carry on. Measure each object's
+   real height with a ruler. Report a small table:
 
    | Object | Ruler height (cm) | Overlay height (cm) | Jitter (mm) | Ring on the object? |
    | ------ | ----------------- | ------------------- | ----------- | ------------------- |
