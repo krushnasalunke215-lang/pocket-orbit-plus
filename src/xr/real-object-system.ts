@@ -69,7 +69,8 @@ interface WellEntry {
  * EnvironmentRaycastTarget on that hand's target ray; bluish green on an
  * object, orange where a pinch falls back to a puck) and takes the ray
  * grab off the planets, the board handle and the pucks, so the confirming
- * pinch grabs nothing. That pinch (select start) turns the hit
+ * pinch grabs nothing. That pinch (select start; not one aimed at a panel
+ * button, which only presses the button) turns the hit
  * into a well under the object, as heavy as the object is tall
  * (wellMassForHeight); a hit on the table itself or no hit spawns a
  * draggable well puck instead (DistanceGrabbable, kept on the board plane
@@ -89,6 +90,8 @@ export class RealObjectSystem extends createSystem({
   private nextId = 1;
   private lastStartHand: Hand | null = null;
   private armedFrame = -1;
+  /** HitLog.total when arming began (no new hit by the confirm means no hit-test results). */
+  private armedHitTotal = 0;
   private frame = 0;
   private lastLevelRevision = -1;
   private lastBoardVersion = -1;
@@ -171,14 +174,17 @@ export class RealObjectSystem extends createSystem({
     this.updateReticle(sandbox, immersive, board.pose.radius);
 
     // No confirm while paused (XR blurred or hidden): like every click, a
-    // pinch then belongs to the system UI, not to the game.
+    // pinch then belongs to the system UI, not to the game. Nor while the
+    // arming hand's ray is on a ray target (armed, those are the panel
+    // buttons and new pucks): that pinch presses the button or grabs the puck.
     const armHand = this.runtime.armHand;
     if (
       this.runtime.armed &&
       armHand &&
       this.frame > this.armedFrame &&
       !getPause(this.world).paused &&
-      this.input.xr.getSelectState(armHand).start
+      this.input.xr.getSelectState(armHand).start &&
+      !this.input.xr.multiPointers[armHand].getRayBusy()
     ) {
       this.confirm();
     }
@@ -273,6 +279,7 @@ export class RealObjectSystem extends createSystem({
     reticle.removeComponent(EnvironmentRaycastTarget);
     reticle.addComponent(EnvironmentRaycastTarget, { space: runtime.armHand, maxDistance: RETICLE_MAX_DISTANCE });
     this.armedFrame = this.frame;
+    this.armedHitTotal = getHitLog(this.world).total;
     this.setInteractable(false);
     this.setStatus(SANDBOX_STATUS.armed);
   }
@@ -311,7 +318,10 @@ export class RealObjectSystem extends createSystem({
     } else if (hit === 'too-low') {
       this.addPuck([reticle.board[0], reticle.board[2]], SANDBOX_STATUS.tooFlat);
     } else {
-      this.addPuck(null, SANDBOX_STATUS.tooFlat);
+      // No hit-test result during the whole arming: the session gives none
+      // here (VR fallback, or hit-test not granted), so the table is not "too flat".
+      const noHits = getHitLog(this.world).total === this.armedHitTotal;
+      this.addPuck(null, noHits ? SANDBOX_STATUS.noHitTest : SANDBOX_STATUS.tooFlat);
     }
   }
 
