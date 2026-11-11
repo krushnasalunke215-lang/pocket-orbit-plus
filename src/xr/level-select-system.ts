@@ -38,6 +38,7 @@ interface SlotElements {
   readonly button: UIKit.Text;
   readonly label: UIKit.Text;
   readonly stars: UIKit.Text;
+  /** Round pips (panels, batched into one draw call), not Star icons (one call each). */
   readonly icons: readonly UIKit.Text[];
 }
 
@@ -197,7 +198,7 @@ export class LevelSelectSystem extends createSystem({}) {
         const slot = this.slots[i];
         runtime.shownStars[i] = best;
         slot.stars.setProperties({ display: best > 0 ? 'flex' : 'none' });
-        for (let k = 0; k < 3; k++) slot.icons[k].setProperties({ color: k < best ? STAR_LIT : STAR_DIM });
+        for (let k = 0; k < 3; k++) slot.icons[k].setProperties({ backgroundColor: k < best ? STAR_LIT : STAR_DIM });
       }
       this.lastStarsRevision = game.starsRevision;
     }

@@ -4,9 +4,11 @@
   panel is 46 cm wide and about 27 cm tall (LEVEL_SELECT_SIZE in
   src/game/hud-layout.ts); it opens 0.45 m from the head, within poke reach.
   Level buttons level-1 .. level-6 hold a label (the system writes
-  "n  Title") and three Star icons, hidden until that level is solved and
-  lit by its best stars. The Your Table button (header) opens the sandbox
-  (GameController.loadSandbox(0)).
+  "n  Title") and three round star pips, hidden until that level is solved
+  and lit by its best stars. The pips are plain panels, which UIKit draws
+  in one instanced batch; Star icons cost one draw call each (18 per eye,
+  over the XR draw-call budget with the chapter moment). The Your Table
+  button (header) opens the sandbox (GameController.loadSandbox(0)).
 -->
 <style>
   .levels-root {
@@ -62,9 +64,10 @@
   }
 
   .star {
-    width: 16;
-    height: 16;
-    color: #5b6170;
+    width: 12;
+    height: 12;
+    border-radius: 6;
+    background-color: #5b6170;
   }
 
   .settings-row {
@@ -112,25 +115,25 @@
     <Button id="level-1" class="level-button">
       <ButtonLabel id="level-1-label" class="level-label">1</ButtonLabel>
       <div id="level-1-stars" class="stars" style="display: none">
-        <Star id="level-1-star-1" class="star" />
-        <Star id="level-1-star-2" class="star" />
-        <Star id="level-1-star-3" class="star" />
+        <div id="level-1-star-1" class="star" />
+        <div id="level-1-star-2" class="star" />
+        <div id="level-1-star-3" class="star" />
       </div>
     </Button>
     <Button id="level-2" class="level-button">
       <ButtonLabel id="level-2-label" class="level-label">2</ButtonLabel>
       <div id="level-2-stars" class="stars" style="display: none">
-        <Star id="level-2-star-1" class="star" />
-        <Star id="level-2-star-2" class="star" />
-        <Star id="level-2-star-3" class="star" />
+        <div id="level-2-star-1" class="star" />
+        <div id="level-2-star-2" class="star" />
+        <div id="level-2-star-3" class="star" />
       </div>
     </Button>
     <Button id="level-3" class="level-button">
       <ButtonLabel id="level-3-label" class="level-label">3</ButtonLabel>
       <div id="level-3-stars" class="stars" style="display: none">
-        <Star id="level-3-star-1" class="star" />
-        <Star id="level-3-star-2" class="star" />
-        <Star id="level-3-star-3" class="star" />
+        <div id="level-3-star-1" class="star" />
+        <div id="level-3-star-2" class="star" />
+        <div id="level-3-star-3" class="star" />
       </div>
     </Button>
   </div>
@@ -138,25 +141,25 @@
     <Button id="level-4" class="level-button">
       <ButtonLabel id="level-4-label" class="level-label">4</ButtonLabel>
       <div id="level-4-stars" class="stars" style="display: none">
-        <Star id="level-4-star-1" class="star" />
-        <Star id="level-4-star-2" class="star" />
-        <Star id="level-4-star-3" class="star" />
+        <div id="level-4-star-1" class="star" />
+        <div id="level-4-star-2" class="star" />
+        <div id="level-4-star-3" class="star" />
       </div>
     </Button>
     <Button id="level-5" class="level-button">
       <ButtonLabel id="level-5-label" class="level-label">5</ButtonLabel>
       <div id="level-5-stars" class="stars" style="display: none">
-        <Star id="level-5-star-1" class="star" />
-        <Star id="level-5-star-2" class="star" />
-        <Star id="level-5-star-3" class="star" />
+        <div id="level-5-star-1" class="star" />
+        <div id="level-5-star-2" class="star" />
+        <div id="level-5-star-3" class="star" />
       </div>
     </Button>
     <Button id="level-6" class="level-button">
       <ButtonLabel id="level-6-label" class="level-label">6</ButtonLabel>
       <div id="level-6-stars" class="stars" style="display: none">
-        <Star id="level-6-star-1" class="star" />
-        <Star id="level-6-star-2" class="star" />
-        <Star id="level-6-star-3" class="star" />
+        <div id="level-6-star-1" class="star" />
+        <div id="level-6-star-2" class="star" />
+        <div id="level-6-star-3" class="star" />
       </div>
     </Button>
   </div>
