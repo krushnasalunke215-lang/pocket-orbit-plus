@@ -14,7 +14,8 @@
 // vr (the immersive-vr fallback, also from a fresh desktop page),
 // debug-overlay (the ?debug=1 tester overlay on desktop and in XR) and
 // level-select-budget (XR draw calls with the level select open over the
-// busiest views, plain and with ?debug=1).
+// busiest views, plain and with ?debug=1) and accessibility (the Settings
+// page by ray and poke, and each accessibility mode with its screenshot).
 // Setup, placement and the runtime teardown always run; the runtime is always
 // stopped.
 // Usage: npm run verify:iwer
@@ -24,6 +25,7 @@ import path from 'node:path';
 import { tsImport } from 'tsx/esm/api';
 import { call, run, sleep } from './cli.mjs';
 import {
+  dist,
   enterXR,
   exitXR,
   game,
@@ -40,7 +42,9 @@ import {
   xr,
 } from './xr-helpers.mjs';
 import {
+  accessibilitySettings,
   debugOverlay,
+  DEFAULT_TEST_SETTINGS,
   handleDrag,
   handsCdn,
   levelSelectBudget,
@@ -59,7 +63,7 @@ import {
 } from './xr-scenarios.mjs';
 
 const { boardRadiusForTable } = await tsImport('../../src/game/placement.ts', import.meta.url);
-const { BOARD, RENDER_BUDGET } = await tsImport('../../src/config.ts', import.meta.url);
+const { BOARD, BOARD_SIZE_SCALE, RENDER_BUDGET } = await tsImport('../../src/config.ts', import.meta.url);
 const { wellMassForHeight } = await tsImport('../../src/game/real-object.ts', import.meta.url);
 const { WELL_INFLUENCE_RADIUS } = await tsImport('../../src/sim/wells.ts', import.meta.url);
 
@@ -93,6 +97,8 @@ const GROUPS = [
   // After vr: it navigates the page to ?debug=1 and back.
   'debug-overlay',
   'level-select-budget',
+  // Last: it changes the saved settings (and restores the defaults).
+  'accessibility',
 ];
 const ALWAYS = new Set(['placement']);
 
@@ -466,9 +472,14 @@ const GROUP_RUNNERS = {
     check('onboarding: level select within 0.55 m of the head while open', o.opened.reachM !== null && o.opened.reachM <= 0.55, { reachM: o.opened.reachM, size: o.opened.size });
     check('onboarding: a poke on level-2 loads c1-l2 and closes the panel', o.poked.listed && o.poked.levelId === 'c1-l2' && o.poked.open === false, o.poked);
     check(
-      'onboarding: hand-ray clicks on mute-button toggle audio muted and back',
-      o.ray.reopened && o.ray.muted[0] === false && o.ray.muted[1] === true && o.ray.muted[2] === false,
-      { reopened: o.ray.reopened, reopenHovered: o.ray.reopenHovered, muted: o.ray.muted, hovered: o.ray.muteHovered },
+      'onboarding: hand-ray clicks open Settings, toggle mute-button muted and back, and return to the levels',
+      o.ray.reopened &&
+        o.ray.pages[0] === 'settings' &&
+        o.ray.pages[1] === 'levels' &&
+        o.ray.muted[0] === false &&
+        o.ray.muted[1] === true &&
+        o.ray.muted[2] === false,
+      { reopened: o.ray.reopened, reopenHovered: o.ray.reopenHovered, pages: o.ray.pages, muted: o.ray.muted, hovered: o.ray.muteHovered },
     );
     check('onboarding: a hand-ray click on level-3 loads c1-l3 and closes the panel', o.ray.levelId === 'c1-l3' && o.ray.open === false, { levelId: o.ray.levelId, hovered: o.ray.levelHovered });
   },
@@ -776,6 +787,91 @@ const GROUP_RUNNERS = {
       views.length === 8 &&
         views.every((v) => [v.on, v.off].every((s) => s.frames > 0 && s.max.calls > 0 && s.max.calls <= BUDGET.calls && s.max.triangles <= BUDGET.triangles)),
       brief,
+    );
+  },
+
+  // 20. Accessibility settings (Phase 3): the Settings page by ray and
+  // poke, then each mode alone with its screenshot. Last, because the save
+  // keeps the settings (the scenario restores the defaults).
+  async accessibility() {
+    if (game('page.search').value !== '') await navigateSearch('');
+    const r = await accessibilitySettings({ tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name) });
+    summary.data.accessibility = r;
+    const c = r.clicked;
+    check(
+      "accessibility: a hand-ray click on the HUD 'levels-button' opens the level select and a fingertip poke on 'settings-button' opens the Settings page",
+      c.page === 'settings' && Boolean(r.shots.panelShot),
+      { page: c.page, contactMs: c.settingsContactMs, hovered: c.openHovered, shot: r.shots.panelShot },
+    );
+    check(
+      'accessibility: the Settings page fits the level-select size (46 x 28 cm)',
+      Array.isArray(r.panel.size) && r.panel.size[0] <= 0.461 && r.panel.size[1] <= 0.28,
+      { size: r.panel.size && round(r.panel.size), position: r.panel.position && round(r.panel.position) },
+    );
+    check(
+      "accessibility: a fingertip poke on 'left-handed-button' turns left-handed on and mirrors the ghost hand",
+      c.settings.leftHanded === true && c.ghostHandLeft === true,
+      { contactMs: c.leftContactMs, leftHanded: c.settings.leftHanded, ghostHandLeft: c.ghostHandLeft },
+    );
+    check(
+      'accessibility: hand-ray clicks turn high contrast and reduced motion on, set the board to large, mute and raise the volume',
+      c.settings.highContrast === true &&
+        c.settings.reducedMotion === true &&
+        c.settings.boardSize === 'large' &&
+        c.settings.muted === true &&
+        Math.abs(c.settings.volume - 0.9) < 1e-9 &&
+        c.muted === true &&
+        c.highContrast === 1 &&
+        c.outlinesVisible === true &&
+        c.trailFade === 1e9 &&
+        c.radius[1] > c.radius[0],
+      c,
+    );
+    check('accessibility: Back returns to the levels page and Close closes the panel', r.backPage === 'levels' && r.closed, { backPage: r.backPage, closed: r.closed });
+    check(
+      'accessibility: left-handed alone: the ghost hand mid-carry is the mirrored left hand (screenshot)',
+      r.left.held && r.left.visible && r.left.ghostHandLeft && Boolean(r.shots.leftShot),
+      { ...r.left, shot: r.shots.leftShot },
+    );
+    const k = r.contrast;
+    check(
+      'accessibility: high contrast alone shows the body outlines and the target outline; XR calls <= 100 and triangles <= 150k off and on (screenshots)',
+      k.highContrast === 1 &&
+        k.outlinesVisible &&
+        k.targetOutlineVisible &&
+        [k.off, k.on].every((m) => m && m.calls > 0 && m.calls <= BUDGET.calls && m.triangles <= BUDGET.triangles) &&
+        Boolean(r.shots.contrastShot && r.shots.contrastOffShot),
+      { ...k, shots: [r.shots.contrastOffShot, r.shots.contrastShot] },
+    );
+    const plane = (summary.data.planes ?? []).find((p) => p.id === ctx.table?.planeId);
+    const cap = plane ? BOARD.tableCapFill * Math.min(plane.size[0], plane.size[1]) : null;
+    const [small, medium, large] = r.sizes;
+    check(
+      'accessibility: board small < medium < large on the table plane, about its center, large within the table-size cap (screenshots)',
+      r.sizes.length === 3 &&
+        r.sizes.every((x) => x.source === 'table-plane' && Boolean(x.shot) && dist(x.center, medium.center) < 1e-3) &&
+        Math.abs(small.radius - medium.radius * BOARD_SIZE_SCALE.small) < 1e-3 &&
+        large.radius > medium.radius &&
+        cap !== null &&
+        large.radius <= cap + 1e-3 &&
+        Math.abs(large.radius - Math.min(cap, medium.radius * BOARD_SIZE_SCALE.large)) < 1e-3,
+      { sizes: r.sizes.map((x) => ({ size: x.size, radius: x.radius, source: x.source })), cap: cap && round(cap), planeSize: plane?.size },
+    );
+    const m = r.motion;
+    check(
+      'accessibility: reduced motion alone: the decorative clock, the target star and the bodies stand still, the trail is static and the chapter moment has no burst (screenshots)',
+      m.still.motionTime[0] === m.still.motionTime[1] &&
+        m.still.targetStarYaw[0] === m.still.targetStarYaw[1] &&
+        m.still.bodyYaw[0] === m.still.bodyYaw[1] &&
+        m.trailFade === 1e9 &&
+        m.chapter.every((x) => x.shown && Math.abs(x.starHeight - 0.5) < 1e-3 && x.starSpin === 0) &&
+        Boolean(r.shots.trailShot && r.shots.chapterShot),
+      { ...m, shots: [r.shots.trailShot, r.shots.chapterShot] },
+    );
+    check(
+      'accessibility: settings back to the defaults afterwards (medium board, nothing on)',
+      JSON.stringify(r.restored.settings) === JSON.stringify(DEFAULT_TEST_SETTINGS) && !r.restored.chapter,
+      r.restored,
     );
   },
 };

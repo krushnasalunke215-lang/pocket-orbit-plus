@@ -709,16 +709,22 @@ export async function onboardingAndLevelSelect(takeShot) {
   const reopenClick = snapshot().levelSelect.open ? null : await rayClick('levels-button');
   await sleep(400);
   const reopened = snapshot().levelSelect.open;
+  // The audio settings live on the Settings page.
+  await rayClick('settings-button');
+  const settingsPage = snapshot().levelSelect.page;
   const mutedBefore = game('audio.state').value.muted;
   const muteClick = await rayClick('mute-button');
   const mutedAfter = game('audio.state').value.muted;
   await rayClick('mute-button');
   const mutedRestored = game('audio.state').value.muted;
+  await rayClick('settings-back');
+  const levelsPage = snapshot().levelSelect.page;
   const levelClick = await rayClick('level-3');
   s = snapshot();
   const ray = {
     reopened,
     reopenHovered: reopenClick?.hovered ?? null,
+    pages: [settingsPage, levelsPage],
     muted: [mutedBefore, mutedAfter, mutedRestored],
     muteHovered: muteClick.hovered,
     levelHovered: levelClick.hovered,
@@ -1381,6 +1387,196 @@ export async function levelSelectBudget({ tableHead, takeShot, shotName }) {
   game('setOcclusion', true);
   await exitXR();
   return { views, shot };
+}
+
+/** Settings back to the defaults (the save keeps them, so later groups would inherit them). */
+export const DEFAULT_TEST_SETTINGS = {
+  muted: false,
+  volume: 0.8,
+  quiet: false,
+  leftHanded: false,
+  highContrast: false,
+  reducedMotion: false,
+  boardSize: 'medium',
+};
+
+/**
+ * Accessibility settings in XR, seated at the table with hands: the level
+ * select opened by a hand-ray click on the HUD Levels button, the Settings
+ * page and Left-handed by fingertip pokes, High contrast, Reduced motion,
+ * Board and the audio buttons by hand ray. Then one screenshot of each mode
+ * on its own (set through the debug API): the left ghost hand mid-carry,
+ * high contrast off and on over level 6, the board at small, medium and
+ * large, and reduced motion's static trail and still chapter moment, with
+ * render counts in the high-contrast view. Settings return to the defaults
+ * at the end.
+ */
+export async function accessibilitySettings({ tableHead, takeShot }) {
+  if (xr('status').sessionActive) await exitXR();
+  await enterXR();
+  const seat = async () => {
+    xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+    await sleep(300);
+    xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+    await sleep(300);
+  };
+  const handsDown = () => {
+    for (const [device, dx] of [['hand-left', -0.3], ['hand-right', 0.3]]) {
+      xr('set-transform', { device, position: { x: tableHead.x + dx, y: tableHead.y - 0.45, z: tableHead.z - 0.05 } });
+      xr('look-at', { device, target: { x: tableHead.x + dx * 2, y: 0, z: tableHead.z } });
+    }
+  };
+  const lookAtPanel = async () => {
+    const p = snapshot().levelSelect.position;
+    if (p) xr('look-at', { device: 'headset', target: vec(p) });
+    await sleep(600);
+  };
+  const settings = () => snapshot().accessibility.settings;
+  game('audio.setSettings', DEFAULT_TEST_SETTINGS);
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  await sleep(300);
+  game('placeBoard');
+  await sleep(1500);
+  await game('loadLevel', 1);
+  await sleep(500);
+  await seat();
+
+  // 1. Real input: open by ray, Settings by poke, then every setting.
+  const openClick = await rayClick('levels-button');
+  await waitFor('the level select open', () => snapshot().levelSelect.open, 10_000, 300).catch(() => null);
+  await sleep(600);
+  handAtChest(DEVICE);
+  await sleep(300);
+  const settingsPress = press('settings-button', () => snapshot().levelSelect.page === 'settings');
+  await sleep(600);
+  await seat();
+  handAtChest(DEVICE);
+  await sleep(400);
+  const page = snapshot().levelSelect.page;
+  const panel = { position: snapshot().levelSelect.position, size: snapshot().levelSelect.size };
+  await lookAtPanel();
+  const panelShot = page === 'settings' ? takeShot('iwer-settings.png') : null;
+  await seat();
+  const leftPress = press('left-handed-button', () => settings().leftHanded);
+  await sleep(500);
+  await seat();
+  const radiusBefore = snapshot().board.radius;
+  const rays = {};
+  for (const id of ['contrast-button', 'motion-button', 'board-size-button', 'mute-button', 'volume-up']) {
+    rays[id] = (await rayClick(id)).hovered;
+  }
+  let s = snapshot();
+  const clicked = {
+    page,
+    openHovered: openClick.hovered,
+    settingsContactMs: settingsPress.contactMs,
+    leftContactMs: leftPress.contactMs,
+    settings: s.accessibility.settings,
+    ghostHandLeft: s.accessibility.ghostHandLeft,
+    highContrast: s.accessibility.highContrast,
+    outlinesVisible: s.accessibility.outlinesVisible,
+    trailFade: s.accessibility.trailFade,
+    radius: [round(radiusBefore), round(s.board.radius)],
+    muted: game('audio.state').value.muted,
+    rays,
+  };
+  await lookAtPanel();
+  const audioShot = takeShot('iwer-a11y-audio.png');
+  await seat();
+  await rayClick('settings-back');
+  const backPage = snapshot().levelSelect.page;
+  await rayClick('close-levels');
+  await sleep(400);
+  const closed = !snapshot().levelSelect.open;
+
+  // 2. Left-handed alone: the ghost hand mid-carry.
+  game('audio.setSettings', { ...DEFAULT_TEST_SETTINGS, leftHanded: true });
+  game('resetOnboarding');
+  await game('loadLevel', 0);
+  await sleep(500);
+  handsDown();
+  await seat();
+  game('hold.ghost', 1.9, 2.7, 5.2);
+  const ghostHold = await waitForHold('the left ghost hand mid-carry');
+  await sleep(300);
+  const left = { held: Boolean(ghostHold?.held), ghostHandLeft: snapshot().accessibility.ghostHandLeft, visible: snapshot().ghostHand.visible };
+  const leftShot = ghostHold?.held ? takeShot('iwer-a11y-left-handed.png') : null;
+  game('hold.release');
+  await sleep(500);
+
+  // 3. High contrast alone over level 6, off then on, with XR render counts.
+  game('audio.setSettings', { ...DEFAULT_TEST_SETTINGS });
+  await game('loadLevel', 5);
+  await sleep(600);
+  await seat();
+  const contrastOffShot = takeShot('iwer-a11y-contrast-off.png');
+  const offStats = await budgetSample(true, 2000);
+  game('audio.setSettings', { ...DEFAULT_TEST_SETTINGS, highContrast: true });
+  await sleep(600);
+  const contrastShot = takeShot('iwer-a11y-high-contrast.png');
+  const onStats = await budgetSample(true, 2000);
+  s = snapshot();
+  const contrast = { highContrast: s.accessibility.highContrast, outlinesVisible: s.accessibility.outlinesVisible, targetOutlineVisible: s.accessibility.targetOutlineVisible, off: offStats.max, on: onStats.max, frames: [offStats.frames, onStats.frames] };
+
+  // 4. Board sizes on level 2, on the table plane.
+  await game('loadLevel', 1);
+  const sizes = [];
+  for (const size of ['small', 'medium', 'large']) {
+    game('audio.setSettings', { ...DEFAULT_TEST_SETTINGS, boardSize: size });
+    await sleep(700);
+    await seat();
+    const b = snapshot().board;
+    sizes.push({ size, radius: round(b.radius), source: b.source, center: round(b.center), shot: takeShot(`iwer-a11y-board-${size}.png`) });
+  }
+
+  // 5. Reduced motion alone: the decorative clock stands still, the level 6
+  // solve leaves a static trail, and the chapter moment has no burst.
+  game('audio.setSettings', { ...DEFAULT_TEST_SETTINGS, reducedMotion: true });
+  await game('loadLevel', 5);
+  await sleep(600);
+  await seat();
+  const m0 = snapshot().accessibility;
+  await sleep(1000);
+  const m1 = snapshot().accessibility;
+  const levels = game('levels').value;
+  game('setPlacements', levels[5].solution);
+  game('launch');
+  await waitFor('level 6 solved', () => snapshot().solved, 90_000, 500);
+  await sleep(300);
+  const trailFade = snapshot().accessibility.trailFade;
+  const trailShot = takeShot('iwer-a11y-reduced-motion-trail.png');
+  await rayClick('next-button');
+  await waitFor('the chapter moment', () => snapshot().chapterComplete.shown, 10_000, 300).catch(() => null);
+  await sleep(300);
+  const c0 = snapshot().chapterComplete;
+  await sleep(1200);
+  const c1 = snapshot().chapterComplete;
+  await seat();
+  const chapterShot = c1.shown ? takeShot('iwer-a11y-reduced-motion-chapter.png') : null;
+  const motion = {
+    still: { motionTime: [m0.motionTime, m1.motionTime], targetStarYaw: [m0.targetStarYaw, m1.targetStarYaw], bodyYaw: [m0.bodyYaw, m1.bodyYaw] },
+    trailFade,
+    chapter: [c0, c1].map((c) => ({ shown: c.shown, starHeight: round(c.starHeight), starSpin: c.starSpin })),
+  };
+
+  // Back to the defaults and level 1, out of the chapter moment.
+  game('audio.setSettings', DEFAULT_TEST_SETTINGS);
+  await game('loadLevel', 0);
+  await sleep(700);
+  const restored = { settings: settings(), radius: round(snapshot().board.radius), chapter: snapshot().chapterComplete.shown };
+  await exitXR();
+  return {
+    panel,
+    clicked,
+    backPage,
+    closed,
+    left,
+    contrast,
+    sizes,
+    motion,
+    restored,
+    shots: { panelShot, audioShot, leftShot, contrastOffShot, contrastShot, trailShot, chapterShot },
+  };
 }
 
 /** Most XR render counts over `ms` of the current view with depth occlusion on or off. */

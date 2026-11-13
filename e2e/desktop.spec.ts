@@ -415,7 +415,10 @@ test('level select: stars, loading a level and audio settings', async ({ page })
   console.log('level select', JSON.stringify(open.levelSelect));
   await page.screenshot({ path: screenshotPath('level-select.png') });
 
-  // Audio settings on the panel edit the runtime settings the engine applies.
+  // Audio settings on the Settings page edit the runtime settings the engine applies.
+  await clickUi(page, 'settings-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.page, { timeout: 5_000 }).toBe('settings');
+  await page.waitForTimeout(300); // the page relayout
   expect((await audioState(page)).muted).toBe(false);
   await clickUi(page, 'mute-button');
   await expect.poll(async () => (await audioState(page)).muted, { timeout: 5_000 }).toBe(true);
@@ -424,6 +427,9 @@ test('level select: stars, loading a level and audio settings', async ({ page })
   await clickUi(page, 'mute-button');
   await expect.poll(async () => (await audioState(page)).muted, { timeout: 5_000 }).toBe(false);
   expect((await snapshot(page)).levelSelect.open, 'settings keep the panel open').toBe(true);
+  await clickUi(page, 'settings-back');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.page, { timeout: 5_000 }).toBe('levels');
+  await page.waitForTimeout(300);
 
   // A level button loads that level and closes the panel.
   await clickUi(page, 'level-5');
@@ -431,6 +437,179 @@ test('level select: stars, loading a level and audio settings', async ({ page })
   const loaded = await snapshot(page);
   expect(loaded.levelSelect.open).toBe(false);
   expect(loaded.phase).toBe('placing');
+});
+
+test('settings page: every accessibility and audio button by mouse, saved over a reload', async ({ page }) => {
+  test.setTimeout(240_000);
+  await openGame(page);
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  await page.waitForTimeout(300);
+  await clickUi(page, 'levels-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(true);
+  await page.waitForTimeout(400);
+  await clickUi(page, 'settings-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.page, { timeout: 5_000 }).toBe('settings');
+  await page.waitForTimeout(400);
+  const start = await snapshot(page);
+  expect(start.accessibility.settings).toEqual({
+    muted: false,
+    volume: 0.8,
+    quiet: false,
+    leftHanded: false,
+    highContrast: false,
+    reducedMotion: false,
+    boardSize: 'medium',
+  });
+  console.log('settings page', JSON.stringify({ position: start.levelSelect.position, size: start.levelSelect.size }));
+  expect(start.levelSelect.size![0]).toBeLessThanOrEqual(0.461);
+  expect(start.levelSelect.size![1]).toBeLessThanOrEqual(0.28);
+  await page.screenshot({ path: screenshotPath('desktop-settings.png') });
+
+  const a11y = async () => (await snapshot(page)).accessibility;
+  await clickUi(page, 'left-handed-button');
+  await expect.poll(async () => (await a11y()).ghostHandLeft, { timeout: 5_000 }).toBe(true);
+  await clickUi(page, 'contrast-button');
+  await expect.poll(async () => (await a11y()).highContrast, { timeout: 5_000 }).toBe(1);
+  expect((await a11y()).outlinesVisible).toBe(true);
+  expect((await a11y()).targetOutlineVisible).toBe(true);
+  await clickUi(page, 'motion-button');
+  await expect.poll(async () => (await a11y()).settings.reducedMotion, { timeout: 5_000 }).toBe(true);
+  // RenderSyncSystem applies a settings change on its next frame.
+  await expect.poll(async () => (await a11y()).trailFade, { timeout: 5_000 }).toBe(1e9);
+  const radius = (await snapshot(page)).board.radius;
+  await clickUi(page, 'board-size-button');
+  await expect.poll(async () => (await snapshot(page)).board.radius, { timeout: 5_000 }).toBeCloseTo(radius * 1.25, 6);
+  expect((await a11y()).settings.boardSize).toBe('large');
+  await clickUi(page, 'mute-button');
+  await clickUi(page, 'volume-up');
+  await clickUi(page, 'quiet-button');
+  await expect.poll(async () => (await audioState(page)).volume, { timeout: 5_000 }).toBeCloseTo(0.9, 6);
+  const on = await snapshot(page);
+  expect(on.accessibility.settings).toEqual({
+    muted: true,
+    volume: 0.9,
+    quiet: true,
+    leftHanded: true,
+    highContrast: true,
+    reducedMotion: true,
+    boardSize: 'large',
+  });
+  expect(on.levelSelect.open).toBe(true);
+  expect(on.levelSelect.page).toBe('settings');
+  await page.waitForTimeout(400); // the labels relayout
+  await page.screenshot({ path: screenshotPath('desktop-settings-all-on.png') });
+
+  // Reduced motion: the decorative clock, the target star and the bodies stand still.
+  const a = await a11y();
+  await page.waitForTimeout(700);
+  const b = await a11y();
+  expect(b.motionTime).toBe(a.motionTime);
+  expect(b.targetStarYaw).toBe(a.targetStarYaw);
+  expect(b.bodyYaw).toBe(a.bodyYaw);
+
+  // Board size cycles large, small, medium.
+  await clickUi(page, 'board-size-button');
+  await expect.poll(async () => (await snapshot(page)).board.radius, { timeout: 5_000 }).toBeCloseTo(radius * 0.75, 6);
+  await clickUi(page, 'board-size-button');
+  await expect.poll(async () => (await snapshot(page)).board.radius, { timeout: 5_000 }).toBeCloseTo(radius, 6);
+  await clickUi(page, 'board-size-button');
+  await expect.poll(async () => (await snapshot(page)).board.radius, { timeout: 5_000 }).toBeCloseTo(radius * 1.25, 6);
+
+  // Back to the levels page; the HUD Levels button closes the panel.
+  await clickUi(page, 'settings-back');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.page, { timeout: 5_000 }).toBe('levels');
+  await page.waitForTimeout(300);
+  await clickUi(page, 'levels-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(false);
+
+  // Saved with the game state (version 2), and restored by a reload.
+  await expect
+    .poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('orbit-puzzle.save') ?? '{}').settings?.boardSize), { timeout: 5_000 })
+    .toBe('large');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('orbit-puzzle.save')!));
+  expect(saved.version).toBe(2);
+  expect(saved.settings).toEqual(on.accessibility.settings);
+  await page.reload();
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 60_000 });
+  await expect.poll(async () => (await snapshot(page)).levelBuilt, { timeout: 10_000 }).toBe(true);
+  await page.waitForTimeout(500);
+  const reloaded = await snapshot(page);
+  expect(reloaded.save.problem).toBeNull();
+  expect(reloaded.accessibility.settings).toEqual(on.accessibility.settings);
+  expect(reloaded.board.radius).toBeCloseTo(radius * 1.25, 6);
+  expect(reloaded.accessibility.highContrast).toBe(1);
+  expect(reloaded.accessibility.trailFade).toBe(1e9);
+  expect(reloaded.accessibility.ghostHandLeft).toBe(true);
+  expect((await audioState(page)).muted).toBe(true);
+});
+
+test('accessibility modes: screenshots of each', async ({ page }) => {
+  test.setTimeout(300_000);
+  await openGame(page);
+  const setSettings = (partial: Record<string, unknown>) =>
+    page.evaluate((p) => window.__game!.audio.setSettings(p as never), partial);
+  const off = { leftHanded: false, highContrast: false, reducedMotion: false, boardSize: 'medium' };
+  const levels = await page.evaluate(() => window.__game!.levels());
+
+  // Left-handed: the ghost hand mid-carry is a left hand reaching in from the left.
+  await page.evaluate(() => window.__game!.resetOnboarding());
+  await setSettings({ ...off, leftHanded: true });
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  await expect.poll(async () => (await snapshot(page)).ghostHand.visible, { timeout: 5_000 }).toBe(true);
+  await expect
+    .poll(
+      async () => {
+        const t = (await snapshot(page)).ghostHand.time % 5.2;
+        return t > 1.9 && t < 2.7;
+      },
+      { timeout: 15_000, intervals: [40] },
+    )
+    .toBe(true);
+  expect((await snapshot(page)).accessibility.ghostHandLeft).toBe(true);
+  await page.screenshot({ path: screenshotPath('desktop-a11y-left-handed.png') });
+
+  // High contrast on level 6 (black hole, planet, white star), with the same view off for comparison.
+  await page.evaluate(() => window.__game!.loadLevel(5));
+  await setSettings({ ...off });
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: screenshotPath('desktop-a11y-contrast-off.png') });
+  await setSettings({ ...off, highContrast: true });
+  await page.waitForTimeout(500);
+  const contrast = await snapshot(page);
+  expect(contrast.accessibility.highContrast).toBe(1);
+  expect(contrast.accessibility.outlinesVisible).toBe(true);
+  await page.screenshot({ path: screenshotPath('desktop-a11y-high-contrast.png') });
+
+  // Board sizes on level 1.
+  await page.evaluate(() => window.__game!.loadLevel(0));
+  for (const size of ['small', 'medium', 'large']) {
+    await setSettings({ ...off, boardSize: size });
+    await page.waitForTimeout(500);
+    console.log(`board ${size}`, (await snapshot(page)).board.radius);
+    await page.screenshot({ path: screenshotPath(`desktop-a11y-board-${size}.png`) });
+  }
+
+  // Reduced motion: a static trail after the level 6 solve, then the chapter
+  // moment with no burst (the stars stand in their final ring at once).
+  await setSettings({ ...off, reducedMotion: true });
+  await page.evaluate(() => window.__game!.loadLevel(5));
+  await page.evaluate((p) => window.__game!.setPlacements(p), levels[5].solution);
+  await page.evaluate(() => window.__game!.launch());
+  await expect.poll(async () => (await snapshot(page)).solved, { timeout: 90_000 }).toBe(true);
+  await page.waitForTimeout(300);
+  expect((await snapshot(page)).accessibility.trailFade).toBe(1e9);
+  await page.screenshot({ path: screenshotPath('desktop-a11y-reduced-motion-trail.png') });
+  await clickUi(page, 'next-button');
+  await expect.poll(async () => (await snapshot(page)).chapterComplete.shown, { timeout: 10_000 }).toBe(true);
+  // From its first frame the constellation stands at its final height (no rise).
+  await expect.poll(async () => (await snapshot(page)).chapterComplete.starHeight, { timeout: 2_000, intervals: [20] }).toBeCloseTo(0.5, 6);
+  const early = (await snapshot(page)).chapterComplete;
+  expect(early.starSpin).toBe(0);
+  await page.waitForTimeout(800);
+  const later = (await snapshot(page)).chapterComplete;
+  expect(later.starSpin).toBe(0);
+  expect(later.starHeight).toBeCloseTo(0.5, 6);
+  await page.screenshot({ path: screenshotPath('desktop-a11y-reduced-motion-chapter.png') });
 });
 
 test('chapter complete after level 6', async ({ page }) => {
