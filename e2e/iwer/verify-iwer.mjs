@@ -627,6 +627,42 @@ const GROUP_RUNNERS = {
         !r.behindPanel.armedAfter,
       r.behindPanel,
     );
+    check(
+      'real-object: that pinch does not also press the HUD Launch behind the cup (no launch), and the next ray click on Launch launches',
+      r.behindPanel.attempts[0] === r.behindPanel.attempts[1] &&
+        r.behindPanel.phase !== 'flying' &&
+        !r.behindPanel.confirmPinchAfter.right &&
+        r.behindPanel.nextClick.hovered.includes('hud-panel') &&
+        r.behindPanel.nextClick.attempts === r.behindPanel.attempts[1] + 1,
+      { attempts: r.behindPanel.attempts, phase: r.behindPanel.phase, confirmPinchAfter: r.behindPanel.confirmPinchAfter, nextClick: r.behindPanel.nextClick },
+    );
+    check(
+      "real-object: armed, with the Your Table panel's Clear wells behind the cup, a pinch at the cup's top places the well and does not clear it",
+      r.behindSandboxPanel.reticle?.hit === 'object' &&
+        r.behindSandboxPanel.hovered.includes('sandbox-panel') &&
+        r.behindSandboxPanel.wells.length === 1 &&
+        r.behindSandboxPanel.wells[0] === 'object' &&
+        r.behindSandboxPanel.status === 'Well placed: launch to hear it' &&
+        !r.behindSandboxPanel.armedAfter &&
+        !r.behindSandboxPanel.confirmPinchAfter.right,
+      r.behindSandboxPanel,
+    );
+    check(
+      'real-object: a fingertip poke on Make well with the left hand arms the left hand (the right hand pinched last)',
+      r.pokeArm.armed && r.pokeArm.armHand === 'left',
+      r.pokeArm,
+    );
+    check(
+      "real-object: a late miss (hits while armed, none at the pinch) gives a centered puck and 'Nothing in reach'",
+      r.lateMiss.firstHit === 'object' &&
+        r.lateMiss.reticleVisible === false &&
+        r.lateMiss.wells.length === 1 &&
+        r.lateMiss.wells[0].kind === 'puck' &&
+        Math.hypot(r.lateMiss.wells[0].position[0], r.lateMiss.wells[0].position[2]) < 1e-6 &&
+        r.lateMiss.status === 'Nothing in reach: aim at an object on the board' &&
+        !r.lateMiss.armedAfter,
+      r.lateMiss,
+    );
   },
 
   // 15c. Depth occlusion: registered, feature-detected, its cost on and off.

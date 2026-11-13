@@ -937,8 +937,9 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
   // well: the ray does not see the cup, so its first virtual hit is the HUD,
   // but the hit-test point on the cup is nearer. The hand is 25 cm above the
   // board plane in front of the near rim, on the line from the HUD's Launch
-  // button through the cup's top (that button gets the press too: a known
-  // issue, so the flight it may start is waited out).
+  // button through the cup's top. The HUD ignores that hand's ray click
+  // until its select ends, so the same pinch does not launch; the hand's
+  // next ray click on Launch does.
   xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
   xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
   await sleep(300);
@@ -973,8 +974,105 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
     armedAfter: s.sandbox.armed,
     status: s.sandbox.status,
     attempts: [behindBefore, s.attempts],
+    phase: s.phase,
+    confirmPinchAfter: s.sandbox.confirmPinch,
   };
+  const nextLaunch = await rayClick('launch-button');
+  s = snapshot();
+  behindPanel.nextClick = { hovered: nextLaunch.hovered, attempts: s.attempts, phase: s.phase };
   await waitNotFlying(30_000).catch(() => null);
+  game('sandbox.clear');
+  await sleep(300);
+
+  // The same with the Your Table panel's Clear wells behind the cup: the
+  // pinch places the well and does not clear it.
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+  await sleep(300);
+  const clearAt = game('uiWorldPoint', 'clear-wells').value;
+  const clearAlong = (lowY - clearAt[1]) / (cupTop.y - clearAt[1]);
+  const clearHand = [clearAt[0] + clearAlong * (cupTop.x - clearAt[0]), lowY, clearAt[2] + clearAlong * (cupTop.z - clearAt[2])];
+  game('sandbox.arm', 'right');
+  await sleep(300);
+  xr('set-transform', { device: DEVICE, position: vec(clearHand) });
+  xr('look-at', { device: DEVICE, target: cupTop });
+  await sleep(600);
+  const clearReticle = await waitForReticle('object');
+  const clearHovered = hoveredNames();
+  xr('select', { device: DEVICE, duration: 0.2 });
+  await sleep(800);
+  s = snapshot();
+  const behindSandboxPanel = {
+    hand: round(clearHand),
+    aim: round(clearAt),
+    hovered: clearHovered,
+    reticle: clearReticle,
+    wells: s.sandbox.wells.map((w) => w.kind),
+    armedAfter: s.sandbox.armed,
+    status: s.sandbox.status,
+    confirmPinchAfter: s.sandbox.confirmPinch,
+  };
+  game('sandbox.clear');
+  await sleep(300);
+
+  // A fingertip poke on Make well arms the hand that poked: the left one,
+  // though the right hand pinched last.
+  lookPanel();
+  await sleep(400);
+  const pokeMakeWell = () =>
+    xr('run-sequence', { device: 'hand-left', steps: [{ label: 'poke make-well', target: 'make-well', press: { hold: 0.05, retract: 0.05 } }] }, { timeoutMs: 60_000 });
+  let leftPress = pokeMakeWell();
+  // A slow headless frame can hold the touch too long to count as a click.
+  if ((leftPress.presses?.[0]?.contactMs ?? 0) >= 800 && !snapshot().sandbox.armed) leftPress = pokeMakeWell();
+  await sleep(300);
+  s = snapshot();
+  const pokeArm = { contactMs: leftPress.presses?.[0]?.contactMs ?? null, armed: s.sandbox.armed, armHand: s.sandbox.armHand, status: s.sandbox.status };
+  game('sandbox.disarm');
+  // The left hand back down and out of the picture.
+  const seatedAt = xr('get-transform', { device: 'headset' }).position;
+  xr('set-transform', { device: 'hand-left', position: { x: seatedAt.x - 0.3, y: seatedAt.y - 0.45, z: seatedAt.z - 0.05 } });
+  xr('look-at', { device: 'hand-left', target: { x: seatedAt.x - 0.6, y: 0, z: seatedAt.z } });
+  await sleep(300);
+
+  // A late miss: armed, the reticle first sees the cup, then the ray points
+  // straight up at nothing in reach (from the chest, else from above the
+  // room); the pinch gives a centered puck and its own message.
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+  await sleep(300);
+  game('sandbox.arm', 'right');
+  await sleep(300);
+  const chest = handAtChest(DEVICE);
+  xr('look-at', { device: DEVICE, target: cupTop });
+  await sleep(600);
+  const missFirstHit = await waitForReticle('object');
+  const hitsBefore = snapshot().sandbox.hitLog.total;
+  let missFrom = null;
+  let missReticle = null;
+  let missHovered = [];
+  for (const from of [chest, [chest[0], chest[1] + 5, chest[2]]]) {
+    xr('set-transform', { device: DEVICE, position: vec(from) });
+    // A little toward the player (+Z, away from the panels), so the aim is not exactly vertical.
+    xr('look-at', { device: DEVICE, target: { x: from[0], y: from[1] + 10, z: from[2] + 0.5 } });
+    await sleep(800);
+    missReticle = snapshot().sandbox.reticle;
+    missHovered = hoveredNames();
+    missFrom = round(from);
+    if (!missReticle?.visible && missHovered.length === 0) break;
+  }
+  xr('select', { device: DEVICE, duration: 0.2 });
+  await sleep(800);
+  s = snapshot();
+  const lateMiss = {
+    firstHit: missFirstHit?.hit ?? null,
+    hitsBefore,
+    from: missFrom,
+    reticleVisible: missReticle?.visible ?? null,
+    hovered: missHovered,
+    wells: s.sandbox.wells.map((w) => ({ kind: w.kind, position: round(w.position) })),
+    armedAfter: s.sandbox.armed,
+    status: s.sandbox.status,
+  };
   game('sandbox.clear');
   await sleep(300);
 
@@ -1006,6 +1104,9 @@ export async function realObjectWells({ cup, tableHead, expectedMass, takeShot }
     regrab,
     panelPinch,
     behindPanel,
+    behindSandboxPanel,
+    pokeArm,
+    lateMiss,
   };
 }
 
