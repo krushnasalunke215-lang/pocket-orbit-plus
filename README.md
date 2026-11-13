@@ -37,8 +37,9 @@ JSON line every 5 s with `console.info`.
 - `src/render/`: procedural visuals and shaders.
 - `src/debug/`: the `window.__game` debug API (dev and e2e builds only).
 - `public/ui/`: UIKitML panels: `hud.uikitml` (HUD), `rim-button.uikitml`
-  (near-rim Launch/Replay), `level-select.uikitml` (levels, stars, audio
-  settings), `sandbox.uikitml` (Your Table) and `debug-overlay.uikitml`
+  (near-rim Launch/Replay), `level-select.uikitml` (levels, stars, and the
+  Settings page: left-handed, high contrast, reduced motion, board size and
+  audio), `sandbox.uikitml` (Your Table) and `debug-overlay.uikitml`
   (`?debug=1`).
 - `public/vendor/webxr-input-profiles/`: the generic-hand models (MIT), served
   from our own origin instead of the CDN.
