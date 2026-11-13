@@ -3,8 +3,10 @@ import type { AudioEngine } from '../audio/engine.js';
 import type { BoardPose } from '../game/board-math.js';
 import type { GameController } from '../game/controller.js';
 import {
+  BOARD_SIZES,
   DEFAULT_ONBOARDING,
   DEFAULT_SETTINGS as SAVED_DEFAULT_SETTINGS,
+  type BoardSize,
   type OnboardingFlags,
 } from '../game/state.js';
 import type { BoardPlacement } from '../game/placement.js';
@@ -156,13 +158,24 @@ export interface RenderStats {
   reset(): void;
 }
 
-/** User audio settings (SaveSystem persists them, FEAT-005 adds panel controls). */
+/**
+ * User audio and accessibility settings (SaveSystem persists them; the
+ * level select's Settings page edits them).
+ */
 export interface AppSettings {
   readonly muted: boolean;
   /** 0..1. */
   readonly volume: number;
   /** Multiplies the master level by QUIET_FACTOR (src/audio/engine.ts). */
   readonly quiet: boolean;
+  /** The ghost hand demonstrates with the left hand (OnboardingSystem). */
+  readonly leftHanded: boolean;
+  /** Brighter rims, outlines on the bodies and the target, stronger HUD text (AccessibilitySystem, HudSystem). */
+  readonly highContrast: boolean;
+  /** Decorative clocks stop (motionTime), no chapter-moment burst, static trails. */
+  readonly reducedMotion: boolean;
+  /** Board radius factor BOARD_SIZE_SCALE[boardSize] (BoardPlacementSystem). */
+  readonly boardSize: BoardSize;
 }
 
 /** The saved defaults (src/game/state.ts), so a fresh game and a migrated save agree. */
@@ -222,6 +235,8 @@ export interface LevelSelectRuntime {
   readonly panel: UIKitMLAsset;
   readonly entity: Entity;
   open: boolean;
+  /** The page shown while open: the level grid, or Settings (accessibility and audio). */
+  page: 'levels' | 'settings';
   /** Element ids of the level buttons, in level order. */
   readonly buttonIds: readonly string[];
   /** Stars each level button shows (0 = no stars line), in level order. */
@@ -240,6 +255,9 @@ export interface ChapterRuntime {
   maxStars: number;
   /** Increments on every show and hide. */
   revision: number;
+  /** The constellation's height above the board (board units) and its ring turn (rad), this frame. */
+  starHeight: number;
+  starSpin: number;
   show(chapter: number): void;
   hide(): void;
 }
@@ -279,6 +297,7 @@ const KEYS = {
   sandbox: 'sandbox',
   sandboxPanel: 'sandboxPanel',
   hitLog: 'hitLog',
+  motionClock: 'motionClock',
 } as const;
 
 export function setSandbox(world: World, sandbox: SandboxRuntime): void {
@@ -469,7 +488,7 @@ export function getSettingsRevision(world: World): number {
 export function setSettings(world: World, partial: Partial<AppSettings>): AppSettings {
   const store = settingsStore(world);
   const next: { -readonly [K in keyof AppSettings]: AppSettings[K] } = { ...store.value };
-  for (const key of ['muted', 'quiet'] as const) {
+  for (const key of ['muted', 'quiet', 'leftHanded', 'highContrast', 'reducedMotion'] as const) {
     const v = partial[key];
     if (v === undefined) continue;
     if (typeof v !== 'boolean') throw new TypeError(`settings.${key} must be a boolean`);
@@ -480,9 +499,33 @@ export function setSettings(world: World, partial: Partial<AppSettings>): AppSet
     if (typeof v !== 'number' || !Number.isFinite(v)) throw new TypeError('settings.volume must be a finite number');
     next.volume = Math.min(1, Math.max(0, v));
   }
+  if (partial.boardSize !== undefined) {
+    if (!BOARD_SIZES.includes(partial.boardSize)) throw new TypeError(`settings.boardSize must be one of ${BOARD_SIZES.join(', ')}`);
+    next.boardSize = partial.boardSize;
+  }
   store.value = next;
   store.revision++;
   return next;
+}
+
+interface MotionClock {
+  value: number;
+}
+
+/**
+ * The clock of decorative animation (planet spins and bands, pulses,
+ * flowing rings, the target star's turn): the frame time, held still while
+ * reduced motion is on. The comet and its tail keep the real clock.
+ * Idempotent within a frame, so every system may call it. No allocation.
+ */
+export function motionTime(world: World, time: number): number {
+  let clock = world.globals[KEYS.motionClock] as MotionClock | undefined;
+  if (!clock) {
+    clock = { value: time };
+    world.globals[KEYS.motionClock] = clock;
+  }
+  if (!getSettings(world).reducedMotion) clock.value = time;
+  return clock.value;
 }
 
 export function setAudio(world: World, engine: AudioEngine): void {

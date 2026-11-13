@@ -38,7 +38,7 @@ const STATE: GameState = {
   solvedLevelIds: ['c1-l1', 'c1-l2'],
   stars: { 'c1-l1': 3, 'c1-l2': 2 },
   lastOutcome: null,
-  settings: { muted: false, volume: 0.6, quiet: true },
+  settings: { muted: false, volume: 0.6, quiet: true, leftHanded: true, highContrast: false, reducedMotion: true, boardSize: 'small' },
   onboarding: { ghostHandDone: true },
 };
 
@@ -79,6 +79,16 @@ describe('save', () => {
     const result = loadGame(store);
     expect(result.state).toBeNull();
     expect(result.problem).toMatch(/version/);
+    expect(store.getItem(CORRUPT_SAVE_KEY)).toBe(text);
+  });
+
+  it('starts fresh on a bad accessibility setting and keeps a copy of the text', () => {
+    const store = new MemoryStore();
+    const text = serializeGameState({ ...STATE, settings: { ...STATE.settings, boardSize: 'huge' as 'small' } });
+    store.setItem(SAVE_KEY, text);
+    const result = loadGame(store);
+    expect(result.state).toBeNull();
+    expect(result.problem).toMatch(/corrupt save.*boardSize/);
     expect(store.getItem(CORRUPT_SAVE_KEY)).toBe(text);
   });
 

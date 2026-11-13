@@ -14,12 +14,13 @@ import {
   XRPlane,
   type Entity,
 } from '@iwsdk/core';
-import { BOARD, DESKTOP_VIEW } from '../config.js';
+import { BOARD, BOARD_SIZE_SCALE, DESKTOP_VIEW } from '../config.js';
 import { boardHandlePose } from '../game/hud-layout.js';
 import {
   chooseBoardPlacement,
   desktopPlacement,
   fallbackPlacement,
+  resizedPlacement,
   type BoardPlacement,
   type HeadPose,
   type PlaneInfo,
@@ -27,7 +28,8 @@ import {
 import { ROLE_COLORS } from '../render/palette.js';
 import { createBoardVisual } from '../render/board-visual.js';
 import { setRayGrabbable } from './ray-grab.js';
-import { setBoard, type BoardRuntime } from './runtime.js';
+import type { BoardSize } from '../game/state.js';
+import { getSettings, setBoard, type BoardRuntime } from './runtime.js';
 
 /** The parts of a WebXR XRPlane that placement reads. */
 interface NativePlane {
@@ -50,6 +52,9 @@ const handleColliderMaterial = new MeshBasicMaterial({ visible: false, side: Dou
  *   waits), then for BOARD.planeWaitMs, until the first grab, moves onto the
  *   best detected plane (a 'table' first) whenever a plane appears;
  * - afterwards only the board handle (or placeBoard()) moves it.
+ * The board size setting scales every placement's radius uniformly
+ * (BOARD_SIZE_SCALE); changing it rescales the board about its center,
+ * within the table-size cap of a plane placement.
  */
 export class BoardPlacementSystem extends createSystem({
   planes: { required: [XRPlane] },
@@ -61,6 +66,8 @@ export class BoardPlacementSystem extends createSystem({
   private planesDirty = false;
   private grabbedSincePlacement = false;
   private handleWasGrabbed = false;
+  /** The board size the current pose was made for (SaveSystem may load another after init). */
+  private boardSize: BoardSize = 'medium';
   private readonly handleOffset = new Vector3();
   private readonly v = new Vector3();
   private readonly v2 = new Vector3();
@@ -79,7 +86,7 @@ export class BoardPlacementSystem extends createSystem({
     const handleEntity = this.world.createTransformEntity(handleRoot);
     setRayGrabbable(handleEntity, true);
 
-    const initial = desktopPlacement();
+    const initial = desktopPlacement(this.sizeScale());
     this.runtime = {
       entity: boardEntity,
       handleEntity,
@@ -103,12 +110,18 @@ export class BoardPlacementSystem extends createSystem({
   }
 
   update(): void {
+    const size = getSettings(this.world).boardSize;
+    if (size !== this.boardSize && !this.runtime.handleEntity.hasComponent(Grabbed)) {
+      this.boardSize = size;
+      this.apply(resizedPlacement(this.runtime.placement, BOARD_SIZE_SCALE[size]));
+    }
+
     const visibility = this.visibilityState.peek();
     if (visibility === VisibilityState.NonImmersive) return;
 
     if (this.pendingXRPlacement && this.world.xrFrame) {
       this.pendingXRPlacement = false;
-      this.apply(fallbackPlacement(this.headPose()));
+      this.apply(fallbackPlacement(this.headPose(), this.sizeScale()));
       this.planeWaitUntil = performance.now() + BOARD.planeWaitMs;
       this.grabbedSincePlacement = false;
       this.planesDirty = true;
@@ -121,7 +134,7 @@ export class BoardPlacementSystem extends createSystem({
       this.queries.planes.entities.size > 0
     ) {
       this.planesDirty = false;
-      const placement = chooseBoardPlacement(this.collectPlanes(), this.headPose());
+      const placement = chooseBoardPlacement(this.collectPlanes(), this.headPose(), this.sizeScale());
       if (placement.source !== 'fallback') this.apply(placement);
     }
 
@@ -151,7 +164,7 @@ export class BoardPlacementSystem extends createSystem({
     if (state === VisibilityState.NonImmersive) {
       this.pendingXRPlacement = false;
       handle.visible = false;
-      this.apply(desktopPlacement());
+      this.apply(desktopPlacement(this.sizeScale()));
       const [px, py, pz] = DESKTOP_VIEW.cameraPosition;
       const [lx, ly, lz] = DESKTOP_VIEW.cameraLookAt;
       this.camera.position.set(px, py, pz);
@@ -165,10 +178,15 @@ export class BoardPlacementSystem extends createSystem({
   /** Debug/manual re-placement: desktop pose, else best plane or fallback. */
   private placeNow(): void {
     if (this.visibilityState.peek() === VisibilityState.NonImmersive) {
-      this.apply(desktopPlacement());
+      this.apply(desktopPlacement(this.sizeScale()));
       return;
     }
-    this.apply(chooseBoardPlacement(this.collectPlanes(), this.headPose()));
+    this.apply(chooseBoardPlacement(this.collectPlanes(), this.headPose(), this.sizeScale()));
+  }
+
+  /** Radius factor of the board size the board is (or is about to be) placed at. */
+  private sizeScale(): number {
+    return BOARD_SIZE_SCALE[this.boardSize];
   }
 
   private apply(placement: BoardPlacement): void {

@@ -9,6 +9,7 @@ import {
   getCometOverride,
   getGame,
   getPause,
+  getSettings,
   setChapter,
   type ChapterRuntime,
 } from './runtime.js';
@@ -34,7 +35,9 @@ const easeOut = (x: number): number => 1 - (1 - Math.min(1, Math.max(0, x))) ** 
  * (HALOS sprites) rises above the board, each lit by that level's best
  * stars, while the comet loops slowly around them (the visual-only
  * CometOverride) and the chapter chord plays as an arpeggio. It is lively
- * for about CELEBRATION_SECONDS, then holds until a choice: the HUD shows
+ * for about CELEBRATION_SECONDS (with reduced motion there is no burst: the
+ * stars stand still in their final ring and the comet circles calmly),
+ * then holds until a choice: the HUD shows
  * 'Chapter N complete: S of M stars' with Levels and Play again. Loading any
  * level hides it. ChapterEvents listeners (onChapterComplete in runtime.ts,
  * the Phase 3 sky gallery hook) are told on every show. Nothing launches
@@ -59,6 +62,8 @@ export class ChapterSystem extends createSystem({
       stars: 0,
       maxStars: 0,
       revision: 0,
+      starHeight: 0,
+      starSpin: 0,
       show: (chapter) => this.show(chapter),
       hide: () => this.hide(),
     };
@@ -119,16 +124,21 @@ export class ChapterSystem extends createSystem({
     }
     if (!getPause(this.world).paused) this.time += delta;
     const t = this.time;
-    const rise = easeOut(t / RISE_SECONDS);
+    // Reduced motion: no burst. The stars stand still in their final ring
+    // at a steady size; only the comet keeps circling, at the calm speed.
+    const still = getSettings(this.world).reducedMotion;
+    const rise = still ? 1 : easeOut(t / RISE_SECONDS);
     const height = 0.05 + (TOP_HEIGHT - 0.05) * rise;
     const radius = RING_RADIUS * (0.35 + 0.65 * rise);
-    const lively = t < CELEBRATION_SECONDS;
-    const spin = t * 0.22;
+    const lively = !still && t < CELEBRATION_SECONDS;
+    const spin = still ? 0 : t * 0.22;
+    this.runtime.starHeight = height;
+    this.runtime.starSpin = spin;
     for (let i = 0; i < this.slots.length; i++) {
       const a = spin + (i / this.count) * Math.PI * 2;
       const best = this.best[i];
       const base = best > 0 ? 0.08 + 0.035 * best : 0.05;
-      const twinkle = lively ? 1 + 0.3 * Math.sin(t * 6 + i * 1.7) : 1 + 0.08 * Math.sin(t * 2 + i);
+      const twinkle = still ? 1 : lively ? 1 + 0.3 * Math.sin(t * 6 + i * 1.7) : 1 + 0.08 * Math.sin(t * 2 + i);
       HALOS.setPosition(this.slots[i], Math.cos(a) * radius, height, Math.sin(a) * radius);
       HALOS.setSize(this.slots[i], base * twinkle * (0.3 + 0.7 * rise));
     }

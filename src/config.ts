@@ -34,6 +34,8 @@ export const BOARD = {
   minRadius: 0.12,
   maxRadius: 0.45,
   tableFill: 0.45,
+  /** Table-size cap: on a plane the board radius never exceeds this fraction of the smaller side (the disc fits). */
+  tableCapFill: 0.5,
   reach: 0.8,
   /** On a plane, the board's near rim sits at least this far ahead of the head. */
   headGap: 0.05,
@@ -42,6 +44,13 @@ export const BOARD = {
   lift: 0.004,
   minColliderRadiusM: 0.035,
 } as const;
+
+/**
+ * Board size setting: a uniform factor on every board radius (table,
+ * fallback and desktop). On a plane the table-size cap still applies.
+ * Levels are scale-invariant, so solutions survive any size.
+ */
+export const BOARD_SIZE_SCALE = { small: 0.75, medium: 1, large: 1.25 } as const;
 
 /**
  * Fixed camera and board pose for non-immersive (desktop) play. The camera

@@ -97,7 +97,7 @@ export class RimButtonSystem extends createSystem({
   private onClick(): void {
     const game = getGame(this.world);
     if (!game || getPause(this.world).paused || !this.runtime?.shown) return;
-    // The open level select sits just in front of this button; a poke through it must not launch.
+    // The open level select (either page, levels or Settings) sits just in front of this button; a poke through it must not launch.
     if (getLevelSelect(this.world)?.open) return;
     markInteracted(this.world);
     if (this.queries.heldBodies.entities.size > 0) return;

@@ -19,6 +19,8 @@ import {
   getGame,
   getLevelSelect,
   getPause,
+  getSettings,
+  getSettingsRevision,
   markInteracted,
   setHud,
   type ChapterRuntime,
@@ -31,6 +33,10 @@ const HUD_UNIT_SCALE = 0.1;
 /** Re-place the HUD when the head moved this far (meters). */
 const HEAD_MOVE_EPS = 0.02;
 const FORWARD: readonly [number, number, number] = [0, 0, -1];
+/** Text colors as authored in hud.uikitml, and the high-contrast ones (pure white, bold). */
+const INFO_COLOR = '#dddfe3';
+const TITLE_COLOR = '#fafaf7';
+const CONTRAST_COLOR = '#ffffff';
 
 const FAILURE_TEXT: Record<Exclude<SimOutcome, 'solved'>, string> = {
   collision: 'Hit a planet',
@@ -54,6 +60,7 @@ function statusText(game: GameController, chapter: ChapterRuntime | undefined): 
 }
 
 interface HudElements {
+  readonly title: UIKit.Text;
   readonly level: UIKit.Text;
   readonly status: UIKit.Text;
   readonly launch: UIKit.Text;
@@ -91,6 +98,7 @@ export class HudSystem extends createSystem({}) {
   private lastChapterRevision = -1;
   private lastImmersive: boolean | null = null;
   private lastBoardVersion = -1;
+  private lastSettingsRevision = -1;
   private readonly head = new Vector3();
   private readonly placedFrom = new Vector3(Infinity, Infinity, Infinity);
 
@@ -130,6 +138,7 @@ export class HudSystem extends createSystem({}) {
     const next = onClick('next-button', () => this.onNext());
     const playAgain = onClick('play-again-button', () => this.onPlayAgain());
     onClick('levels-button', () => {
+      // Toggles the level select (on either page: levels or Settings).
       const levels = getLevelSelect(this.world);
       if (levels?.open) levels.hide();
       else levels?.show();
@@ -137,6 +146,7 @@ export class HudSystem extends createSystem({}) {
     const xr = onClick('xr-button', () => enterXR(this.world, this.support));
 
     this.elements = {
+      title: element('title-text'),
       level: element('level-text'),
       status: element('status-text'),
       launch,
@@ -202,6 +212,16 @@ export class HudSystem extends createSystem({}) {
       elements.launch.setProperties({ display: celebrating ? 'none' : 'flex' });
       elements.playAgain.setProperties({ display: celebrating ? 'flex' : 'none' });
       this.lastChapterRevision = chapterRevision;
+    }
+    const settingsRevision = getSettingsRevision(this.world);
+    if (settingsRevision !== this.lastSettingsRevision) {
+      // High contrast: the title, level and status lines turn pure white and bold.
+      const contrast = getSettings(this.world).highContrast;
+      const weight = contrast ? 700 : 400;
+      elements.title.setProperties({ color: contrast ? CONTRAST_COLOR : TITLE_COLOR });
+      elements.level.setProperties({ color: contrast ? CONTRAST_COLOR : INFO_COLOR, fontWeight: weight });
+      elements.status.setProperties({ color: contrast ? CONTRAST_COLOR : INFO_COLOR, fontWeight: weight });
+      this.lastSettingsRevision = settingsRevision;
     }
     if (game.attempts !== this.lastAttempts) {
       elements.launchLabel.setProperties({ text: game.attempts > 0 ? 'Replay' : 'Launch' });

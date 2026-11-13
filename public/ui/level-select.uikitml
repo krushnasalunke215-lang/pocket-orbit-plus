@@ -1,14 +1,22 @@
 <!--
-  Level select and audio settings (LevelSelectSystem). Horizon kit, authored
-  in kit pixel units and scaled by 0.1 like the HUD (10 units = 1 cm), so the
-  panel is 46 cm wide and about 27 cm tall (LEVEL_SELECT_SIZE in
+  Level select and Settings (LevelSelectSystem). Horizon kit, authored in
+  kit pixel units and scaled by 0.1 like the HUD (10 units = 1 cm), so the
+  panel is 46 cm wide and at most about 27 cm tall (LEVEL_SELECT_SIZE in
   src/game/hud-layout.ts); it opens 0.45 m from the head, within poke reach.
-  Level buttons level-1 .. level-6 hold a label (the system writes
-  "n  Title") and three round star pips, hidden until that level is solved
-  and lit by its best stars. The pips are plain panels, which UIKit draws
-  in one instanced batch; Star icons cost one draw call each (18 per eye,
-  over the XR draw-call budget with the chapter moment). The Your Table
-  button (header) opens the sandbox (GameController.loadSandbox(0)).
+  It has two pages; the system shows one and sets the other to display: none.
+
+  levels-page: level buttons level-1 .. level-6 hold a label (the system
+  writes "n  Title") and three round star pips, hidden until that level is
+  solved and lit by its best stars. The pips are plain panels, which UIKit
+  draws in one instanced batch; Star icons cost one draw call each (18 per
+  eye, over the XR draw-call budget with the chapter moment). The Your Table
+  button (header) opens the sandbox (GameController.loadSandbox(0)), and
+  Settings opens the settings page.
+
+  settings-page: the accessibility settings (left-handed, high contrast,
+  reduced motion, board size) and the audio settings (mute, volume, quiet).
+  Each toggle's label shows its state ("...: on" / "...: off"); Board
+  cycles small, medium and large. Back returns to the levels page.
 -->
 <style>
   .levels-root {
@@ -18,6 +26,11 @@
     padding-bottom: 12;
     padding-left: 14;
     padding-right: 14;
+    gap: 8;
+  }
+
+  .page {
+    flex-direction: column;
     gap: 8;
   }
 
@@ -87,6 +100,13 @@
     justify-content: center;
   }
 
+  .toggle-button {
+    height: 52;
+    flex-grow: 1;
+    flex-basis: 0;
+    justify-content: center;
+  }
+
   .small-label {
     font-size: 17;
     line-height: 1.2;
@@ -99,83 +119,122 @@
     text-align: center;
   }
 </style>
+
 <Panel id="levels-root" class="levels-root">
-  <div class="header">
-    <div id="levels-title" class="title">Chapter 1</div>
-    <div class="header-buttons">
-      <Button id="sandbox-button" class="small-button">
-        <ButtonLabel id="sandbox-label" class="small-label">Your Table</ButtonLabel>
+  <div id="levels-page" class="page">
+    <div class="header">
+      <div id="levels-title" class="title">Chapter 1</div>
+      <div class="header-buttons">
+        <Button id="sandbox-button" class="small-button">
+          <ButtonLabel id="sandbox-label" class="small-label">Your Table</ButtonLabel>
+        </Button>
+        <Button id="close-levels" class="small-button">
+          <ButtonLabel id="close-levels-label" class="small-label">Close</ButtonLabel>
+        </Button>
+      </div>
+    </div>
+
+    <div class="grid-row">
+      <Button id="level-1" class="level-button">
+        <ButtonLabel id="level-1-label" class="level-label">1</ButtonLabel>
+        <div id="level-1-stars" class="stars" style="display: none">
+          <div id="level-1-star-1" class="star" />
+          <div id="level-1-star-2" class="star" />
+          <div id="level-1-star-3" class="star" />
+        </div>
       </Button>
-      <Button id="close-levels" class="small-button">
-        <ButtonLabel class="small-label">Close</ButtonLabel>
+      <Button id="level-2" class="level-button">
+        <ButtonLabel id="level-2-label" class="level-label">2</ButtonLabel>
+        <div id="level-2-stars" class="stars" style="display: none">
+          <div id="level-2-star-1" class="star" />
+          <div id="level-2-star-2" class="star" />
+          <div id="level-2-star-3" class="star" />
+        </div>
+      </Button>
+      <Button id="level-3" class="level-button">
+        <ButtonLabel id="level-3-label" class="level-label">3</ButtonLabel>
+        <div id="level-3-stars" class="stars" style="display: none">
+          <div id="level-3-star-1" class="star" />
+          <div id="level-3-star-2" class="star" />
+          <div id="level-3-star-3" class="star" />
+        </div>
+      </Button>
+    </div>
+
+    <div class="grid-row">
+      <Button id="level-4" class="level-button">
+        <ButtonLabel id="level-4-label" class="level-label">4</ButtonLabel>
+        <div id="level-4-stars" class="stars" style="display: none">
+          <div id="level-4-star-1" class="star" />
+          <div id="level-4-star-2" class="star" />
+          <div id="level-4-star-3" class="star" />
+        </div>
+      </Button>
+      <Button id="level-5" class="level-button">
+        <ButtonLabel id="level-5-label" class="level-label">5</ButtonLabel>
+        <div id="level-5-stars" class="stars" style="display: none">
+          <div id="level-5-star-1" class="star" />
+          <div id="level-5-star-2" class="star" />
+          <div id="level-5-star-3" class="star" />
+        </div>
+      </Button>
+      <Button id="level-6" class="level-button">
+        <ButtonLabel id="level-6-label" class="level-label">6</ButtonLabel>
+        <div id="level-6-stars" class="stars" style="display: none">
+          <div id="level-6-star-1" class="star" />
+          <div id="level-6-star-2" class="star" />
+          <div id="level-6-star-3" class="star" />
+        </div>
+      </Button>
+    </div>
+
+    <div class="settings-row">
+      <Button id="settings-button" class="wide-button">
+        <ButtonLabel id="settings-label" class="small-label">Settings</ButtonLabel>
       </Button>
     </div>
   </div>
-  <div class="grid-row">
-    <Button id="level-1" class="level-button">
-      <ButtonLabel id="level-1-label" class="level-label">1</ButtonLabel>
-      <div id="level-1-stars" class="stars" style="display: none">
-        <div id="level-1-star-1" class="star" />
-        <div id="level-1-star-2" class="star" />
-        <div id="level-1-star-3" class="star" />
-      </div>
-    </Button>
-    <Button id="level-2" class="level-button">
-      <ButtonLabel id="level-2-label" class="level-label">2</ButtonLabel>
-      <div id="level-2-stars" class="stars" style="display: none">
-        <div id="level-2-star-1" class="star" />
-        <div id="level-2-star-2" class="star" />
-        <div id="level-2-star-3" class="star" />
-      </div>
-    </Button>
-    <Button id="level-3" class="level-button">
-      <ButtonLabel id="level-3-label" class="level-label">3</ButtonLabel>
-      <div id="level-3-stars" class="stars" style="display: none">
-        <div id="level-3-star-1" class="star" />
-        <div id="level-3-star-2" class="star" />
-        <div id="level-3-star-3" class="star" />
-      </div>
-    </Button>
-  </div>
-  <div class="grid-row">
-    <Button id="level-4" class="level-button">
-      <ButtonLabel id="level-4-label" class="level-label">4</ButtonLabel>
-      <div id="level-4-stars" class="stars" style="display: none">
-        <div id="level-4-star-1" class="star" />
-        <div id="level-4-star-2" class="star" />
-        <div id="level-4-star-3" class="star" />
-      </div>
-    </Button>
-    <Button id="level-5" class="level-button">
-      <ButtonLabel id="level-5-label" class="level-label">5</ButtonLabel>
-      <div id="level-5-stars" class="stars" style="display: none">
-        <div id="level-5-star-1" class="star" />
-        <div id="level-5-star-2" class="star" />
-        <div id="level-5-star-3" class="star" />
-      </div>
-    </Button>
-    <Button id="level-6" class="level-button">
-      <ButtonLabel id="level-6-label" class="level-label">6</ButtonLabel>
-      <div id="level-6-stars" class="stars" style="display: none">
-        <div id="level-6-star-1" class="star" />
-        <div id="level-6-star-2" class="star" />
-        <div id="level-6-star-3" class="star" />
-      </div>
-    </Button>
-  </div>
-  <div class="settings-row">
-    <Button id="mute-button" class="small-button">
-      <ButtonLabel id="mute-label" class="small-label">Mute</ButtonLabel>
-    </Button>
-    <Button id="volume-down" class="small-button">
-      <ButtonLabel class="small-label">-</ButtonLabel>
-    </Button>
-    <div id="volume-label" class="value">80%</div>
-    <Button id="volume-up" class="small-button">
-      <ButtonLabel class="small-label">+</ButtonLabel>
-    </Button>
-    <Button id="quiet-button" class="wide-button">
-      <ButtonLabel id="quiet-label" class="small-label">Quiet: off</ButtonLabel>
-    </Button>
+
+  <div id="settings-page" class="page" style="display: none">
+    <div class="header">
+      <div id="settings-title" class="title">Settings</div>
+      <Button id="settings-back" class="small-button">
+        <ButtonLabel id="settings-back-label" class="small-label">Back</ButtonLabel>
+      </Button>
+    </div>
+
+    <div class="settings-row">
+      <Button id="left-handed-button" class="toggle-button">
+        <ButtonLabel id="left-handed-label" class="small-label">Left-handed: off</ButtonLabel>
+      </Button>
+      <Button id="contrast-button" class="toggle-button">
+        <ButtonLabel id="contrast-label" class="small-label">High contrast: off</ButtonLabel>
+      </Button>
+    </div>
+
+    <div class="settings-row">
+      <Button id="motion-button" class="toggle-button">
+        <ButtonLabel id="motion-label" class="small-label">Reduced motion: off</ButtonLabel>
+      </Button>
+      <Button id="board-size-button" class="toggle-button">
+        <ButtonLabel id="board-size-label" class="small-label">Board: medium</ButtonLabel>
+      </Button>
+    </div>
+
+    <div class="settings-row">
+      <Button id="mute-button" class="small-button">
+        <ButtonLabel id="mute-label" class="small-label">Mute</ButtonLabel>
+      </Button>
+      <Button id="volume-down" class="small-button">
+        <ButtonLabel id="volume-down-label" class="small-label">-</ButtonLabel>
+      </Button>
+      <div id="volume-label" class="value">80%</div>
+      <Button id="volume-up" class="small-button">
+        <ButtonLabel id="volume-up-label" class="small-label">+</ButtonLabel>
+      </Button>
+      <Button id="quiet-button" class="wide-button">
+        <ButtonLabel id="quiet-label" class="small-label">Quiet: off</ButtonLabel>
+      </Button>
+    </div>
   </div>
 </Panel>

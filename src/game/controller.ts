@@ -403,7 +403,15 @@ export class GameController {
       solvedLevelIds: [...this.solvedLevelIds],
       stars: Object.fromEntries(this.bestStars),
       lastOutcome: story.lastOutcome,
-      settings: { muted: settings.muted, volume: settings.volume, quiet: settings.quiet },
+      settings: {
+        muted: settings.muted,
+        volume: settings.volume,
+        quiet: settings.quiet,
+        leftHanded: settings.leftHanded,
+        highContrast: settings.highContrast,
+        reducedMotion: settings.reducedMotion,
+        boardSize: settings.boardSize,
+      },
       onboarding: { ghostHandDone: onboarding.ghostHandDone },
     };
   }

@@ -1,10 +1,20 @@
 import { createSystem, Grabbed, Hovered, VisibilityState, type Entity } from '@iwsdk/core';
 import { colliderLocalRadius } from '../game/board-math.js';
 import type { GamePhase } from '../game/controller.js';
+import { OUTLINES } from '../render/halo-sprites.js';
+import { HIGH_CONTRAST } from '../render/shaders/common.js';
 import { createStarfield } from '../render/starfield.js';
 import type { InteractionState } from '../render/visual-types.js';
 import { BoardBody } from './components.js';
-import { getBoard, getCometOverride, getGame, getVisuals } from './runtime.js';
+import {
+  getBoard,
+  getCometOverride,
+  getGame,
+  getSettings,
+  getSettingsRevision,
+  getVisuals,
+  motionTime,
+} from './runtime.js';
 import { currentSessionMode } from './session.js';
 
 const EMPTY_SAMPLES = new Float32Array(0);
@@ -15,7 +25,10 @@ const EMPTY_SAMPLES = new Float32Array(0);
  * CometOverride of the attract and chapter-complete loops), the flight trail,
  * the preview arc while placing, the target's solved state, collider sizes
  * for the current board radius, and starfield visibility (desktop and VR,
- * never over passthrough).
+ * never over passthrough). Applies the visual accessibility settings: high
+ * contrast (brighter board and body rims, body outlines, the target's star
+ * outline) and reduced motion (the decorative clock motionTime() stands
+ * still, flight trails stop fading).
  */
 export class RenderSyncSystem extends createSystem({
   bodies: { required: [BoardBody] },
@@ -30,6 +43,7 @@ export class RenderSyncSystem extends createSystem({
   private lastTeleportsPassed = 0;
   private lastPhase: GamePhase | null = null;
   private previewShown = false;
+  private lastSettingsRevision = -1;
 
   init(): void {
     this.starfield = this.world.createTransformEntity(createStarfield().root, { persistent: true });
@@ -44,6 +58,17 @@ export class RenderSyncSystem extends createSystem({
     const levelChanged = game.levelRevision !== this.lastLevelRevision;
     const resizeColliders = levelChanged || board.version !== this.lastBoardVersion;
     const colliderRadius = colliderLocalRadius(board.pose.radius);
+    const settingsRevision = getSettingsRevision(this.world);
+    if (settingsRevision !== this.lastSettingsRevision) {
+      const settings = getSettings(this.world);
+      HIGH_CONTRAST.value = settings.highContrast ? 1 : 0;
+      OUTLINES.mesh.visible = settings.highContrast;
+      visuals.target.setHighContrast(settings.highContrast);
+      visuals.trail.setStatic(settings.reducedMotion);
+      this.lastSettingsRevision = settingsRevision;
+    }
+    // Decorative animation (spins, pulses, flowing rings) runs on this clock.
+    const motion = motionTime(this.world, time);
 
     for (const entity of this.queries.bodies.entities) {
       const id = entity.getValue(BoardBody, 'bodyId') as string;
@@ -56,7 +81,7 @@ export class RenderSyncSystem extends createSystem({
       const state: InteractionState = held ? 'held' : entity.hasComponent(Hovered) ? 'hover' : 'idle';
       visual.setState(state);
       if (resizeColliders) visual.collider?.scale.setScalar(colliderRadius);
-      visual.update(time);
+      visual.update(motion);
     }
 
     game.cometBoardPosition(this.comet);
@@ -108,7 +133,7 @@ export class RenderSyncSystem extends createSystem({
     }
 
     visuals.target.setSolved(game.phase === 'solved');
-    visuals.target.update(time);
+    visuals.target.update(motion);
 
     const visibility = this.visibilityState.peek();
     this.starfield.object3D!.visible =

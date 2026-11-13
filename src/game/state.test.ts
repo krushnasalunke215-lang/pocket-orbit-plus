@@ -18,7 +18,7 @@ const STATE: GameState = {
   solvedLevelIds: ['c1-l1'],
   stars: { 'c1-l1': 3 },
   lastOutcome: 'collision',
-  settings: { muted: true, volume: 0.35, quiet: false },
+  settings: { muted: true, volume: 0.35, quiet: false, leftHanded: true, highContrast: true, reducedMotion: false, boardSize: 'large' },
   onboarding: { ghostHandDone: true },
 };
 
@@ -29,7 +29,7 @@ describe('GameState serialization', () => {
 
     const reordered: GameState = {
       onboarding: { ghostHandDone: true },
-      settings: { quiet: false, volume: 0.35, muted: true },
+      settings: { boardSize: 'large', reducedMotion: false, highContrast: true, leftHanded: true, quiet: false, volume: 0.35, muted: true },
       lastOutcome: STATE.lastOutcome,
       stars: { 'c1-l1': 3 },
       solvedLevelIds: STATE.solvedLevelIds,
@@ -106,5 +106,36 @@ describe('GameState serialization', () => {
     expect(() => deserializeGameState(muted)).toThrow(/muted/);
     const ghost = serializeGameState({ ...STATE, onboarding: {} as GameState['onboarding'] });
     expect(() => deserializeGameState(ghost)).toThrow(/ghostHandDone/);
+  });
+
+  it('loads a version 2 save from before the accessibility settings with their defaults', () => {
+    const old = JSON.parse(serializeGameState(STATE));
+    old.settings = { muted: true, volume: 0.35, quiet: true };
+    const restored = deserializeGameState(JSON.stringify(old));
+    expect(restored.version).toBe(2);
+    expect(restored.settings).toEqual({
+      ...DEFAULT_SETTINGS,
+      muted: true,
+      volume: 0.35,
+      quiet: true,
+    });
+    expect(DEFAULT_SETTINGS).toMatchObject({ leftHanded: false, highContrast: false, reducedMotion: false, boardSize: 'medium' });
+  });
+
+  it('rejects bad accessibility settings (the save then counts as corrupt)', () => {
+    for (const key of ['leftHanded', 'highContrast', 'reducedMotion'] as const) {
+      for (const bad of [1, 'true', null]) {
+        const json = serializeGameState({ ...STATE, settings: { ...STATE.settings, [key]: bad as unknown as boolean } });
+        expect(() => deserializeGameState(json), `${key} ${String(bad)}`).toThrow(new RegExp(key));
+      }
+    }
+    for (const bad of ['huge', '', 2, null]) {
+      const json = serializeGameState({ ...STATE, settings: { ...STATE.settings, boardSize: bad as unknown as 'small' } });
+      expect(() => deserializeGameState(json), String(bad)).toThrow(/boardSize/);
+    }
+    for (const size of ['small', 'medium', 'large'] as const) {
+      const json = serializeGameState({ ...STATE, settings: { ...STATE.settings, boardSize: size } });
+      expect(deserializeGameState(json).settings.boardSize).toBe(size);
+    }
   });
 });

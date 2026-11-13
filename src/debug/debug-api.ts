@@ -1,5 +1,6 @@
 import { DepthOccludable, DepthSensingSystem, Grabbed, Hovered, Vector3, type World } from '@iwsdk/core';
-import { OCCLUSION_UNIFORMS } from '../render/shaders/common.js';
+import { OUTLINES } from '../render/halo-sprites.js';
+import { HIGH_CONTRAST, MOTION_TIME, OCCLUSION_UNIFORMS } from '../render/shaders/common.js';
 import { HIT_LOG_SIZE as HIT_LOG_CAPACITY } from '../xr/runtime.js';
 import type { AudioEngineState, AudioEvent } from '../audio/engine.js';
 import { renderVoiceOffline, type OfflineRender, type OfflineVoice } from '../audio/voices.js';
@@ -24,6 +25,7 @@ import {
   getSandbox,
   getSandboxPanel,
   getSave,
+  getSettings,
   getVisuals,
   setOnboarding,
   setSettings,
@@ -120,9 +122,28 @@ export interface GameSnapshot {
     shownStars: number[];
     position: Triple | null;
     size: [number, number] | null;
+    /** The page shown: 'levels' or 'settings'. */
+    page: string;
   };
-  /** The chapter-complete moment. */
-  chapterComplete: { shown: boolean; chapter: number; stars: number; maxStars: number };
+  /** The chapter-complete moment; the constellation's height (board units) and ring turn (rad) this frame. */
+  chapterComplete: { shown: boolean; chapter: number; stars: number; maxStars: number; starHeight: number; starSpin: number };
+  /** The accessibility settings and what they drive. */
+  accessibility: {
+    settings: AppSettings;
+    /** The decorative clock (seconds): stands still while reduced motion is on. */
+    motionTime: number;
+    /** The shared high-contrast uniform (0 or 1), the body outline pool and the target's star outline shown. */
+    highContrast: number;
+    outlinesVisible: boolean;
+    targetOutlineVisible: boolean;
+    /** Flight trail fade time (seconds); 1e9 means static trails. */
+    trailFade: number;
+    /** The ghost hand is the mirrored left hand. */
+    ghostHandLeft: boolean;
+    /** Yaw (rad) of the target's star glyph, and of the first body's surface mesh (null without one). */
+    targetStarYaw: number;
+    bodyYaw: number | null;
+  };
   /** Near-rim Launch/Replay button: world position, size (meters), label and whether it is shown. */
   rimButton: { ready: boolean; position: Triple | null; size: [number, number] | null; label: string | null; shown: boolean };
   /** Whether each hand adapter has a loaded visual whose model is in the scene. */
@@ -504,12 +525,26 @@ export function installDebugApi(world: World): GameDebugApi {
           shownStars: [...(levelSelect?.shownStars ?? [])],
           position: levelSelect ? triple(levelSelect.entity.object3D!.getWorldPosition(v)) : null,
           size: panelSize(levelSelect),
+          page: levelSelect?.page ?? 'levels',
         },
         chapterComplete: {
           shown: chapter?.shown ?? false,
           chapter: chapter?.chapter ?? 0,
           stars: chapter?.stars ?? 0,
           maxStars: chapter?.maxStars ?? 0,
+          starHeight: chapter?.starHeight ?? 0,
+          starSpin: chapter?.starSpin ?? 0,
+        },
+        accessibility: {
+          settings: { ...getSettings(world) },
+          motionTime: MOTION_TIME.value,
+          highContrast: HIGH_CONTRAST.value,
+          outlinesVisible: OUTLINES.mesh.visible,
+          targetOutlineVisible: Boolean(world.scene.getObjectByName('TargetOutline')?.visible),
+          trailFade: Number(((world.scene.getObjectByName('FlightTrails') as { material?: { uniforms?: { uFade?: { value: number } } } } | undefined)?.material?.uniforms?.uFade?.value) ?? 0),
+          ghostHandLeft: (world.scene.getObjectByName('GhostHand/Hand')?.scale.x ?? 1) < 0,
+          targetStarYaw: world.scene.getObjectByName('TargetStar')?.rotation.y ?? 0,
+          bodyYaw: visuals?.bodies.values().next().value?.root.children[0]?.rotation.y ?? null,
         },
         rimButton: {
           ready: Boolean(rim),

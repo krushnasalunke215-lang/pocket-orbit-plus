@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOARD, DESKTOP_VIEW } from '../config.js';
+import { BOARD, BOARD_SIZE_SCALE, DESKTOP_VIEW } from '../config.js';
 import type { Vec3 } from '../sim/vec.js';
 import { quatConjugate, quatRotate, yawQuaternion, type Quat } from './board-math.js';
 import {
@@ -7,6 +7,7 @@ import {
   chooseBoardPlacement,
   desktopPlacement,
   fallbackPlacement,
+  resizedPlacement,
   type HeadPose,
   type PlaneInfo,
 } from './placement.js';
@@ -79,6 +80,62 @@ describe('desktopPlacement', () => {
     expect(p.pose.center).toEqual(DESKTOP_VIEW.boardCenter);
     expect(p.pose.radius).toBe(DESKTOP_VIEW.boardRadius);
     expect(boardFacing(p.pose.quaternion)[2]).toBeCloseTo(1, 9);
+  });
+});
+
+describe('board size', () => {
+  const table = plane('t1', [0, 0.74, -0.7], 1.0, 0.6, { label: 'table' });
+  const scales = Object.values(BOARD_SIZE_SCALE);
+
+  it('medium (factor 1) keeps every radius as before', () => {
+    expect(BOARD_SIZE_SCALE.medium).toBe(1);
+    for (const side of [0.25, 0.4, 0.6, 1, 2]) {
+      expect(boardRadiusForTable(side, 1)).toBeCloseTo(
+        Math.min(BOARD.maxRadius, Math.max(BOARD.minRadius, BOARD.tableFill * side)),
+        12,
+      );
+    }
+  });
+
+  it('scales the fallback and desktop radius uniformly', () => {
+    for (const s of scales) {
+      expect(fallbackPlacement(HEAD, s).pose.radius).toBeCloseTo(BOARD.fallbackRadius * s, 12);
+      expect(desktopPlacement(s).pose.radius).toBeCloseTo(DESKTOP_VIEW.boardRadius * s, 12);
+      expect(fallbackPlacement(HEAD, s).pose.center).toEqual(fallbackPlacement(HEAD).pose.center);
+    }
+  });
+
+  it('on a table: small < medium < large, never past the table-size cap, disc fully on the table', () => {
+    const [small, medium, large] = [BOARD_SIZE_SCALE.small, 1, BOARD_SIZE_SCALE.large].map(
+      (s) => chooseBoardPlacement([table], HEAD, s),
+    );
+    expect(small.pose.radius).toBeLessThan(medium.pose.radius);
+    expect(large.pose.radius).toBeGreaterThan(medium.pose.radius);
+    for (const p of [small, medium, large]) {
+      expect(p.pose.radius).toBeLessThanOrEqual(BOARD.tableCapFill * 0.6 + 1e-12);
+      expect(discInside(table, p.pose.center, p.pose.radius)).toBe(true);
+      expect(p.baseRadius).toBeCloseTo(boardRadiusForTable(0.6), 12);
+      expect(p.radiusCap).toBeCloseTo(BOARD.tableCapFill * 0.6, 12);
+    }
+    // A big table: large grows by the full factor (the cap is far away).
+    const big = plane('t2', [0, 0.74, -0.9], 2, 2, { label: 'table' });
+    expect(chooseBoardPlacement([big], HEAD, BOARD_SIZE_SCALE.large).pose.radius).toBeCloseTo(
+      BOARD.maxRadius * BOARD_SIZE_SCALE.large,
+      12,
+    );
+  });
+
+  it('resizes a placement about its center, keeping the table-size cap', () => {
+    const medium = chooseBoardPlacement([table], HEAD);
+    for (const s of scales) {
+      const p = resizedPlacement(medium, s);
+      expect(p.pose.center).toEqual(medium.pose.center);
+      expect(p.pose.quaternion).toEqual(medium.pose.quaternion);
+      expect(p.pose.radius).toBeCloseTo(Math.min(BOARD.tableCapFill * 0.6, medium.baseRadius * s), 12);
+      expect(resizedPlacement(p, 1).pose.radius).toBeCloseTo(medium.pose.radius, 12);
+    }
+    const fallback = resizedPlacement(fallbackPlacement(HEAD), BOARD_SIZE_SCALE.large);
+    expect(fallback.pose.radius).toBeCloseTo(BOARD.fallbackRadius * BOARD_SIZE_SCALE.large, 12);
   });
 });
 

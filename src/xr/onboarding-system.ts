@@ -12,6 +12,8 @@ import {
   getOnboarding,
   getOnboardingSession,
   getPause,
+  getSettings,
+  getSettingsRevision,
   markInteracted,
   setOnboarding,
 } from './runtime.js';
@@ -29,7 +31,9 @@ import {
  *
  * Ghost hand: on level 1 while placing, until the player first grabs a body
  * (the onboarding flag ghostHandDone, saved by SaveSystem), a translucent
- * hand demonstrates pinch, drag and release on a copy of the planet.
+ * hand demonstrates pinch, drag and release on a copy of the planet (the
+ * left hand, mirrored, in left-handed mode). It keeps moving under reduced
+ * motion: it is the only tutorial, so its motion is essential.
  *
  * Runs after SaveSystem (the save decides ghostHandDone) and before
  * RenderSyncSystem (which draws the comet from the override). Both clocks
@@ -47,6 +51,7 @@ export class OnboardingSystem extends createSystem({
   private attractPlacements: object | null = null;
   private attractTime = 0;
   private ghostTime = 0;
+  private lastSettingsRevision = -1;
   private readonly frame: AttractFrame = { position: [0, 0, 0], alpha: 1 };
   private readonly from = [0, 0];
   private readonly to = [0, 0];
@@ -109,6 +114,13 @@ export class OnboardingSystem extends createSystem({
     }
     override.active = attract;
     session.attract = attract;
+
+    // Left-handed mode: the ghost hand demonstrates with the left hand.
+    const settingsRevision = getSettingsRevision(this.world);
+    if (settingsRevision !== this.lastSettingsRevision) {
+      this.ghost.setLeftHanded(getSettings(this.world).leftHanded);
+      this.lastSettingsRevision = settingsRevision;
+    }
 
     const show = game.mode === 'story' && game.levelIndex === 0 && game.phase === 'placing' && !getOnboarding(this.world).ghostHandDone;
     if (show && this.ghostTargets()) {

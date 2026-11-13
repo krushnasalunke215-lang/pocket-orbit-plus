@@ -9,6 +9,7 @@ import {
   type UIKitMLAsset,
 } from '@iwsdk/core';
 import { levelSelectPose } from '../game/hud-layout.js';
+import { BOARD_SIZES } from '../game/state.js';
 import {
   getBoard,
   getGame,
@@ -33,6 +34,22 @@ const PANEL_RENDER_ORDER = 10;
 const STAR_LIT = '#f0e442';
 const STAR_DIM = '#5b6170';
 const FORWARD: readonly [number, number, number] = [0, 0, -1];
+/** Button labels inside the header and Settings buttons (they ignore pointers). */
+const LABEL_IDS = [
+  'sandbox-label',
+  'close-levels-label',
+  'settings-label',
+  'settings-back-label',
+  'left-handed-label',
+  'contrast-label',
+  'motion-label',
+  'board-size-label',
+  'mute-label',
+  'volume-down-label',
+  'volume-up-label',
+  'quiet-label',
+] as const;
+const BOARD_SIZE_LABELS = { small: 'Board: small', medium: 'Board: medium', large: 'Board: large' } as const;
 
 interface SlotElements {
   readonly button: UIKit.Text;
@@ -45,10 +62,13 @@ interface SlotElements {
 /**
  * The level-select panel: a 3 x 2 grid of the chapter's levels with each
  * solved level's best stars (unsolved levels show none; nothing is
- * locked), the Your Table button (opens the sandbox) and the audio settings
- * (mute, volume, quiet), which edit the runtime AppSettings that SaveSystem
- * persists and GameAudioSystem applies. Hidden by default; the HUD Levels
- * button opens it (show()). A level click loads that level and closes it.
+ * locked), the Your Table button (opens the sandbox) and Settings, which
+ * switches the panel to its settings page: left-handed, high contrast,
+ * reduced motion, board size, and the audio settings (mute, volume, quiet).
+ * They edit the runtime AppSettings that SaveSystem persists and the other
+ * systems apply; Back returns to the levels. Hidden by default; the HUD
+ * Levels button opens it on the levels page (show()) and closes it from
+ * either page. A level click loads that level and closes it.
  * While open it sits 0.45 m from the head toward the board (levelSelectPose)
  * and takes hand rays, gaze, the mouse and fingertip pokes; while hidden it
  * has no interactable components, so it can take no ray or poke. Clicks are
@@ -61,6 +81,12 @@ export class LevelSelectSystem extends createSystem({}) {
   private muteLabel: UIKit.Text | null = null;
   private volumeLabel: UIKit.Text | null = null;
   private quietLabel: UIKit.Text | null = null;
+  private leftHandedLabel: UIKit.Text | null = null;
+  private contrastLabel: UIKit.Text | null = null;
+  private motionLabel: UIKit.Text | null = null;
+  private boardSizeLabel: UIKit.Text | null = null;
+  private levelsPage: UIKit.Text | null = null;
+  private settingsPage: UIKit.Text | null = null;
   private lastStarsRevision = -1;
   private lastSettingsRevision = -1;
   private lastBoardVersion = -1;
@@ -126,20 +152,34 @@ export class LevelSelectSystem extends createSystem({}) {
       game.loadSandbox(0);
       this.hide();
     });
-    element('sandbox-label').setProperties({ pointerEvents: 'none' });
+    onClick('settings-button', () => this.setPage('settings'));
+    onClick('settings-back', () => this.setPage('levels'));
+    onClick('left-handed-button', () => setSettings(this.world, { leftHanded: !getSettings(this.world).leftHanded }));
+    onClick('contrast-button', () => setSettings(this.world, { highContrast: !getSettings(this.world).highContrast }));
+    onClick('motion-button', () => setSettings(this.world, { reducedMotion: !getSettings(this.world).reducedMotion }));
+    onClick('board-size-button', () => this.cycleBoardSize());
     onClick('mute-button', () => setSettings(this.world, { muted: !getSettings(this.world).muted }));
     onClick('volume-down', () => this.stepVolume(-VOLUME_STEP));
     onClick('volume-up', () => this.stepVolume(VOLUME_STEP));
     onClick('quiet-button', () => setSettings(this.world, { quiet: !getSettings(this.world).quiet }));
+    // As on the level buttons, the labels ignore pointers so a poke presses and releases the button itself.
+    for (const id of LABEL_IDS) element(id).setProperties({ pointerEvents: 'none' });
     this.muteLabel = element('mute-label');
     this.volumeLabel = element('volume-label');
     this.quietLabel = element('quiet-label');
+    this.leftHandedLabel = element('left-handed-label');
+    this.contrastLabel = element('contrast-label');
+    this.motionLabel = element('motion-label');
+    this.boardSizeLabel = element('board-size-label');
+    this.levelsPage = element('levels-page');
+    this.settingsPage = element('settings-page');
 
     this.entity = entity;
     this.runtime = {
       panel,
       entity,
       open: false,
+      page: 'levels',
       buttonIds,
       shownStars: buttonIds.map(() => 0),
       show: () => this.show(),
@@ -153,6 +193,7 @@ export class LevelSelectSystem extends createSystem({}) {
     const entity = this.entity;
     if (!runtime || !entity || runtime.open) return;
     runtime.open = true;
+    this.setPage('levels');
     entity.object3D!.visible = true;
     entity.addComponent(RayInteractable);
     entity.addComponent(PokeInteractable);
@@ -177,6 +218,20 @@ export class LevelSelectSystem extends createSystem({}) {
     if (!game || index >= game.levels.length) return;
     game.loadLevel(index);
     this.hide();
+  }
+
+  /** Shows one page of the panel (the other gets display: none, so it takes no pointer). */
+  private setPage(page: 'levels' | 'settings'): void {
+    if (!this.runtime) return;
+    this.runtime.page = page;
+    this.levelsPage?.setProperties({ display: page === 'levels' ? 'flex' : 'none' });
+    this.settingsPage?.setProperties({ display: page === 'settings' ? 'flex' : 'none' });
+    this.lastSettingsRevision = -1;
+  }
+
+  private cycleBoardSize(): void {
+    const i = BOARD_SIZES.indexOf(getSettings(this.world).boardSize);
+    setSettings(this.world, { boardSize: BOARD_SIZES[(i + 1) % BOARD_SIZES.length] });
   }
 
   private stepVolume(step: number): void {
@@ -208,6 +263,10 @@ export class LevelSelectSystem extends createSystem({}) {
       this.muteLabel?.setProperties({ text: s.muted ? 'Unmute' : 'Mute' });
       this.volumeLabel?.setProperties({ text: `${Math.round(s.volume * 100)}%` });
       this.quietLabel?.setProperties({ text: s.quiet ? 'Quiet: on' : 'Quiet: off' });
+      this.leftHandedLabel?.setProperties({ text: s.leftHanded ? 'Left-handed: on' : 'Left-handed: off' });
+      this.contrastLabel?.setProperties({ text: s.highContrast ? 'High contrast: on' : 'High contrast: off' });
+      this.motionLabel?.setProperties({ text: s.reducedMotion ? 'Reduced motion: on' : 'Reduced motion: off' });
+      this.boardSizeLabel?.setProperties({ text: BOARD_SIZE_LABELS[s.boardSize] });
       this.lastSettingsRevision = settingsRevision;
     }
 

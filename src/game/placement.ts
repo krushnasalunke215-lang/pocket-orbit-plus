@@ -41,6 +41,10 @@ export interface BoardPlacement {
   readonly source: PlacementSource;
   readonly planeId?: string;
   readonly planeLabel?: string;
+  /** The radius at board size factor 1 (medium), before the table-size cap. */
+  readonly baseRadius: number;
+  /** Table-size cap on the radius (plane placements only). */
+  readonly radiusCap?: number;
 }
 
 /** A plane counts as horizontal when its normal is within this of up. */
@@ -82,7 +86,7 @@ function yawFacing(center: Vec3, head: HeadPose): number {
  * No usable plane: float the board just ahead of the user, below eye height,
  * so play never waits for scene understanding.
  */
-export function fallbackPlacement(head: HeadPose): BoardPlacement {
+export function fallbackPlacement(head: HeadPose, scale = 1): BoardPlacement {
   const [fx, fz] = flatForward(head);
   const center: Vec3 = [
     head.position[0] + fx * BOARD.fallbackDistance,
@@ -93,29 +97,49 @@ export function fallbackPlacement(head: HeadPose): BoardPlacement {
     pose: {
       center,
       quaternion: yawQuaternion(yawToward(-fx, -fz)),
-      radius: BOARD.fallbackRadius,
+      radius: BOARD.fallbackRadius * scale,
     },
     source: 'fallback',
+    baseRadius: BOARD.fallbackRadius,
   };
 }
 
-/** The fixed board pose for non-immersive (desktop) play. */
-export function desktopPlacement(): BoardPlacement {
+/** The fixed board pose for non-immersive (desktop) play; `scale` is the board size factor. */
+export function desktopPlacement(scale = 1): BoardPlacement {
   const [cx, cy, cz] = DESKTOP_VIEW.boardCenter;
   const [px, , pz] = DESKTOP_VIEW.cameraPosition;
   return {
     pose: {
       center: [cx, cy, cz],
       quaternion: yawQuaternion(yawToward(px - cx, pz - cz)),
-      radius: DESKTOP_VIEW.boardRadius,
+      radius: DESKTOP_VIEW.boardRadius * scale,
     },
     source: 'desktop',
+    baseRadius: DESKTOP_VIEW.boardRadius,
   };
 }
 
-/** Board radius for a table whose smaller side is `minSide` meters. */
-export function boardRadiusForTable(minSide: number): number {
+/** The medium-size board radius for a table whose smaller side is `minSide` meters (before the cap). */
+function baseRadiusForTable(minSide: number): number {
   return Math.min(BOARD.maxRadius, Math.max(BOARD.minRadius, BOARD.tableFill * minSide));
+}
+
+/**
+ * Board radius for a table whose smaller side is `minSide` meters: the
+ * medium radius times the board size factor `scale`, capped so the disc
+ * still fits the table (BOARD.tableCapFill of the smaller side).
+ */
+export function boardRadiusForTable(minSide: number, scale = 1): number {
+  return Math.min(BOARD.tableCapFill * minSide, baseRadiusForTable(minSide) * scale);
+}
+
+/**
+ * The same placement at board size factor `scale`: the board scales
+ * uniformly about its center, and a plane placement keeps its table-size cap.
+ */
+export function resizedPlacement(placement: BoardPlacement, scale: number): BoardPlacement {
+  const radius = Math.min(placement.radiusCap ?? Infinity, placement.baseRadius * scale);
+  return { ...placement, pose: { ...placement.pose, radius } };
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -129,11 +153,13 @@ interface Candidate {
   readonly distance: number;
   readonly area: number;
   readonly radius: number;
+  readonly baseRadius: number;
+  readonly radiusCap: number;
   /** World position of the board center on this plane. */
   readonly center: Vec3;
 }
 
-function evaluatePlane(plane: PlaneInfo, head: HeadPose): Candidate | null {
+function evaluatePlane(plane: PlaneInfo, head: HeadPose, scale: number): Candidate | null {
   if (plane.orientation === 'vertical') return null;
   const label = plane.label?.toLowerCase();
   if (label && EXCLUDED_LABELS.has(label)) return null;
@@ -166,7 +192,7 @@ function evaluatePlane(plane: PlaneInfo, head: HeadPose): Candidate | null {
   // Seed the center one radius plus a gap ahead of the head, so a plane under
   // the head gets the board in front of the player rather than under the
   // chin, then shift it so the whole disc stays on the plane.
-  const radius = boardRadiusForTable(minSide);
+  const radius = boardRadiusForTable(minSide, scale);
   const fLocal = quatRotate(quatConjugate(plane.quaternion), [fx, 0, fz]);
   const fLen = Math.hypot(fLocal[0], fLocal[2]) || 1;
   const ahead = radius + BOARD.headGap;
@@ -189,6 +215,8 @@ function evaluatePlane(plane: PlaneInfo, head: HeadPose): Candidate | null {
     distance,
     area: (maxX - minX) * (maxZ - minZ),
     radius,
+    baseRadius: baseRadiusForTable(minSide),
+    radiusCap: BOARD.tableCapFill * minSide,
     center,
   };
 }
@@ -206,14 +234,15 @@ function compareCandidates(a: Candidate, b: Candidate): number {
  * fills part of the table, sits as close as it can to one radius plus
  * BOARD.headGap ahead of the head while the whole disc stays on the plane,
  * and faces the user. Returns the fallback placement when no plane qualifies.
+ * `scale` is the board size factor (see boardRadiusForTable).
  */
-export function chooseBoardPlacement(planes: readonly PlaneInfo[], head: HeadPose): BoardPlacement {
+export function chooseBoardPlacement(planes: readonly PlaneInfo[], head: HeadPose, scale = 1): BoardPlacement {
   let best: Candidate | null = null;
   for (const plane of planes) {
-    const candidate = evaluatePlane(plane, head);
+    const candidate = evaluatePlane(plane, head, scale);
     if (candidate && (!best || compareCandidates(candidate, best) < 0)) best = candidate;
   }
-  if (!best) return fallbackPlacement(head);
+  if (!best) return fallbackPlacement(head, scale);
 
   const { plane, radius, center } = best;
   return {
@@ -221,5 +250,7 @@ export function chooseBoardPlacement(planes: readonly PlaneInfo[], head: HeadPos
     source: best.isTable ? 'table-plane' : 'horizontal-plane',
     planeId: plane.id,
     planeLabel: plane.label,
+    baseRadius: best.baseRadius,
+    radiusCap: best.radiusCap,
   };
 }

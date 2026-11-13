@@ -33,6 +33,7 @@ import {
   getHitLog,
   getPause,
   HIT_LOG_SIZE,
+  motionTime,
   setSandbox,
   type SandboxRuntime,
   type SandboxWell,
@@ -203,12 +204,14 @@ export class RealObjectSystem extends createSystem({
     }
 
     for (const entity of this.queries.heldPucks.entities) this.constrainPuck(entity, immersive);
+    // Well pulses run on the decorative clock (still under reduced motion).
+    const motion = motionTime(this.world, time);
     for (const entry of this.entries) {
       if (entry.well.kind === 'puck' && !entry.entity.hasComponent(Grabbed)) {
         const p = entry.well.position;
         entry.entity.object3D?.position.set(p[0], 0, p[2]);
       }
-      entry.visual.update(time);
+      entry.visual.update(motion);
     }
   }
 

@@ -8,15 +8,35 @@ export const GAME_STATE_VERSION = 2;
 /** Stars a solve can earn (also StarCount in controller.ts). */
 export type SavedStars = 1 | 2 | 3;
 
-/** User audio settings as saved. */
+/** Board size setting; BOARD_SIZE_SCALE in src/config.ts maps it to a radius factor. */
+export type BoardSize = 'small' | 'medium' | 'large';
+
+export const BOARD_SIZES: readonly BoardSize[] = ['small', 'medium', 'large'];
+
+/** User audio and accessibility settings as saved. */
 export interface SavedSettings {
   muted: boolean;
   /** 0..1. */
   volume: number;
   quiet: boolean;
+  /** The ghost hand demonstrates with the left hand. */
+  leftHanded: boolean;
+  /** Brighter rims, outlines on the bodies and the target, stronger HUD text. */
+  highContrast: boolean;
+  /** No decorative motion (spins, pulses, flowing rings), no chapter-moment burst, static trails. */
+  reducedMotion: boolean;
+  boardSize: BoardSize;
 }
 
-export const DEFAULT_SETTINGS: Readonly<SavedSettings> = Object.freeze({ muted: false, volume: 0.8, quiet: false });
+export const DEFAULT_SETTINGS: Readonly<SavedSettings> = Object.freeze({
+  muted: false,
+  volume: 0.8,
+  quiet: false,
+  leftHanded: false,
+  highContrast: false,
+  reducedMotion: false,
+  boardSize: 'medium',
+});
 
 /** One-time onboarding steps the player has completed. */
 export interface OnboardingFlags {
@@ -80,15 +100,36 @@ function parseStars(value: unknown): Record<string, SavedStars> {
   return stars;
 }
 
+/** An optional boolean setting: missing (a save from before it existed) gives the default. */
+function optionalFlag(value: Record<string, unknown>, key: 'leftHanded' | 'highContrast' | 'reducedMotion'): boolean {
+  const v = value[key];
+  if (v === undefined) return DEFAULT_SETTINGS[key];
+  if (typeof v !== 'boolean') throw new Error(`Game state settings.${key} must be a boolean`);
+  return v;
+}
+
 function parseSettings(value: unknown): SavedSettings {
   if (!isRecord(value)) throw new Error('Game state settings must be an object');
-  const { muted, volume, quiet } = value;
+  const { muted, volume, quiet, boardSize } = value;
   if (typeof muted !== 'boolean') throw new Error('Game state settings.muted must be a boolean');
   if (typeof quiet !== 'boolean') throw new Error('Game state settings.quiet must be a boolean');
   if (typeof volume !== 'number' || !Number.isFinite(volume) || volume < 0 || volume > 1) {
     throw new Error('Game state settings.volume must be a finite number in [0, 1]');
   }
-  return { muted, volume, quiet };
+  // The accessibility settings came after version 2; a version 2 save
+  // without them loads with the defaults, a wrong value is a corrupt save.
+  if (boardSize !== undefined && !BOARD_SIZES.includes(boardSize as BoardSize)) {
+    throw new Error(`Game state settings.boardSize must be one of ${BOARD_SIZES.join(', ')}`);
+  }
+  return {
+    muted,
+    volume,
+    quiet,
+    leftHanded: optionalFlag(value, 'leftHanded'),
+    highContrast: optionalFlag(value, 'highContrast'),
+    reducedMotion: optionalFlag(value, 'reducedMotion'),
+    boardSize: (boardSize as BoardSize | undefined) ?? DEFAULT_SETTINGS.boardSize,
+  };
 }
 
 function parseOnboarding(value: unknown): OnboardingFlags {

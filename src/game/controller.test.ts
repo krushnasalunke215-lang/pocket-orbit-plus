@@ -262,7 +262,7 @@ describe('GameController', () => {
 
   it('gives sandbox solves no stars and keeps saving and resuming the story level', () => {
     const game = new GameController(ALL_LEVELS, SANDBOX_LEVELS);
-    const settings = { muted: false, volume: 0.8, quiet: false };
+    const settings = { muted: false, volume: 0.8, quiet: false, leftHanded: false, highContrast: false, reducedMotion: false, boardSize: 'medium' as const };
     const onboarding = { ghostHandDone: true };
     game.loadLevel(2);
     game.setPlacement('p1', [0.1, 0.2]);
@@ -303,7 +303,7 @@ describe('GameController', () => {
   });
 
   it('round-trips through GameState JSON with stars, settings and onboarding', () => {
-    const settings = { muted: true, volume: 0.4, quiet: false };
+    const settings = { muted: true, volume: 0.4, quiet: false, leftHanded: true, highContrast: true, reducedMotion: true, boardSize: 'large' as const };
     const onboarding = { ghostHandDone: true };
     const game = new GameController(ALL_LEVELS);
     game.setPlacement('p1', [-0.075, -0.4]);
@@ -337,7 +337,7 @@ describe('GameController', () => {
     const game = new GameController(ALL_LEVELS);
     game.loadLevel(2);
     const state = {
-      ...game.toState({ muted: false, volume: 0.8, quiet: false }, { ghostHandDone: false }),
+      ...game.toState({ muted: false, volume: 0.8, quiet: false, leftHanded: false, highContrast: false, reducedMotion: false, boardSize: 'medium' as const }, { ghostHandDone: false }),
       levelId: 'removed-level',
       placements: { p1: [0.1, 0.1] as [number, number] },
       attempts: 4,
