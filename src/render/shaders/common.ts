@@ -1,8 +1,9 @@
 import { Vector2, type BufferAttribute, type IUniform, type Material, type ShaderMaterial, type Texture } from '@iwsdk/core';
 
 /*
- * Shared shader pieces. Every animated material references SHARED_TIME, so
- * one write per frame (from the visuals' update(t)) drives all of them.
+ * Shared shader pieces. Every animated material references SHARED_TIME (the
+ * comet tail and the trails) or MOTION_TIME (decorative animation), so one
+ * write per frame drives all of them.
  */
 
 /**
@@ -130,13 +131,32 @@ export const OCCLUSION_FRAGMENT = /* glsl */ `
 if (po_occluded()) discard;
 `;
 
-/** Seconds; written by the visuals' update(t) calls each frame. */
+/**
+ * Seconds of the real clock: the comet tail's particle ages and the trail
+ * segments' ages. Written by the comet's update(dt, t) each frame.
+ */
 export const SHARED_TIME: IUniform<number> = { value: 0 };
 
-/** Sets the shared clock (called by every visual's update; idempotent). */
+/** Sets the shared clock (the comet's update; idempotent). */
 export function setSharedTime(t: number): void {
   SHARED_TIME.value = t;
 }
+
+/**
+ * Seconds of the decorative clock: planet bands, flowing rings and the
+ * accretion swirl. The body, board, target and well visuals write it from
+ * their update(t), which the systems feed motionTime() (src/xr/runtime.ts),
+ * so it stands still while reduced motion is on.
+ */
+export const MOTION_TIME: IUniform<number> = { value: 0 };
+
+/** Sets the decorative clock (called by the decorative visuals' update; idempotent). */
+export function setMotionTime(t: number): void {
+  MOTION_TIME.value = t;
+}
+
+/** High contrast, 0 or 1, shared by the board and body surface shaders (one write switches all). */
+export const HIGH_CONTRAST: IUniform<number> = { value: 0 };
 
 /**
  * GLSL: cheap hash-based value noise in 1D and 3D (smoothstep interpolation

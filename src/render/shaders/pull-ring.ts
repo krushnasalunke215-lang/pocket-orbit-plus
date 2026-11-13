@@ -4,7 +4,7 @@ import {
   OCCLUSION_FRAGMENT_PARS,
   OCCLUSION_VERTEX,
   OCCLUSION_VERTEX_PARS,
-  SHARED_TIME,
+  MOTION_TIME,
   withOcclusion,
 } from './common.js';
 
@@ -91,7 +91,7 @@ void main() {
 /** Shared pull-ring material (one per module). */
 export const pullRingMaterial = new ShaderMaterial({
   name: 'PullRing',
-  uniforms: withOcclusion({ uTime: SHARED_TIME }),
+  uniforms: withOcclusion({ uTime: MOTION_TIME }),
   vertexShader,
   fragmentShader,
   transparent: true,

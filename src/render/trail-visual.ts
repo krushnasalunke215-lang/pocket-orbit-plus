@@ -21,10 +21,14 @@ const MIN_FLIGHT_ALPHA = 0.2;
 const PREVIEW_ALPHA = 0.5;
 const NO_BREAKS = new Int32Array(0);
 
+const FLIGHT_FADE = 6;
+/** A fade time so long that a static trail never visibly fades. */
+const NO_FADE = 1e9;
+
 const flightMaterial = createRibbonMaterial({
   color: ROLE_COLORS.cometTrail,
   width: 0.024,
-  fade: 6,
+  fade: FLIGHT_FADE,
   floor: 0.3,
   dashed: false,
 });
@@ -151,6 +155,9 @@ export function createTrailVisual(): TrailVisual {
       hasLast = false;
       flight.mesh.count = 0;
       preview.mesh.count = 0;
+    },
+    setStatic(on) {
+      flightMaterial.uniforms.uFade.value = on ? NO_FADE : FLIGHT_FADE;
     },
   };
 }

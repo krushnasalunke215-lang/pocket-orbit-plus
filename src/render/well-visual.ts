@@ -2,7 +2,7 @@ import { CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, RingGeome
 import { WELL_INFLUENCE_RADIUS } from '../sim/wells.js';
 import { HALOS, PULL_RINGS } from './halo-sprites.js';
 import { ROLE_COLORS } from './palette.js';
-import { noRaycast, setSharedTime } from './shaders/common.js';
+import { noRaycast, setMotionTime } from './shaders/common.js';
 import { createSurfaceMaterial } from './shaders/planet.js';
 import { PULL_PATTERN } from './shaders/pull-ring.js';
 import { createRingMaterial, RING_PATTERN } from './shaders/ring.js';
@@ -77,7 +77,7 @@ export function createWellVisual(puck: boolean): WellVisual {
     },
     update(t) {
       if (disposed) return;
-      setSharedTime(t);
+      setMotionTime(t);
       const pulse = 1 + 0.12 * Math.sin(t * PULSE_RATE);
       ring.scale.set(pulse, 1, pulse);
       const p = root.position;

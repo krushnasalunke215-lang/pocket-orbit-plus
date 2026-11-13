@@ -12,10 +12,10 @@ import {
 } from '@iwsdk/core';
 import { KIND_DEFAULTS, type BodyKind } from '../sim/bodies.js';
 import type { BodyDef } from '../sim/level.js';
-import { HALOS, PULL_RINGS } from './halo-sprites.js';
+import { HALOS, OUTLINES, PULL_RINGS } from './halo-sprites.js';
 import { PALETTE, ROLE_COLORS } from './palette.js';
 import { ACCRETION_INNER, ACCRETION_OUTER, accretionMaterial } from './shaders/accretion.js';
-import { noRaycast, setSharedTime } from './shaders/common.js';
+import { noRaycast, setMotionTime } from './shaders/common.js';
 import { createSurfaceMaterial, type SurfaceColors } from './shaders/planet.js';
 import { PULL_PATTERN } from './shaders/pull-ring.js';
 import { createRingMaterial, RING_PATTERN } from './shaders/ring.js';
@@ -79,7 +79,14 @@ interface KindStyle {
   spin: number;
   /** Relative size of the soft pulse (0 = none). */
   pulse: number;
+  /** Farthest point of the shape in radii (the high-contrast outline circles it). */
+  extent: number;
 }
+
+/** High-contrast outline ring: outer radius over the shape's extent, and its inner radius fraction. */
+const OUTLINE_OUTER = 1.24;
+const OUTLINE_INNER = 1.03 / OUTLINE_OUTER;
+const OUTLINE_ALPHA = 0.95;
 
 /** Small stable hash of the body id, so band patterns differ per body but never per run. */
 function seedOf(id: string): number {
@@ -104,6 +111,7 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
         pull: { color, alpha: 0.35, pattern: PULL_PATTERN.solid },
         spin: 0.25,
         pulse: 0,
+        extent: 1,
       };
     }
     case 'moon':
@@ -115,6 +123,7 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
         pull: { color: ROLE_COLORS.moon, alpha: 0.3, pattern: PULL_PATTERN.dotted },
         spin: 0.6,
         pulse: 0,
+        extent: 1,
       };
     case 'black-hole':
       return {
@@ -132,6 +141,7 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
         pull: { color: ROLE_COLORS.blackHoleRing, alpha: 0.45, pattern: PULL_PATTERN.inward },
         spin: 0,
         pulse: 0,
+        extent: 1,
       };
     case 'repulsor':
       return {
@@ -149,6 +159,7 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
         pull: { color: ROLE_COLORS.repulsorRing, alpha: 0.4, pattern: PULL_PATTERN.outward },
         spin: 0.8,
         pulse: 0.07,
+        extent: 1.15,
       };
   }
 }
@@ -185,6 +196,7 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
   const halo = HALOS.allocate(style.halo.color, style.halo.alpha);
   const pull = PULL_RINGS.allocate(style.pull.color, style.pull.alpha, style.pull.pattern);
   PULL_RINGS.setSize(pull, influence);
+  const outline = OUTLINES.allocate(PALETTE.white, OUTLINE_ALPHA, OUTLINE_INNER);
   let state: InteractionState = 'idle';
   let disposed = false;
 
@@ -200,14 +212,15 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
     },
     update(t) {
       if (disposed) return;
-      setSharedTime(t);
+      setMotionTime(t);
       mesh.rotation.y = t * style.spin;
       const p = root.position;
       HALOS.setPosition(halo, p.x, p.y, p.z);
+      let pulse = 1;
       if (style.pulse > 0) {
         // The white star breathes: core, glow size and glow strength together.
         const wave = Math.sin(t * PULSE_RATE);
-        const pulse = 1 + style.pulse * wave;
+        pulse = 1 + style.pulse * wave;
         mesh.scale.setScalar(radius * STATE_SCALE[state] * pulse);
         HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state] * pulse);
         HALOS.setAlpha(halo, Math.min(1, style.halo.alpha * STATE_HALO[state] * (1 + 0.3 * wave)));
@@ -215,12 +228,15 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
         HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state]);
       }
       PULL_RINGS.setPosition(pull, p.x, 0, p.z);
+      OUTLINES.setPosition(outline, p.x, p.y, p.z);
+      OUTLINES.setSize(outline, radius * style.extent * STATE_SCALE[state] * pulse * OUTLINE_OUTER);
     },
     dispose() {
       if (disposed) return;
       disposed = true;
       HALOS.release(halo);
       PULL_RINGS.release(pull);
+      OUTLINES.release(outline);
       surfaceMaterial.dispose();
     },
   };

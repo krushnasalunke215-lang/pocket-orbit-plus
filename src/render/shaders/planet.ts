@@ -1,12 +1,13 @@
 import { Color, ShaderMaterial } from '@iwsdk/core';
 import {
+  HIGH_CONTRAST,
   linkOcclusion,
+  MOTION_TIME,
   NOISE_GLSL,
   OCCLUSION_FRAGMENT,
   OCCLUSION_FRAGMENT_PARS,
   OCCLUSION_VERTEX,
   OCCLUSION_VERTEX_PARS,
-  SHARED_TIME,
   withOcclusion,
 } from './common.js';
 
@@ -44,6 +45,7 @@ uniform float uTime;
 uniform float uBandScale;
 uniform float uRimPower;
 uniform float uRimStrength;
+uniform float uContrast;
 varying vec3 vNormalW;
 varying vec3 vWorldPos;
 varying vec3 vLocal;
@@ -65,7 +67,9 @@ void main() {
 
   // Fresnel rim light (a high power makes it thin: the black hole's event horizon).
   float rim = pow(1.0 - max(dot(N, V), 0.0), uRimPower);
-  color += uRimColor * rim * uRimStrength;
+  // High contrast: a brighter, whiter rim and a slightly lighter surface.
+  color *= 1.0 + 0.2 * uContrast;
+  color += mix(uRimColor, vec3(1.0), 0.4 * uContrast) * rim * uRimStrength * (1.0 + 1.2 * uContrast);
 
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
@@ -80,10 +84,11 @@ export const planetMaterial = new ShaderMaterial({
     uBandColor: { value: new Color(0xffffff) },
     uRimColor: { value: new Color(0xffffff) },
     uSeed: { value: 0 },
-    uTime: SHARED_TIME,
+    uTime: MOTION_TIME,
     uBandScale: { value: 6 },
     uRimPower: { value: 3 },
     uRimStrength: { value: 1.3 },
+    uContrast: HIGH_CONTRAST,
   }),
   vertexShader,
   fragmentShader,
@@ -105,7 +110,8 @@ export interface SurfaceColors {
 /** Per-body clone sharing the program and the clock. */
 export function createSurfaceMaterial(colors: SurfaceColors): ShaderMaterial {
   const material = linkOcclusion(planetMaterial.clone());
-  material.uniforms.uTime = SHARED_TIME;
+  material.uniforms.uTime = MOTION_TIME;
+  material.uniforms.uContrast = HIGH_CONTRAST;
   (material.uniforms.uColor.value as Color).setHex(colors.color);
   (material.uniforms.uBandColor.value as Color).setHex(colors.band);
   (material.uniforms.uRimColor.value as Color).setHex(colors.rim);

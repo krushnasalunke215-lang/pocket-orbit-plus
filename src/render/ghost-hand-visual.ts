@@ -14,7 +14,8 @@ import { noRaycast } from './shaders/common.js';
 import type { GhostHandVisual, XYZLike } from './visual-types.js';
 
 /*
- * Onboarding ghost hand: a translucent right hand (palm, thumb, index, three
+ * Onboarding ghost hand: a translucent right hand (a mirrored left hand in
+ * left-handed mode, setLeftHanded) (palm, thumb, index, three
  * curled fingers and a wrist stub, all capsules or flattened spheres) that
  * shows the first move without text: it reaches over a planet, pinches,
  * carries a translucent copy of the planet along an arc, lets go, lifts away
@@ -202,9 +203,10 @@ export interface GhostHandPose {
 
 /**
  * The demonstration at loop time `t` (wraps every GHOST_HAND_PERIOD),
- * carrying from board [x, z] `from` to `to`. Pure; writes `out`.
+ * carrying from board [x, z] `from` to `to`. `side` is 1 for the right hand (it reaches in from
+ * the player's right, board +X) and -1 for the mirrored left hand. Pure; writes `out`.
  */
-export function ghostHandPose(t: number, from: XYZLike, to: XYZLike, out: GhostHandPose): GhostHandPose {
+export function ghostHandPose(t: number, from: XYZLike, to: XYZLike, out: GhostHandPose, side = 1): GhostHandPose {
   let tau = t % GHOST_HAND_PERIOD;
   if (tau < 0) tau += GHOST_HAND_PERIOD;
   const fx = from[0];
@@ -215,7 +217,7 @@ export function ghostHandPose(t: number, from: XYZLike, to: XYZLike, out: GhostH
   const q = out.planet;
   if (tau < T_APPROACH) {
     const u = easeOut(tau / T_APPROACH);
-    p[0] = fx + 0.3 * (1 - u);
+    p[0] = fx + side * 0.3 * (1 - u);
     p[1] = PINCH_HEIGHT + 0.42 * (1 - u);
     p[2] = fz + 0.12 * (1 - u);
     out.grip = 0;
@@ -260,7 +262,7 @@ export function ghostHandPose(t: number, from: XYZLike, to: XYZLike, out: GhostH
     out.planetAlpha = 1;
   } else if (tau < T_FADE) {
     const u = (tau - T_OPEN) / (T_FADE - T_OPEN);
-    p[0] = tx + 0.12 * u;
+    p[0] = tx + side * 0.12 * u;
     p[1] = PINCH_HEIGHT + 0.01 + 0.3 * u * u;
     p[2] = tz;
     out.grip = 0;
@@ -270,7 +272,7 @@ export function ghostHandPose(t: number, from: XYZLike, to: XYZLike, out: GhostH
     q[2] = tz;
     out.planetAlpha = 1 - smooth(u);
   } else {
-    p[0] = tx + 0.12;
+    p[0] = tx + side * 0.12;
     p[1] = PINCH_HEIGHT + 0.31;
     p[2] = tz;
     out.grip = 0;
@@ -335,6 +337,8 @@ export function createGhostHandVisual(): GhostHandVisual {
 
   const pose: GhostHandPose = { pinch: [0, 0, 0], grip: 0, handAlpha: 0, planet: [0, 0, 0], planetAlpha: 0 };
   const target = new Vector3();
+  /** 1: right hand; -1: the left hand, mirrored across the hand frame's X (three flips the winding). */
+  let side = 1;
 
   const poseChain = (c: ReturnType<typeof chainMeshes>, grip: number) => {
     lerp3(c.chain.open, c.chain.closed, grip, target);
@@ -348,8 +352,14 @@ export function createGhostHandVisual(): GhostHandVisual {
     setVisible(visible) {
       root.visible = visible;
     },
+    setLeftHanded(left) {
+      side = left ? -1 : 1;
+      // Mirroring the hand frame across X turns HAND_YAW into -HAND_YAW.
+      hand.scale.set(side * HAND_SCALE, HAND_SCALE, HAND_SCALE);
+      hand.rotation.y = side * HAND_YAW;
+    },
     update(t, from, to) {
-      ghostHandPose(t, from, to, pose);
+      ghostHandPose(t, from, to, pose, side);
       hand.position.set(pose.pinch[0], pose.pinch[1], pose.pinch[2]);
       poseChain(index, pose.grip);
       poseChain(thumb, pose.grip);

@@ -44,12 +44,16 @@ export interface TrailVisual {
   breakLine(): void;
   endFlight(): void;
   clear(): void;
+  /** Reduced motion: flight trails stop fading with age (they still dim per newer flight). */
+  setStatic(on: boolean): void;
 }
 
 /** The onboarding ghost hand and its translucent planet copy (board units). */
 export interface GhostHandVisual {
   readonly root: Object3D;
   setVisible(visible: boolean): void;
+  /** Left-handed mode: a mirrored left hand that reaches in from the player's left. */
+  setLeftHanded(left: boolean): void;
   /**
    * Poses the hand `t` seconds into its loop: it pinches a planet copy at
    * board point `from` ([x, z]), carries it to `to` and lets go.
@@ -85,6 +89,8 @@ export interface ReticleVisual {
 export interface TargetVisual {
   readonly root: Object3D;
   setSolved(solved: boolean): void;
+  /** High contrast: a white outline under an opaque star glyph, and a solid capture ring. */
+  setHighContrast(on: boolean): void;
   update(t: number): void;
 }
 

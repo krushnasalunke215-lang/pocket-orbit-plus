@@ -6,7 +6,7 @@ import {
   OCCLUSION_FRAGMENT_PARS,
   OCCLUSION_VERTEX,
   OCCLUSION_VERTEX_PARS,
-  SHARED_TIME,
+  MOTION_TIME,
   withOcclusion,
 } from './common.js';
 
@@ -72,7 +72,7 @@ export const accretionMaterial = new ShaderMaterial({
     uCool: { value: new Color(PALETTE.vermillion) },
     uInner: { value: ACCRETION_INNER },
     uOuter: { value: ACCRETION_OUTER },
-    uTime: SHARED_TIME,
+    uTime: MOTION_TIME,
   }),
   vertexShader,
   fragmentShader,

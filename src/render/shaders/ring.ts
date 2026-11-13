@@ -5,7 +5,7 @@ import {
   OCCLUSION_FRAGMENT_PARS,
   OCCLUSION_VERTEX,
   OCCLUSION_VERTEX_PARS,
-  SHARED_TIME,
+  MOTION_TIME,
   withOcclusion,
 } from './common.js';
 
@@ -75,7 +75,7 @@ const ringTemplate = new ShaderMaterial({
     uInner: { value: 1.4 },
     uOuter: { value: 1.9 },
     uPattern: { value: 0 },
-    uTime: SHARED_TIME,
+    uTime: MOTION_TIME,
   }),
   vertexShader,
   fragmentShader,
@@ -94,7 +94,7 @@ export function createRingMaterial(
   opacity = 0.8,
 ): ShaderMaterial {
   const material = linkOcclusion(ringTemplate.clone());
-  material.uniforms.uTime = SHARED_TIME;
+  material.uniforms.uTime = MOTION_TIME;
   (material.uniforms.uColor.value as Color).setHex(color);
   material.uniforms.uPattern.value = pattern;
   material.uniforms.uInner.value = inner;

@@ -1,6 +1,7 @@
 import { Color, ShaderMaterial } from '@iwsdk/core';
 import { ROLE_COLORS } from '../palette.js';
 import {
+  HIGH_CONTRAST,
   OCCLUSION_FRAGMENT,
   OCCLUSION_FRAGMENT_PARS,
   OCCLUSION_VERTEX,
@@ -35,6 +36,7 @@ const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform vec3 uBase;
 uniform vec3 uRim;
 uniform float uOpacity;
+uniform float uContrast;
 varying vec2 vLocal;
 varying vec3 vWorldPos;
 varying vec3 vUp;
@@ -57,11 +59,13 @@ void main() {
   color += uRim * guides * 0.45 * inside;
   alpha += guides * 0.10 * inside;
 
-  // Rim band at r = 1, a soft inner rim light and an outer glow.
-  float band = ringLine(r, 0.99, 0.012);
+  // Rim band at r = 1, a soft inner rim light and an outer glow. High
+  // contrast widens the band, lifts it toward white and brightens the glow.
+  float band = ringLine(r, 0.99, 0.012 + 0.012 * uContrast);
   float innerLight = smoothstep(0.75, 0.99, r) * inside;
   float glow = (1.0 - inside) * exp(-max(r - 0.99, 0.0) * 55.0);
-  color += uRim * (band * 1.6 + innerLight * 0.35 + glow * 0.9);
+  vec3 rim = mix(uRim, vec3(1.0), 0.45 * uContrast);
+  color += rim * (band * (1.6 + 1.4 * uContrast) + innerLight * 0.35 + glow * (0.9 + 0.6 * uContrast));
   alpha = max(alpha, band * 0.95) + glow * 0.55;
 
   // Fresnel lift: the glass brightens a little at grazing angles.
@@ -82,6 +86,7 @@ export const boardMaterial = new ShaderMaterial({
     uBase: { value: new Color(ROLE_COLORS.board) },
     uRim: { value: new Color(ROLE_COLORS.boardRim) },
     uOpacity: { value: 0.55 },
+    uContrast: HIGH_CONTRAST,
   }),
   vertexShader,
   fragmentShader,

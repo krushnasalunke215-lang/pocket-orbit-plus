@@ -8,6 +8,7 @@ import {
 } from '@iwsdk/core';
 import { markRange, noRaycast } from './shaders/common.js';
 import { haloMaterial } from './shaders/halo.js';
+import { outlineMaterial } from './shaders/outline.js';
 import { pullRingMaterial } from './shaders/pull-ring.js';
 
 /*
@@ -119,3 +120,12 @@ export const PULL_RINGS = new SpritePool(
   16,
 );
 PULL_RINGS.mesh.renderOrder = -1;
+
+/**
+ * High-contrast outline rings around the bodies (camera-facing); the pool's
+ * pattern is the inner radius fraction. Hidden (no draw call) unless high
+ * contrast is on; bodies keep their slots current either way.
+ */
+export const OUTLINES = new SpritePool('Outlines', new PlaneGeometry(2, 2), outlineMaterial, 16);
+OUTLINES.mesh.renderOrder = 3;
+OUTLINES.mesh.visible = false;
