@@ -93,6 +93,13 @@ export interface SandboxRuntime {
   };
   /** Increments whenever what the panel shows changes (wells, selection, status, armed). */
   revision: number;
+  /**
+   * Per hand: that hand's current pinch confirmed a Make well. The ray does
+   * not see the real object, so the same pinch would also click the HUD or
+   * Your Table panel element behind it; both ignore that hand's ray clicks
+   * until its select ends (see isConfirmPinchClick).
+   */
+  readonly confirmPinch: { left: boolean; right: boolean };
   /** Arms well placement for `hand` (default: the hand that just clicked, else right). */
   arm(hand?: 'left' | 'right'): void;
   disarm(): void;

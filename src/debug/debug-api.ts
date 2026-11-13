@@ -139,6 +139,8 @@ export interface GameSnapshot {
     activeWells: number;
     armed: boolean;
     armHand: string | null;
+    /** Hands whose current pinch confirmed a well (their ray clicks on the HUD and panel are ignored). */
+    confirmPinch: { left: boolean; right: boolean };
     pucks: number;
     selectedId: string | null;
     status: string | null;
@@ -536,6 +538,7 @@ export function installDebugApi(world: World): GameDebugApi {
           activeWells: game.activeWells.length,
           armed: sandbox?.armed ?? false,
           armHand: sandbox?.armHand ?? null,
+          confirmPinch: { left: sandbox?.confirmPinch.left ?? false, right: sandbox?.confirmPinch.right ?? false },
           pucks: sandboxPucks.entities.size,
           selectedId: sandbox?.selectedId ?? null,
           status: sandbox?.status ?? null,

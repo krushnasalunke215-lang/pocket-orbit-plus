@@ -54,6 +54,7 @@ export const SANDBOX_STATUS = {
   tooFlat: 'Too flat: drag the puck instead',
   offBoard: 'Off the board: stand the object on the board',
   noHitTest: 'No hit-test here: drag the puck instead',
+  lateMiss: 'Nothing in reach: aim at an object on the board',
   puck: 'Drag the puck, set its height with - and +',
   cleared: 'Wells cleared',
 } as const;
@@ -75,7 +76,10 @@ interface WellEntry {
  * into a well under the object, as heavy as the object is tall
  * (wellMassForHeight); a hit on the table itself or no hit spawns a
  * draggable well puck instead (DistanceGrabbable, kept on the board plane
- * inside PLACE_RADIUS; its release moves the well). Height +/- change the
+ * inside PLACE_RADIUS; its release moves the well). The HUD and the Your
+ * Table panel then ignore that hand's ray click until its select ends
+ * (confirmPinch), so the pinch does not also press the button behind the
+ * real object. Height +/- change the
  * selected well, clear removes everything. Wells go to the game with
  * setExternalWells, which only sandbox flights use. Registered after
  * GameSystem; no allocation per frame (wells change on events only).
@@ -116,6 +120,7 @@ export class RealObjectSystem extends createSystem({
       selectedId: null,
       reticle: reticle as SandboxRuntime['reticle'],
       revision: 0,
+      confirmPinch: { left: false, right: false },
       arm: (hand) => this.arm(hand),
       disarm: () => this.disarm(),
       addPuck: () => this.addPuck(null, SANDBOX_STATUS.puck),
@@ -170,7 +175,14 @@ export class RealObjectSystem extends createSystem({
     }
 
     const immersive = this.visibilityState.peek() !== VisibilityState.NonImmersive;
-    for (const hand of HANDS) if (immersive && this.input.xr.getSelectState(hand).start) this.lastStartHand = hand;
+    for (const hand of HANDS) {
+      const select = this.input.xr.getSelectState(hand);
+      if (immersive && select.start) this.lastStartHand = hand;
+      // The confirm pinch's click (dispatched on select end by InputSystem,
+      // which runs before this system) has been ignored by now; a new pinch
+      // also means the old one ended.
+      if (select.end || select.start) this.runtime.confirmPinch[hand] = false;
+    }
 
     this.updateReticle(sandbox, immersive, board.pose.radius);
 
@@ -325,6 +337,8 @@ export class RealObjectSystem extends createSystem({
   private confirm(): void {
     const reticle = this.runtime.reticle;
     const hit = reticle.hit;
+    const hand = this.runtime.armHand;
+    if (hand) this.runtime.confirmPinch[hand] = true;
     this.disarm();
     if (hit === 'object') {
       const id = this.newId();
@@ -340,8 +354,9 @@ export class RealObjectSystem extends createSystem({
     } else {
       // No hit-test result during the whole arming: the session gives none
       // here (VR fallback, or hit-test not granted), so the table is not "too flat".
+      // Earlier hits but none now: the ray points past the reach or at nothing.
       const noHits = getHitLog(this.world).total === this.armedHitTotal;
-      this.addPuck(null, noHits ? SANDBOX_STATUS.noHitTest : SANDBOX_STATUS.tooFlat);
+      this.addPuck(null, noHits ? SANDBOX_STATUS.noHitTest : SANDBOX_STATUS.lateMiss);
     }
   }
 

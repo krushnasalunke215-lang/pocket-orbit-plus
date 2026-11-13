@@ -9,6 +9,7 @@ import {
   type UIKitMLAsset,
 } from '@iwsdk/core';
 import { createMutablePose, sandboxPanelPoseInto } from '../game/hud-layout.js';
+import { handOfPointerEvent, isConfirmPinchClick, type PointerIdEvent } from './pointer-hand.js';
 import {
   getBoard,
   getGame,
@@ -30,13 +31,15 @@ const PANEL_RENDER_ORDER = 10;
 const BUTTONS = ['make-well', 'add-puck', 'height-down', 'height-up', 'clear-wells', 'next-target', 'exit-sandbox'] as const;
 
 /**
- * The Your Table panel: Make well (arms the hit-test pinch), Add puck,
+ * The Your Table panel: Make well (arms the hit-test pinch for the hand
+ * that pressed it, by ray or fingertip), Add puck,
  * height - / + with the selected well's height, Clear wells, Next target and
  * Back to the levels (the story level the sandbox was entered from), plus
  * the target title and a status line. Shown only in sandbox mode, beside
  * the HUD (sandboxPanelPose); while hidden it has no interactable
- * components. Clicks are ignored while paused. The re-pose writes into
- * preallocated tuples (no allocation per frame).
+ * components. Clicks are ignored while paused, and so is the ray click of
+ * a pinch that just placed a well (isConfirmPinchClick). The re-pose
+ * writes into preallocated tuples (no allocation per frame).
  */
 export class SandboxPanelSystem extends createSystem({}) {
   private entity: Entity | null = null;
@@ -65,8 +68,9 @@ export class SandboxPanelSystem extends createSystem({}) {
     entity.object3D!.visible = false;
     const element = (id: string) => panel.requireElementById<UIKit.Text>(id);
     element('sandbox-root').setProperties({ renderOrder: PANEL_RENDER_ORDER });
-    const actions: Record<(typeof BUTTONS)[number], () => void> = {
-      'make-well': () => getSandbox(this.world)?.arm(),
+    const actions: Record<(typeof BUTTONS)[number], (event: PointerIdEvent) => void> = {
+      // The hand whose ray or fingertip pressed the button (else the last pinching hand).
+      'make-well': (event) => getSandbox(this.world)?.arm(handOfPointerEvent(this.world, event) ?? undefined),
       'add-puck': () => getSandbox(this.world)?.addPuck(),
       'height-down': () => getSandbox(this.world)?.stepHeight(-1),
       'height-up': () => getSandbox(this.world)?.stepHeight(1),
@@ -80,10 +84,10 @@ export class SandboxPanelSystem extends createSystem({}) {
     for (const id of BUTTONS) {
       const target = element(id);
       element(`${id}-label`).setProperties({ pointerEvents: 'none' });
-      const listener = () => {
-        if (!this.runtime?.shown || getPause(this.world).paused) return;
+      const listener = (event: PointerIdEvent) => {
+        if (!this.runtime?.shown || getPause(this.world).paused || isConfirmPinchClick(this.world, event)) return;
         markInteracted(this.world);
-        actions[id]();
+        actions[id](event);
       };
       target.addEventListener('click', listener);
       this.cleanupFuncs.push(() => target.removeEventListener('click', listener));

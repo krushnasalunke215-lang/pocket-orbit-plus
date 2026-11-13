@@ -12,6 +12,7 @@ import { APP_NAME } from '../config.js';
 import type { GameController, GamePhase } from '../game/controller.js';
 import { hudPose } from '../game/hud-layout.js';
 import type { SimOutcome } from '../sim/bodies.js';
+import { isConfirmPinchClick, type PointerIdEvent } from './pointer-hand.js';
 import {
   getBoard,
   getChapter,
@@ -114,9 +115,10 @@ export class HudSystem extends createSystem({}) {
     const element = (id: string) => panel.requireElementById<UIKit.Text>(id);
     const onClick = (id: string, action: () => void) => {
       const target = element(id);
-      // Clicks are ignored while paused (XR blurred or hidden, page hidden).
-      const listener = () => {
-        if (getPause(this.world).paused) return;
+      // Clicks are ignored while paused (XR blurred or hidden, page hidden),
+      // and the ray click of a pinch that just placed a Your Table well.
+      const listener = (event: PointerIdEvent) => {
+        if (getPause(this.world).paused || isConfirmPinchClick(this.world, event)) return;
         markInteracted(this.world);
         action();
       };
