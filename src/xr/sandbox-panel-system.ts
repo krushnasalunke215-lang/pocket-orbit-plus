@@ -8,7 +8,7 @@ import {
   type UIKit,
   type UIKitMLAsset,
 } from '@iwsdk/core';
-import { sandboxPanelPose } from '../game/hud-layout.js';
+import { createMutablePose, sandboxPanelPoseInto } from '../game/hud-layout.js';
 import {
   getBoard,
   getGame,
@@ -25,7 +25,6 @@ const UNIT_SCALE = 0.1;
 const HEAD_MOVE_EPS = 0.02;
 /** Above the board's additive sprites, like the level select. */
 const PANEL_RENDER_ORDER = 10;
-const FORWARD: readonly [number, number, number] = [0, 0, -1];
 
 /** Button ids and the label inside each (labels ignore pointers so a poke clicks). */
 const BUTTONS = ['make-well', 'add-puck', 'height-down', 'height-up', 'clear-wells', 'next-target', 'exit-sandbox'] as const;
@@ -36,7 +35,8 @@ const BUTTONS = ['make-well', 'add-puck', 'height-down', 'height-up', 'clear-wel
  * Back to the levels (the story level the sandbox was entered from), plus
  * the target title and a status line. Shown only in sandbox mode, beside
  * the HUD (sandboxPanelPose); while hidden it has no interactable
- * components. Clicks are ignored while paused.
+ * components. Clicks are ignored while paused. The re-pose writes into
+ * preallocated tuples (no allocation per frame).
  */
 export class SandboxPanelSystem extends createSystem({}) {
   private entity: Entity | null = null;
@@ -48,6 +48,8 @@ export class SandboxPanelSystem extends createSystem({}) {
   private lastLevelRevision = -1;
   private lastBoardVersion = -1;
   private readonly head = new Vector3();
+  private readonly headTuple: [number, number, number] = [0, 0, 0];
+  private readonly pose = createMutablePose();
   private readonly placedFrom = new Vector3(Infinity, Infinity, Infinity);
 
   init(): void {
@@ -132,7 +134,10 @@ export class SandboxPanelSystem extends createSystem({}) {
     if (immersive) this.player.head.getWorldPosition(this.head);
     else this.camera.getWorldPosition(this.head);
     if (board.version !== this.lastBoardVersion || this.head.distanceTo(this.placedFrom) > HEAD_MOVE_EPS) {
-      const pose = sandboxPanelPose(board.pose, { position: [this.head.x, this.head.y, this.head.z], forward: FORWARD });
+      this.headTuple[0] = this.head.x;
+      this.headTuple[1] = this.head.y;
+      this.headTuple[2] = this.head.z;
+      const pose = sandboxPanelPoseInto(board.pose, this.headTuple, this.pose);
       const object = entity.object3D!;
       object.position.set(pose.position[0], pose.position[1], pose.position[2]);
       object.quaternion.set(pose.quaternion[0], pose.quaternion[1], pose.quaternion[2], pose.quaternion[3]);

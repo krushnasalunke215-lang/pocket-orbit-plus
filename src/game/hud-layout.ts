@@ -1,5 +1,5 @@
 import type { Vec3 } from '../sim/vec.js';
-import { quatLookAt, quatRotate, type BoardPose, type Quat } from './board-math.js';
+import { quatLookAt, quatLookAtInto, quatRotate, quatRotateInto, type BoardPose, type Quat } from './board-math.js';
 import type { HeadPose } from './placement.js';
 
 /**
@@ -20,6 +20,30 @@ const HANDLE_GAP = 0.04;
 export interface Pose {
   readonly position: Vec3;
   readonly quaternion: Quat;
+}
+
+/** A pose written in place by the `...PoseInto` functions (no allocation per re-pose). */
+export interface MutablePose {
+  readonly position: [number, number, number];
+  readonly quaternion: [number, number, number, number];
+}
+
+export function createMutablePose(): MutablePose {
+  return { position: [0, 0, 0], quaternion: [0, 0, 0, 1] };
+}
+
+/**
+ * A panel beside the HUD: the HUD center (see hudPose) moved `sideX` meters
+ * along board-local +X, facing `head`; written into `out`.
+ */
+function besideHudPoseInto(board: BoardPose, head: Vec3, sideX: number, out: MutablePose): MutablePose {
+  const p = out.position;
+  quatRotateInto(board.quaternion, sideX, 0, -(board.radius + HUD_GAP), p);
+  p[0] += board.center[0];
+  p[1] += board.center[1] + HUD_LIFT;
+  p[2] += board.center[2];
+  quatLookAtInto(p, head, out.quaternion);
+  return out;
 }
 
 /**
@@ -129,15 +153,20 @@ export const SANDBOX_PANEL_SIZE = { width: 0.26, height: 0.34 } as const;
 /** Gap between the HUD and the Your Table panel (meters). */
 export const SANDBOX_PANEL_GAP = 0.02;
 
+/** Board-local +X offset of the Your Table panel center from the HUD center (meters). */
+const SANDBOX_PANEL_SIDE = HUD_SIZE.width / 2 + SANDBOX_PANEL_GAP + SANDBOX_PANEL_SIZE.width / 2;
+
 /**
  * The Your Table panel: beside the HUD beyond the far rim, on the player's
  * right (board-local +X), at the HUD's height, facing the head.
  */
 export function sandboxPanelPose(board: BoardPose, head: HeadPose): Pose {
-  const hud = hudPose(board, head).position;
-  const side = quatRotate(board.quaternion, [HUD_SIZE.width / 2 + SANDBOX_PANEL_GAP + SANDBOX_PANEL_SIZE.width / 2, 0, 0]);
-  const position: Vec3 = [hud[0] + side[0], hud[1] + side[1], hud[2] + side[2]];
-  return { position, quaternion: quatLookAt(position, head.position) };
+  return besideHudPoseInto(board, head.position, SANDBOX_PANEL_SIDE, createMutablePose());
+}
+
+/** sandboxPanelPose for the head position `head`, written into `out` (no allocation). */
+export function sandboxPanelPoseInto(board: BoardPose, head: Vec3, out: MutablePose): MutablePose {
+  return besideHudPoseInto(board, head, SANDBOX_PANEL_SIDE, out);
 }
 
 /**
@@ -147,6 +176,8 @@ export function sandboxPanelPose(board: BoardPose, head: HeadPose): Pose {
 export const DEBUG_OVERLAY_SIZE = { width: 0.22, height: 0.11 } as const;
 /** Gap between the HUD and the debug overlay (meters). */
 export const DEBUG_OVERLAY_GAP = 0.02;
+/** Board-local +X offset of the debug overlay center from the HUD center (meters; negative: the left). */
+const DEBUG_OVERLAY_SIDE = -(HUD_SIZE.width / 2 + DEBUG_OVERLAY_GAP + DEBUG_OVERLAY_SIZE.width / 2);
 
 /**
  * The ?debug=1 overlay panel: beside the HUD beyond the far rim, on the
@@ -154,10 +185,12 @@ export const DEBUG_OVERLAY_GAP = 0.02;
  * HUD's height, facing the head.
  */
 export function debugOverlayPose(board: BoardPose, head: HeadPose): Pose {
-  const hud = hudPose(board, head).position;
-  const side = quatRotate(board.quaternion, [-(HUD_SIZE.width / 2 + DEBUG_OVERLAY_GAP + DEBUG_OVERLAY_SIZE.width / 2), 0, 0]);
-  const position: Vec3 = [hud[0] + side[0], hud[1] + side[1], hud[2] + side[2]];
-  return { position, quaternion: quatLookAt(position, head.position) };
+  return besideHudPoseInto(board, head.position, DEBUG_OVERLAY_SIDE, createMutablePose());
+}
+
+/** debugOverlayPose for the head position `head`, written into `out` (no allocation). */
+export function debugOverlayPoseInto(board: BoardPose, head: Vec3, out: MutablePose): MutablePose {
+  return besideHudPoseInto(board, head, DEBUG_OVERLAY_SIDE, out);
 }
 
 function handleOffset(board: BoardPose): Vec3 {

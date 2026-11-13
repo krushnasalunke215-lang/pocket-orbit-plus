@@ -157,11 +157,22 @@ export function quatFromUpAndYaw(up: Vec3, yaw: number): Quat {
  * as close to world up as possible (how a panel faces a viewer).
  */
 export function quatLookAt(from: Vec3, to: Vec3): Quat {
+  return quatLookAtInto(from, to, [0, 0, 0, 1]);
+}
+
+/** quatLookAt written into `out` and returned (no allocation; for per-frame callers). */
+export function quatLookAtInto(from: Vec3, to: Vec3, out: [number, number, number, number]): [number, number, number, number] {
   let zx = to[0] - from[0];
   let zy = to[1] - from[1];
   let zz = to[2] - from[2];
   const zl = Math.hypot(zx, zy, zz);
-  if (zl < 1e-9) return IDENTITY_QUAT;
+  if (zl < 1e-9) {
+    out[0] = IDENTITY_QUAT[0];
+    out[1] = IDENTITY_QUAT[1];
+    out[2] = IDENTITY_QUAT[2];
+    out[3] = IDENTITY_QUAT[3];
+    return out;
+  }
   zx /= zl;
   zy /= zl;
   zz /= zl;
@@ -181,27 +192,49 @@ export function quatLookAt(from: Vec3, to: Vec3): Quat {
   const yx = zy * xz - zz * xy;
   const yy = zz * xx - zx * xz;
   const yz = zx * xy - zy * xx;
-  return quatFromBasis([xx, xy, xz], [yx, yy, yz], [zx, zy, zz]);
-}
-
-/** Quaternion of the rotation matrix with columns x, y, z. */
-function quatFromBasis(x: Vec3, y: Vec3, z: Vec3): Quat {
-  const m00 = x[0], m01 = y[0], m02 = z[0];
-  const m10 = x[1], m11 = y[1], m12 = z[1];
-  const m20 = x[2], m21 = y[2], m22 = z[2];
+  // Quaternion of the rotation matrix with columns x, y, z.
+  const m00 = xx, m01 = yx, m02 = zx;
+  const m10 = xy, m11 = yy, m12 = zy;
+  const m20 = xz, m21 = yz, m22 = zz;
   const trace = m00 + m11 + m22;
   if (trace > 0) {
     const s = 0.5 / Math.sqrt(trace + 1);
-    return [(m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s, 0.25 / s];
+    return setQuat(out, (m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s, 0.25 / s);
   }
   if (m00 > m11 && m00 > m22) {
     const s = 2 * Math.sqrt(1 + m00 - m11 - m22);
-    return [0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s];
+    return setQuat(out, 0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s);
   }
   if (m11 > m22) {
     const s = 2 * Math.sqrt(1 + m11 - m00 - m22);
-    return [(m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s];
+    return setQuat(out, (m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s);
   }
   const s = 2 * Math.sqrt(1 + m22 - m00 - m11);
-  return [(m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s];
+  return setQuat(out, (m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s);
+}
+
+function setQuat(
+  out: [number, number, number, number],
+  x: number,
+  y: number,
+  z: number,
+  w: number,
+): [number, number, number, number] {
+  out[0] = x;
+  out[1] = y;
+  out[2] = z;
+  out[3] = w;
+  return out;
+}
+
+/** quatRotate of (vx, vy, vz), written into `out` and returned (no allocation). */
+export function quatRotateInto(q: Quat, vx: number, vy: number, vz: number, out: [number, number, number]): [number, number, number] {
+  const qx = q[0], qy = q[1], qz = q[2], qw = q[3];
+  const tx = 2 * (qy * vz - qz * vy);
+  const ty = 2 * (qz * vx - qx * vz);
+  const tz = 2 * (qx * vy - qy * vx);
+  out[0] = vx + qw * tx + (qy * tz - qz * ty);
+  out[1] = vy + qw * ty + (qz * tx - qx * tz);
+  out[2] = vz + qw * tz + (qx * ty - qy * tx);
+  return out;
 }

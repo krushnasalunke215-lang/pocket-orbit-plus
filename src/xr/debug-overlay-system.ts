@@ -1,6 +1,6 @@
 import { createSystem, Vector3, VisibilityState, type Entity, type UIKit, type UIKitMLAsset } from '@iwsdk/core';
 import { FrameStats } from '../game/frame-stats.js';
-import { debugOverlayPose } from '../game/hud-layout.js';
+import { createMutablePose, debugOverlayPoseInto } from '../game/hud-layout.js';
 import { jitterMm } from '../game/real-object.js';
 import { getBoard, getGame, getHitLog, getRenderStats, getSandbox, HIT_LOG_SIZE } from './runtime.js';
 
@@ -10,7 +10,6 @@ const UNIT_SCALE = 0.1;
 const HEAD_MOVE_EPS = 0.02;
 /** Above the board's additive sprites, like the other panels. */
 const PANEL_RENDER_ORDER = 10;
-const FORWARD: readonly [number, number, number] = [0, 0, -1];
 /** Text refresh period (ms): 2 Hz. */
 const TEXT_PERIOD_MS = 500;
 /** Console JSON line period (ms). */
@@ -37,11 +36,13 @@ export function debugOverlayRequested(search: string): boolean {
  *
  * Allocation: update() allocates nothing per frame. The text lines, the
  * 1% low sort (in a preallocated scratch array) and the JSON line are built
- * only at 2 Hz and every 5 s.
+ * only at 2 Hz and every 5 s; the re-pose writes into preallocated tuples.
  */
 export class DebugOverlaySystem extends createSystem({}) {
   private readonly stats = new FrameStats();
   private readonly head = new Vector3();
+  private readonly headTuple: [number, number, number] = [0, 0, 0];
+  private readonly pose = createMutablePose();
   private readonly placedFrom = new Vector3(Infinity, Infinity, Infinity);
   private entity: Entity | null = null;
   private fpsText: UIKit.Text | null = null;
@@ -191,7 +192,10 @@ export class DebugOverlaySystem extends createSystem({}) {
     if (!entity || !board) return;
     this.player.head.getWorldPosition(this.head);
     if (board.version === this.lastBoardVersion && this.head.distanceTo(this.placedFrom) <= HEAD_MOVE_EPS) return;
-    const pose = debugOverlayPose(board.pose, { position: [this.head.x, this.head.y, this.head.z], forward: FORWARD });
+    this.headTuple[0] = this.head.x;
+    this.headTuple[1] = this.head.y;
+    this.headTuple[2] = this.head.z;
+    const pose = debugOverlayPoseInto(board.pose, this.headTuple, this.pose);
     const object = entity.object3D!;
     object.position.set(pose.position[0], pose.position[1], pose.position[2]);
     object.quaternion.set(pose.quaternion[0], pose.quaternion[1], pose.quaternion[2], pose.quaternion[3]);
