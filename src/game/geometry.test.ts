@@ -21,6 +21,8 @@ import {
   levelSelectPose,
   RIM_BUTTON_SIZE,
   rimButtonPose,
+  SANDBOX_PANEL_SIZE,
+  sandboxPanelPose,
 } from './hud-layout.js';
 import { fallbackPlacement, type HeadPose } from './placement.js';
 
@@ -250,7 +252,21 @@ describe('level-select panel', () => {
       const normal = quatRotate(panel.quaternion, [0, 0, 1]);
       expect(dot(normal, unit(sub(head, panel.position)))).toBeGreaterThan(0.999);
     });
+
+    it(`${c.name}: its lower edge clears every planet collider, so no board object stands between the eyes and a button`, () => {
+      const up = quatRotate(panel.quaternion, [0, 1, 0]);
+      const lowerEdge = panel.position[1] - up[1] * (LEVEL_SELECT_SIZE.height / 2);
+      const colliderTop = c.board.center[1] + colliderLocalRadius(c.board.radius) * c.board.radius;
+      expect(lowerEdge - colliderTop).toBeGreaterThanOrEqual(0.015 - 1e-9);
+    });
   }
+
+  it('table: still on the line from the head to the board center (no rise needed)', () => {
+    const c = RIM_CASES[1];
+    const panel = levelSelectPose(c.board, c.head);
+    const toPanel = unit(sub(panel.position, c.head.position));
+    expect(dot(toPanel, unit(c.gaze))).toBeGreaterThan(0.99999);
+  });
 });
 
 /*
@@ -290,6 +306,59 @@ describe('debug overlay panel', () => {
     it(`${c.name}: faces the head`, () => {
       const normal = quatRotate(panel.quaternion, [0, 0, 1]);
       expect(dot(normal, unit(sub(head, panel.position)))).toBeGreaterThan(0.999);
+    });
+  }
+});
+
+/*
+ * Meta VR Glasses fit (Phase 3) at both poses and gaze rules above: the
+ * board rim, the HUD, the Your Table panel (shown beside the HUD in Your
+ * Table), the near-rim button and the level select, each corner 1° inside
+ * 37° left/right, 25° up, 43° down. The tightest corner is the near-rim
+ * button's outer corner at the fallback (35.6° left); the Your Table panel's
+ * top reaches 22.5° up at the table. The Settings page shares the
+ * level-select pose and is no larger (LEVEL_SELECT_SIZE).
+ */
+describe('Meta VR Glasses fit at the fallback and table poses', () => {
+  const MARGIN = 1;
+  const viewAngles = (c: RimCase, p: Vec3): { h: number; v: number } => {
+    const f = unit(c.gaze);
+    const right = unit(cross(f, [0, 1, 0]));
+    const up = cross(right, f);
+    const d = sub(p, c.head.position);
+    const z = dot(d, f);
+    return { h: Math.atan2(dot(d, right), z) * DEG, v: Math.atan2(dot(d, up), z) * DEG };
+  };
+  const expectFits = (c: RimCase, label: string, p: Vec3) => {
+    const { h, v } = viewAngles(c, p);
+    expect(Math.abs(h), `${label} horizontal ${h.toFixed(1)}°`).toBeLessThanOrEqual(37 - MARGIN);
+    expect(v, `${label} vertical ${v.toFixed(1)}°`).toBeGreaterThanOrEqual(-43 + MARGIN);
+    expect(v, `${label} vertical ${v.toFixed(1)}°`).toBeLessThanOrEqual(25 - MARGIN);
+  };
+  const corners = (pose: { position: Vec3; quaternion: Quat }, size: { width: number; height: number }): Vec3[] =>
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) =>
+      add(pose.position, quatRotate(pose.quaternion, [(sx * size.width) / 2, (sy * size.height) / 2, 0])),
+    );
+
+  for (const c of RIM_CASES) {
+    it(`${c.name}: all 16 board rim points`, () => {
+      for (let k = 0; k < 16; k++) {
+        const a = (2 * Math.PI * k) / 16;
+        expectFits(c, `rim ${k}`, boardToWorld(c.board, [Math.cos(a), 0, Math.sin(a)]));
+      }
+    });
+
+    it(`${c.name}: all 4 HUD corners`, () => {
+      corners(hudPose(c.board, c.head), HUD_SIZE).forEach((p, k) => expectFits(c, `HUD corner ${k}`, p));
+    });
+
+    it(`${c.name}: all 4 Your Table panel corners`, () => {
+      corners(sandboxPanelPose(c.board, c.head), SANDBOX_PANEL_SIZE).forEach((p, k) => expectFits(c, `Your Table corner ${k}`, p));
+    });
+
+    it(`${c.name}: all 4 near-rim button and level-select corners`, () => {
+      corners(rimButtonPose(c.board, c.head), RIM_BUTTON_SIZE).forEach((p, k) => expectFits(c, `rim button corner ${k}`, p));
+      corners(levelSelectPose(c.board, c.head), LEVEL_SELECT_SIZE).forEach((p, k) => expectFits(c, `level select corner ${k}`, p));
     });
   }
 });

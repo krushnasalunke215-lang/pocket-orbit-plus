@@ -1,5 +1,13 @@
 import type { Vec3 } from '../sim/vec.js';
-import { quatLookAt, quatLookAtInto, quatRotate, quatRotateInto, type BoardPose, type Quat } from './board-math.js';
+import {
+  colliderLocalRadius,
+  quatLookAt,
+  quatLookAtInto,
+  quatRotate,
+  quatRotateInto,
+  type BoardPose,
+  type Quat,
+} from './board-math.js';
 import type { HeadPose } from './placement.js';
 
 /**
@@ -34,13 +42,13 @@ export function createMutablePose(): MutablePose {
 
 /**
  * A panel beside the HUD: the HUD center (see hudPose) moved `sideX` meters
- * along board-local +X, facing `head`; written into `out`.
+ * along board-local +X and `lift` meters up, facing `head`; written into `out`.
  */
-function besideHudPoseInto(board: BoardPose, head: Vec3, sideX: number, out: MutablePose): MutablePose {
+function besideHudPoseInto(board: BoardPose, head: Vec3, sideX: number, out: MutablePose, lift = 0): MutablePose {
   const p = out.position;
   quatRotateInto(board.quaternion, sideX, 0, -(board.radius + HUD_GAP), p);
   p[0] += board.center[0];
-  p[1] += board.center[1] + HUD_LIFT;
+  p[1] += board.center[1] + HUD_LIFT + lift;
   p[2] += board.center[2];
   quatLookAtInto(p, head, out.quaternion);
   return out;
@@ -119,12 +127,21 @@ export function rimButtonPose(board: BoardPose, head: HeadPose): Pose {
 export const LEVEL_SELECT_SIZE = { width: 0.46, height: 0.28 } as const;
 /** Distance of the level-select panel from the head (meters): a fingertip reaches it. */
 export const LEVEL_SELECT_DISTANCE = 0.45;
+/** Gap (meters) between the level-select panel's lower edge and the tops of the board's grab colliders. */
+export const LEVEL_SELECT_BOARD_CLEARANCE = 0.015;
 
 /**
  * The level-select panel: LEVEL_SELECT_DISTANCE from the head along the line
  * from the head to the board center, facing the head. It sits where the
  * player is already looking (the board) and within poke reach; while open it
  * may cover the board.
+ *
+ * When the board is that close (the floating fallback board, 0.45 m ahead
+ * and 0.2 m down), a panel aimed at its center would dip into the board's
+ * near half, and the planets there would stand between the eyes and the
+ * panel's bottom row (Settings), taking the gaze or the ray aimed at it. The
+ * aim then rises, keeping the heading, until the lower edge clears the
+ * colliders' tops by LEVEL_SELECT_BOARD_CLEARANCE.
  */
 export function levelSelectPose(board: BoardPose, head: HeadPose): Pose {
   const [hx, hy, hz] = head.position;
@@ -139,6 +156,19 @@ export function levelSelectPose(board: BoardPose, head: HeadPose): Pose {
     dx /= d;
     dy /= d;
     dz /= d;
+  }
+  // The panel faces the head, so at aim elevation t its lower edge is
+  // D sin t - (H / 2) cos t above the eyes. Keep that at or above `floor`.
+  const half = LEVEL_SELECT_SIZE.height / 2;
+  const floor = board.center[1] + colliderLocalRadius(board.radius) * board.radius + LEVEL_SELECT_BOARD_CLEARANCE - hy;
+  const horizontal = Math.hypot(dx, dz);
+  const reach = Math.hypot(LEVEL_SELECT_DISTANCE, half);
+  if (horizontal > 1e-6 && LEVEL_SELECT_DISTANCE * dy - half * horizontal < floor && Math.abs(floor) < reach) {
+    const t = Math.atan2(half, LEVEL_SELECT_DISTANCE) + Math.asin(floor / reach);
+    const c = Math.cos(t) / horizontal;
+    dx *= c;
+    dz *= c;
+    dy = Math.sin(t);
   }
   const position: Vec3 = [
     hx + dx * LEVEL_SELECT_DISTANCE,
@@ -155,18 +185,25 @@ export const SANDBOX_PANEL_GAP = 0.02;
 
 /** Board-local +X offset of the Your Table panel center from the HUD center (meters). */
 const SANDBOX_PANEL_SIDE = HUD_SIZE.width / 2 + SANDBOX_PANEL_GAP + SANDBOX_PANEL_SIZE.width / 2;
+/**
+ * Height of the Your Table panel center above the HUD center (meters,
+ * negative: below): the two top edges line up. Centered on the HUD, the
+ * taller panel's top corner reached 25° above the view axis of a seated
+ * player looking at the table board, the Meta VR Glasses' upper limit.
+ */
+const SANDBOX_PANEL_LIFT = (HUD_SIZE.height - SANDBOX_PANEL_SIZE.height) / 2;
 
 /**
  * The Your Table panel: beside the HUD beyond the far rim, on the player's
- * right (board-local +X), at the HUD's height, facing the head.
+ * right (board-local +X), its top edge level with the HUD's, facing the head.
  */
 export function sandboxPanelPose(board: BoardPose, head: HeadPose): Pose {
-  return besideHudPoseInto(board, head.position, SANDBOX_PANEL_SIDE, createMutablePose());
+  return besideHudPoseInto(board, head.position, SANDBOX_PANEL_SIDE, createMutablePose(), SANDBOX_PANEL_LIFT);
 }
 
 /** sandboxPanelPose for the head position `head`, written into `out` (no allocation). */
 export function sandboxPanelPoseInto(board: BoardPose, head: Vec3, out: MutablePose): MutablePose {
-  return besideHudPoseInto(board, head, SANDBOX_PANEL_SIDE, out);
+  return besideHudPoseInto(board, head, SANDBOX_PANEL_SIDE, out, SANDBOX_PANEL_LIFT);
 }
 
 /**
