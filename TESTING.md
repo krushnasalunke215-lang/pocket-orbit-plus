@@ -55,17 +55,22 @@ For each item, write down what happened. Short notes are fine.
    board's near edge). Press it once with a fingertip, and once by pinching
    while pointing at it. Did each launch the comet exactly once?
 6. **Real objects (Your Table).** Press **Levels**, then **Your Table**, then
-   **Make well**. Pinch Make well with the hand you will point with: the
-   aiming circle (the reticle) follows that hand (a fingertip press uses the
-   hand that pinched last). Stand each object on the board, inside its rim:
-   an object beside the board gives "Off the board". Stand a mug on the
-   board and point your hand at its top. Before you
+   **Make well**, by pinching while pointing at it or with a fingertip,
+   using the hand you will point with: the aiming circle (the reticle)
+   follows the hand that pressed it. Stand each object on the board, inside
+   its rim: an object beside the board gives "Off the board". Stand a mug on
+   the board and point your hand at its top. Before you
    pinch, write down the overlay's hit line
    (`hit .. cm above board | jitter .. mm`). Then pinch: did the glowing
-   well ring sit on the mug? Repeat with a bottle and a book (press Make
-   well again each time). There is room for 3 wells: if the panel says
-   "Max 3 wells", press **Clear wells** and carry on. Measure each object's
-   real height with a ruler. Report a small table:
+   well ring sit on the mug? That pinch should only place the well, even
+   when a button of the main panel or the Your Table panel is behind the
+   mug. If it also pressed one (the comet launched, the wells were cleared,
+   or you were back at the levels), write that down. If the panel says
+   "Nothing in reach", your hand pointed at nothing close enough when you
+   pinched: aim at the object and press Make well again. Repeat with a
+   bottle and a book (press Make well again each time). There is room for 3
+   wells: if the panel says "Max 3 wells", press **Clear wells** and carry
+   on. Measure each object's real height with a ruler. Report a small table:
 
    | Object | Ruler height (cm) | Overlay height (cm) | Jitter (mm) | Ring on the object? |
    | ------ | ----------------- | ------------------- | ----------- | ------------------- |
