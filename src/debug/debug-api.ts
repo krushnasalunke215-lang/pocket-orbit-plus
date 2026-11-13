@@ -1,4 +1,4 @@
-import { DepthOccludable, DepthSensingSystem, Grabbed, Hovered, Vector3, type World } from '@iwsdk/core';
+import { DepthOccludable, DepthSensingSystem, Grabbed, Hovered, Quaternion, Vector3, type World } from '@iwsdk/core';
 import { OUTLINES } from '../render/halo-sprites.js';
 import { HIGH_CONTRAST, MOTION_TIME, OCCLUSION_UNIFORMS } from '../render/shaders/common.js';
 import { HIT_LOG_SIZE as HIT_LOG_CAPACITY } from '../xr/runtime.js';
@@ -245,6 +245,11 @@ export interface GameDebugApi {
   hudScreenPoint(elementId?: string): ScreenPoint | null;
   /** World position (meters) of a HUD, near-rim button or level-select element's center. */
   uiWorldPoint(elementId: string): Triple | null;
+  /**
+   * World corners (meters) of each panel from its world pose and UIKit size,
+   * and whether it is shown, for the Meta VR Glasses fit check.
+   */
+  panelCorners(): Record<'hud' | 'rimButton' | 'levelSelect' | 'sandboxPanel', { shown: boolean; corners: Triple[] } | null>;
   /** Fresh-save onboarding: ghostHandDone false and the attract loop on again (no interaction yet). */
   resetOnboarding(): void;
   /** Names (URLs) of every resource the page has loaded (Resource Timing). */
@@ -665,6 +670,36 @@ export function installDebugApi(world: World): GameDebugApi {
       if (!element) return null;
       element.updateWorldMatrix(true, false);
       return triple(new Vector3().setFromMatrixPosition(element.matrixWorld));
+    },
+
+    panelCorners() {
+      const corners = (
+        panel: HudRuntime | RimButtonRuntime | LevelSelectRuntime | SandboxPanelRuntime | undefined,
+        shown: boolean,
+      ) => {
+        const size = panelSize(panel);
+        if (!panel || !size) return null;
+        const object = panel.entity.object3D!;
+        object.updateWorldMatrix(true, false);
+        const center = object.getWorldPosition(new Vector3());
+        const q = object.getWorldQuaternion(new Quaternion());
+        return {
+          shown,
+          corners: [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) =>
+            triple(new Vector3((sx * size[0]) / 2, (sy * size[1]) / 2, 0).applyQuaternion(q).add(center)),
+          ),
+        };
+      };
+      const hud = getHud(world);
+      const rim = getRimButton(world);
+      const levels = getLevelSelect(world);
+      const sandbox = getSandboxPanel(world);
+      return {
+        hud: corners(hud, Boolean(hud)),
+        rimButton: corners(rim, rim?.shown ?? false),
+        levelSelect: corners(levels, levels?.open ?? false),
+        sandboxPanel: corners(sandbox, sandbox?.shown ?? false),
+      };
     },
 
     resetOnboarding() {

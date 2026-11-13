@@ -19,11 +19,14 @@ import {
   rayGrab,
   rayMoveTo,
   reloadPage,
+  restoreEmulatorDevice,
   round,
+  setEmulatorDevice,
   snapshot,
   toWorld,
   vec,
   waitFor,
+  waitForEmulatorDevice,
   waitNotFlying,
   xr,
 } from './xr-helpers.mjs';
@@ -1577,6 +1580,375 @@ export async function accessibilitySettings({ tableHead, takeShot }) {
     restored,
     shots: { panelShot, audioShot, leftShot, contrastOffShot, contrastShot, trailShot, chapterShot },
   };
+}
+
+/** The Meta VR Glasses view from the view axis (degrees), and the margin every checked point keeps inside it. */
+export const GLASSES_VIEW = { side: 37, up: 25, down: 43, marginDeg: 1 };
+
+/** Angles (degrees) of world point p from the view axis of headset transform t: horizontal (+ right) and vertical (+ up). */
+function viewAngles(t, p) {
+  const { x, y, z, w } = t.orientation;
+  const d = [p[0] - t.position.x, p[1] - t.position.y, p[2] - t.position.z];
+  // Rotate d by the conjugate of the head orientation (world to head frame).
+  const qx = -x, qy = -y, qz = -z;
+  const tx = 2 * (qy * d[2] - qz * d[1]);
+  const ty = 2 * (qz * d[0] - qx * d[2]);
+  const tz = 2 * (qx * d[1] - qy * d[0]);
+  const lx = d[0] + w * tx + (qy * tz - qz * ty);
+  const ly = d[1] + w * ty + (qz * tx - qx * tz);
+  const lz = d[2] + w * tz + (qx * ty - qy * tx);
+  const DEG = 180 / Math.PI;
+  return { h: Math.atan2(lx, -lz) * DEG, v: Math.atan2(ly, -lz) * DEG };
+}
+
+/** Horizontal and vertical angle ranges of `points` and the smallest margin to the glasses' view edges. */
+function fitOf(t, points) {
+  const a = points.map((p) => viewAngles(t, p));
+  const hs = a.map((x) => x.h);
+  const vs = a.map((x) => x.v);
+  const margin = Math.min(...a.map(({ h, v }) => Math.min(GLASSES_VIEW.side - Math.abs(h), GLASSES_VIEW.up - v, v + GLASSES_VIEW.down)));
+  return {
+    points: points.length,
+    h: [round(Math.min(...hs), 1), round(Math.max(...hs), 1)],
+    v: [round(Math.min(...vs), 1), round(Math.max(...vs), 1)],
+    marginDeg: round(margin, 1),
+    fits: margin >= GLASSES_VIEW.marginDeg,
+  };
+}
+
+/**
+ * Glasses view angles of every surface shown now, from the current headset
+ * pose: the board (16 rim points), and the corners of the HUD, the near-rim
+ * button, the level select (or its Settings page) and the Your Table panel.
+ */
+function measureFit(label) {
+  const head = xr('get-transform', { device: 'headset' });
+  const snap = snapshot();
+  const panels = game('panelCorners').value;
+  const rim = Array.from({ length: 16 }, (_, k) => toWorld(snap.board, [Math.cos((2 * Math.PI * k) / 16), 0, Math.sin((2 * Math.PI * k) / 16)]));
+  const surfaces = { board: fitOf(head, rim) };
+  const names = { hud: 'hud', rimButton: 'rimButton', levelSelect: snap.levelSelect.page === 'settings' ? 'settings' : 'levelSelect', sandboxPanel: 'yourTable' };
+  for (const [key, name] of Object.entries(names)) {
+    if (panels[key]?.shown) surfaces[name] = fitOf(head, panels[key].corners);
+  }
+  return {
+    label,
+    head: { position: round([head.position.x, head.position.y, head.position.z], 3), orientation: round([head.orientation.x, head.orientation.y, head.orientation.z, head.orientation.w], 3) },
+    boardSource: snap.board.source,
+    boardRadius: round(snap.board.radius),
+    surfaces,
+  };
+}
+
+/**
+ * One gaze-plus-pinch press: the gaze aims at the element's center, the
+ * hovered entities are read, then `hand` pinches (a default-length select,
+ * a click). `done(snapshot)` judges the effect; returns the evidence.
+ */
+async function gazePress(elementId, done, hand = DEVICE) {
+  const point = game('uiWorldPoint', elementId).value;
+  if (!point) return { id: elementId, hand, point: null, hovered: [], ok: false };
+  xr('look-at', { device: 'gaze', target: vec(point) });
+  await sleep(500);
+  const hovered = hoveredNames();
+  xr('select', { device: hand });
+  await sleep(700);
+  let s = snapshot();
+  let ok = Boolean(done(s));
+  if (!ok) {
+    // A slow frame can land the effect a moment later.
+    await sleep(800);
+    s = snapshot();
+    ok = Boolean(done(s));
+  }
+  return { id: elementId, hand, point: round(point, 3), hovered, ok };
+}
+
+/**
+ * Meta VR Glasses (iwsdk-glasses-test): switches the emulator to the
+ * metaVRGlasses profile (iwsdk.config.json; Vite restarts in place), checks
+ * gaze-tracking, then measures every surface against the glasses' view at
+ * the fallback pose (head 1.2 m above the floor, level gaze: the geometry
+ * tests' default seated pose) and seated at the coffee table looking at the
+ * board, with field-of-view-masked screenshots. At the table, level 1 is
+ * solved and every in-XR button pressed by gaze plus a right-hand pinch:
+ * HUD Replay, Next, Levels and Play again, the near-rim button, the six
+ * level buttons, Your Table, Settings and Close, every Settings button and
+ * every Your Table button; one press uses the left hand, and with gaze
+ * disconnected the hand ray selects again. (The HUD's Enter AR button is
+ * hidden in XR.) Settings return to the defaults and the device to the
+ * one before, also on failure.
+ */
+export async function glassesFit({ tableHead, fallbackHead, takeShot }) {
+  if (xr('status').sessionActive) await exitXR();
+  const started = Date.now();
+  const deviceBefore = setEmulatorDevice('metaVRGlasses');
+  const presses = [];
+  const fits = [];
+  const shots = {};
+  const handsDown = (head) => {
+    for (const [device, dx] of [['hand-left', -0.3], ['hand-right', 0.3]]) {
+      xr('set-transform', { device, position: { x: head.x + dx, y: head.y - 0.45, z: head.z - 0.05 } });
+      xr('look-at', { device, target: { x: head.x + dx * 2, y: 0, z: head.z } });
+    }
+  };
+  const seatAt = async (head, lookAtBoard) => {
+    xr('set-transform', { device: 'headset', position: head, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+    await sleep(300);
+    if (lookAtBoard) xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+    handsDown(head);
+    await sleep(500);
+  };
+  const press = async (id, done, hand) => {
+    const r = await gazePress(id, done, hand);
+    presses.push(r);
+    return r;
+  };
+  const openLevels = async () => {
+    if (!snapshot().levelSelect.open) await press('levels-button', (s) => s.levelSelect.open);
+    await sleep(600);
+  };
+  let result;
+  try {
+    const ready = await waitForEmulatorDevice('Meta VR Glasses');
+    const restartMs = Date.now() - started;
+    game('audio.setSettings', DEFAULT_TEST_SETTINGS);
+
+    // 1. The profile, with a session.
+    let status = await enterXR();
+    const deviceState = xr('get-device-state');
+    const device = {
+      before: deviceBefore,
+      deviceName: status.deviceName ?? ready.deviceName,
+      sessionActive: status.sessionActive,
+      sessionMode: status.sessionMode,
+      gazeGranted: (status.enabledFeatures ?? []).includes('gaze-tracking'),
+      enabledFeatures: status.enabledFeatures,
+      gazeConnected: deviceState.gaze?.connected === true,
+      restartMs,
+    };
+
+    // 2. The fallback pose: level gaze, the board 0.45 m ahead.
+    xr('set-transform', { device: 'headset', position: fallbackHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+    await exitXR();
+    await enterXR();
+    await game('loadLevel', 0);
+    await seatAt(fallbackHead, false);
+    fits.push(measureFit('fallback: level 1'));
+    await openLevels();
+    fits.push(measureFit('fallback: level select'));
+    await press('settings-button', (s) => s.levelSelect.page === 'settings');
+    await sleep(300);
+    fits.push(measureFit('fallback: Settings page'));
+    shots.fallbackSettings = takeShot('iwer-glasses-fallback-settings.png');
+    await press('settings-back', (s) => s.levelSelect.page === 'levels');
+    await press('sandbox-button', (s) => s.mode === 'sandbox' && s.sandbox.panel.shown);
+    await sleep(800);
+    fits.push(measureFit('fallback: Your Table'));
+    shots.fallbackYourTable = takeShot('iwer-glasses-fallback-your-table.png');
+    await press('exit-sandbox', (s) => s.mode === 'story');
+
+    // 3. Seated at the coffee table, looking at the board (the table plane).
+    xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+    await exitXR();
+    status = await enterXR();
+    await game('loadLevel', 0);
+    await sleep(500);
+    await seatAt(tableHead, true);
+    fits.push(measureFit('table: level 1'));
+    shots.table = takeShot('iwer-glasses-table.png');
+
+    // 4. Level 1 by gaze plus pinch: the gaze picks planet 1, the right
+    // hand pinches and carries it (a gaze-started grab follows the hand).
+    const levels = game('levels').value;
+    let snap = snapshot();
+    const body = snap.bodies.find((b) => b.movable);
+    const solution = levels[0].solution[body.id];
+    const hoverBefore = hoveredNames();
+    xr('look-at', { device: 'gaze', target: vec(body.world) });
+    await sleep(600);
+    const hoverPlanet = hoveredNames();
+    const attemptsBefore = snap.attempts;
+    xr('set-select-value', { device: DEVICE, value: 1 });
+    await sleep(700);
+    snap = snapshot();
+    const heldAfterPinch = Boolean(bodyOf(snap, body.id)?.held);
+    let reached = bodyOf(snap, body.id).board;
+    let heldWhileMoving = false;
+    if (heldAfterPinch) {
+      const goal = toWorld(snap.board, [solution[0], 0, solution[1]]);
+      const h = xr('get-transform', { device: DEVICE }).position;
+      const hand = [h.x, h.y, h.z];
+      let planet = bodyOf(snap, body.id).world;
+      for (let i = 0; i < 6; i++) {
+        hand[0] += goal[0] - planet[0];
+        hand[2] += goal[2] - planet[2];
+        xr('set-transform', { device: DEVICE, position: vec(hand) });
+        await sleep(800);
+        const b = bodyOf(snapshot(), body.id);
+        heldWhileMoving = b.held;
+        planet = b.world;
+        reached = b.board;
+        if (Math.hypot(solution[0] - reached[0], solution[1] - reached[2]) <= 0.005) break;
+      }
+    }
+    xr('set-select-value', { device: DEVICE, value: 0 });
+    const solvedSnap = await waitFor('level 1 solved', () => {
+      const s = snapshot();
+      return s.solved ? s : null;
+    }, 60_000).catch(() => null);
+    const end = solvedSnap ?? snapshot();
+    const level1 = {
+      body: body.id,
+      hoverBefore,
+      hoverPlanet,
+      heldAfterPinch,
+      heldWhileMoving,
+      error: round(Math.hypot(solution[0] - reached[0], solution[1] - reached[2])),
+      attempts: [attemptsBefore, end.attempts],
+      solved: Boolean(solvedSnap),
+      stars: end.stars.last,
+      outcome: end.lastOutcome,
+    };
+    await seatAt(tableHead, true);
+    shots.level1Solved = takeShot('iwer-glasses-l1-solved.png');
+
+    // 5. The HUD and the near-rim button.
+    let base = snapshot().attempts;
+    await press('launch-button', (s) => s.attempts === base + 1);
+    await waitNotFlying(60_000).catch(() => null);
+    base = snapshot().attempts;
+    await press('rim-launch-button', (s) => s.attempts === base + 1);
+    await waitNotFlying(60_000).catch(() => null);
+    await waitFor('level 1 solved again', () => snapshot().solved, 10_000, 300).catch(() => null);
+    await press('next-button', (s) => s.level.index === 1);
+    await sleep(500);
+
+    // 6. The level select: measured open, then every level button.
+    await openLevels();
+    fits.push(measureFit('table: level select'));
+    shots.levelSelect = takeShot('iwer-glasses-level-select.png');
+    for (let i = 1; i <= levels.length; i++) {
+      await openLevels();
+      await press(`level-${i}`, (s) => s.level.index === i - 1 && !s.levelSelect.open);
+      await sleep(400);
+    }
+    await openLevels();
+    await press('close-levels', (s) => !s.levelSelect.open, 'hand-left');
+
+    // 7. The Settings page: measured, every button, a screenshot with the labels on.
+    await openLevels();
+    await press('settings-button', (s) => s.levelSelect.page === 'settings');
+    await sleep(300);
+    fits.push(measureFit('table: Settings page'));
+    const set = () => snapshot().accessibility.settings;
+    const settingsBefore = set();
+    const steps = [
+      ['left-handed-button', (s) => s.accessibility.settings.leftHanded === !settingsBefore.leftHanded],
+      ['contrast-button', (s) => s.accessibility.settings.highContrast === !settingsBefore.highContrast],
+      ['motion-button', (s) => s.accessibility.settings.reducedMotion === !settingsBefore.reducedMotion],
+      ['board-size-button', (s) => s.accessibility.settings.boardSize !== settingsBefore.boardSize],
+      ['mute-button', (s) => s.accessibility.settings.muted === !settingsBefore.muted],
+      ['volume-down', (s) => Math.abs(s.accessibility.settings.volume - (settingsBefore.volume - 0.1)) < 1e-9],
+      ['volume-up', (s) => Math.abs(s.accessibility.settings.volume - settingsBefore.volume) < 1e-9],
+      ['quiet-button', (s) => s.accessibility.settings.quiet === !settingsBefore.quiet],
+    ];
+    for (const [id, done] of steps) await press(id, done);
+    const settingsAfter = set();
+    await seatAt(tableHead, true);
+    shots.settings = takeShot('iwer-glasses-settings.png');
+    game('audio.setSettings', DEFAULT_TEST_SETTINGS);
+    await sleep(700);
+    await press('settings-back', (s) => s.levelSelect.page === 'levels');
+
+    // 8. Your Table: measured beside the HUD, then every button.
+    await press('sandbox-button', (s) => s.mode === 'sandbox' && s.sandbox.panel.shown);
+    await sleep(800);
+    await seatAt(tableHead, true);
+    fits.push(measureFit('table: Your Table'));
+    shots.yourTable = takeShot('iwer-glasses-your-table.png');
+    await press('make-well', (s) => s.sandbox.armed && s.sandbox.armHand === 'right');
+    // The confirming pinch: the right hand points at the board from the
+    // chest (the reticle follows that hand's ray); the gaze rests on empty
+    // space above the HUD, so the pinch selects no planet or button.
+    const center = snapshot().board.center;
+    const hudAt = snapshot().hud.position;
+    handAtChest(DEVICE);
+    xr('look-at', { device: DEVICE, target: vec(center) });
+    xr('look-at', { device: 'gaze', target: { x: hudAt[0], y: hudAt[1] + 0.5, z: hudAt[2] } });
+    await sleep(1200);
+    const wellsBefore = snapshot().sandbox.wells.length;
+    xr('select', { device: DEVICE });
+    await sleep(900);
+    snap = snapshot();
+    const confirm = { wells: [wellsBefore, snap.sandbox.wells.length], armedAfter: snap.sandbox.armed, kinds: snap.sandbox.wells.map((w) => w.kind), status: snap.sandbox.status };
+    handsDown(tableHead);
+    await sleep(500);
+    let pucks = snapshot().sandbox.pucks;
+    await press('add-puck', (s) => s.sandbox.pucks === pucks + 1);
+    const heightOf = (s) => s.sandbox.wells.find((w) => w.id === s.sandbox.selectedId)?.heightM ?? null;
+    const h0 = heightOf(snapshot());
+    await press('height-down', (s) => h0 !== null && Math.abs(heightOf(s) - (h0 - 0.01)) < 1e-6);
+    await press('height-up', (s) => h0 !== null && Math.abs(heightOf(s) - h0) < 1e-6);
+    await press('clear-wells', (s) => s.sandbox.wells.length === 0);
+    const target = snapshot().sandbox.targetId;
+    await press('next-target', (s) => s.sandbox.targetId !== target);
+    await press('exit-sandbox', (s) => s.mode === 'story');
+
+    // 9. Play again, in the chapter-complete moment after level 6.
+    await game('loadLevel', levels.length - 1);
+    await sleep(500);
+    game('setPlacements', levels[levels.length - 1].solution);
+    game('launch');
+    await waitFor('level 6 solved', () => snapshot().solved, 120_000, 500).catch(() => null);
+    await seatAt(tableHead, true);
+    await press('next-button', (s) => s.chapterComplete.shown);
+    await sleep(800);
+    await press('play-again-button', (s) => !s.chapterComplete.shown && s.level.index === 0);
+
+    // 10. Gaze disconnected: the hand ray selects; reconnected, gaze targets again.
+    await seatAt(tableHead, true);
+    xr('set-connected', { device: 'gaze', connected: false });
+    await sleep(800);
+    const offState = xr('get-device-state').gaze?.connected ?? null;
+    const handClick = await rayClick('levels-button');
+    const openedByHand = snapshot().levelSelect.open;
+    xr('set-connected', { device: 'gaze', connected: true });
+    await sleep(1000);
+    const onState = xr('get-device-state').gaze?.connected ?? null;
+    const closeByGaze = await gazePress('close-levels', (s) => !s.levelSelect.open);
+    handsDown(tableHead);
+    const fallback = { gazeConnected: [offState, onState], handHovered: handClick.hovered, openedByHand, closeByGaze };
+
+    // 11. The console's gaze lines and errors.
+    let gazeLines = [];
+    let errors = null;
+    let logShape = null;
+    try {
+      const logs = call(['browser', 'logs'], { input: { count: 200 } });
+      gazeLines = [...new Set(JSON.stringify(logs).match(/\[iwsdk\]\[gaze\][^"\\]*/g) ?? [])];
+      const entries = [logs?.result?.logs, logs?.logs, logs?.result?.entries, logs?.entries, logs?.result].find(Array.isArray);
+      logShape = entries ? null : Object.keys(logs?.result ?? logs ?? {});
+      errors = entries ? entries.filter((e) => e?.level === 'error' || e?.type === 'error').map((e) => String(e.text ?? e.message ?? '').slice(0, 200)) : null;
+    } catch (error) {
+      logShape = String(error?.message ?? error).slice(0, 300);
+    }
+
+    game('audio.setSettings', DEFAULT_TEST_SETTINGS);
+    await sleep(300);
+    const restoredSettings = set();
+    await exitXR().catch(() => null);
+    result = { device, fits, level1, presses, confirm, settingsBefore, settingsAfter, restoredSettings, fallback, gazeLines, errors, shots };
+  } finally {
+    if (restoreEmulatorDevice() && deviceBefore) {
+      const name = { metaQuest3: 'Meta Quest 3' }[deviceBefore];
+      if (name) {
+        const back = await waitForEmulatorDevice(name).catch((error) => ({ error: String(error?.message ?? error) }));
+        if (result) result.restored = { deviceName: back.deviceName ?? null, error: back.error ?? null };
+      }
+    }
+  }
+  return result;
 }
 
 /** Most XR render counts over `ms` of the current view with depth occlusion on or off. */

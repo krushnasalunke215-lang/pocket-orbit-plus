@@ -53,7 +53,8 @@ npm run typecheck
 npm test              # vitest unit tests
 npm run build
 npm run test:e2e      # Playwright, desktop mouse play against a dist-e2e build
-npm run verify:iwer   # IWER emulated Quest 3 session in a synthetic room
+npm run verify:iwer   # IWER emulated Quest 3 session in a synthetic room; the last group
+                      # (glasses) switches iwsdk.config.json to the Meta VR Glasses profile and back
 npm run build:pages && npm run smoke:pages   # Pages base path /pocket-orbit-plus/: no 4xx, no external requests
 npm run build         # afterwards, so dist/ matches the default base again
 npm.cmd run solve -- c1-l1   # print robust solutions of a level (PowerShell)

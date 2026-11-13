@@ -37,6 +37,7 @@ const METHODS = new Set([
   'clearSave',
   'resetOnboarding',
   'uiWorldPoint',
+  'panelCorners',
   'hold.atFraction',
   'hold.ghost',
   'hold.read',

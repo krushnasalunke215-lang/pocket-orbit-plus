@@ -1,6 +1,6 @@
 // Shared helpers for driving the IWER managed runtime: XR device calls,
 // whitelisted window.__game calls, polling, and hand-ray grab/drag steps.
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { tsImport } from 'tsx/esm/api';
 import { call, root, run, sleep } from './cli.mjs';
@@ -95,6 +95,49 @@ export async function navigateSearch(search) {
   }, 120_000, 1000);
   await waitFor('the XR runtime after navigation', () => xr('status').sessionOffered, 60_000, 1000);
   return { snapshot: fresh, search: game('page.search').value, navigateMs: Date.now() - before };
+}
+
+const CONFIG = path.join(root, 'iwsdk.config.json');
+let configBefore = null;
+
+/**
+ * Selects the IWER emulator device (`dev.emulator.device` in
+ * iwsdk.config.json; the CLI has no flag for it). Vite restarts in place and
+ * the managed page reloads, which ends any XR session. The original file is
+ * kept byte for byte for restoreEmulatorDevice. Returns the device before.
+ */
+export function setEmulatorDevice(device) {
+  const text = readFileSync(CONFIG, 'utf8');
+  const config = JSON.parse(text);
+  const before = config.dev?.emulator?.device ?? null;
+  if (before === device) return before;
+  const next = text.replace(/("device"\s*:\s*)"[^"]*"/, `$1"${device}"`);
+  if (JSON.parse(next).dev?.emulator?.device !== device) throw new Error(`could not set dev.emulator.device in ${CONFIG}`);
+  configBefore ??= text;
+  writeFileSync(CONFIG, next);
+  return before;
+}
+
+/** Writes iwsdk.config.json back as it was before setEmulatorDevice; true when it changed it. */
+export function restoreEmulatorDevice() {
+  if (configBefore === null) return false;
+  writeFileSync(CONFIG, configBefore);
+  configBefore = null;
+  return true;
+}
+
+/** Waits for the restarted runtime: the command bridge, a built desktop page and XR offered by `deviceName`. */
+export async function waitForEmulatorDevice(deviceName, timeoutMs = 240_000) {
+  await sleep(3000);
+  await waitFor('browserCommandReady after the restart', () => call(['dev', 'status']).state?.browserCommandReady, timeoutMs, 1000);
+  await waitFor('a fresh desktop page', () => {
+    const s = snapshot();
+    return s.levelBuilt && s.board.source === 'desktop' ? s : null;
+  }, timeoutMs, 1000);
+  return waitFor(`the XR runtime as ${deviceName}`, () => {
+    const s = xr('status');
+    return s.sessionOffered && s.deviceName === deviceName ? s : null;
+  }, timeoutMs, 1000);
 }
 
 export async function exitXR() {

@@ -14,16 +14,19 @@
 // vr (the immersive-vr fallback, also from a fresh desktop page),
 // debug-overlay (the ?debug=1 tester overlay on desktop and in XR) and
 // level-select-budget (XR draw calls with the level select open over the
-// busiest views, plain and with ?debug=1) and accessibility (the Settings
-// page by ray and poke, and each accessibility mode with its screenshot).
+// busiest views, plain and with ?debug=1), accessibility (the Settings
+// page by ray and poke, and each accessibility mode with its screenshot) and
+// glasses (the Meta VR Glasses profile: every surface inside its view, level
+// 1 and every button by gaze plus pinch, masked screenshots).
 // Setup, placement and the runtime teardown always run; the runtime is always
 // stopped.
 // Usage: npm run verify:iwer
 //        node e2e/iwer/verify-iwer.mjs --only=rim,hands-cdn
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { tsImport } from 'tsx/esm/api';
-import { call, run, sleep } from './cli.mjs';
+import { call, root, run, sleep } from './cli.mjs';
 import {
   dist,
   enterXR,
@@ -33,6 +36,7 @@ import {
   navigateSearch,
   RESULTS,
   rayDrag,
+  restoreEmulatorDevice,
   round,
   screenshot as saveScreenshot,
   SHOTS,
@@ -49,6 +53,8 @@ import {
   handsCdn,
   levelSelectBudget,
   nearPinch,
+  GLASSES_VIEW,
+  glassesFit,
   occlusionCost,
   offBoardRelease,
   onboardingAndLevelSelect,
@@ -68,6 +74,8 @@ const { wellMassForHeight } = await tsImport('../../src/game/real-object.ts', im
 const { WELL_INFLUENCE_RADIUS } = await tsImport('../../src/sim/wells.ts', import.meta.url);
 
 const TABLE_HEAD = { x: 0, y: 1.15, z: -1.2 };
+/** The geometry tests' default seated head (room origin, 1.2 m up, level gaze): the coffee table is out of reach, so the fallback board. */
+const FALLBACK_HEAD = { x: 0, y: 1.2, z: 0 };
 // The cup on the sunlit_living_room coffee table: group at z = -1.95, cup at
 // local [0.08, 0.512, 0.17], a 0.15 m tall cylinder (radius 0.035-0.045).
 const CUP = { x: 0.08, y: 0.512, z: -1.78, height: 0.15, radius: 0.045 };
@@ -97,8 +105,11 @@ const GROUPS = [
   // After vr: it navigates the page to ?debug=1 and back.
   'debug-overlay',
   'level-select-budget',
-  // Last: it changes the saved settings (and restores the defaults).
+  // It changes the saved settings (and restores the defaults).
   'accessibility',
+  // Last: it switches the emulator to the Meta VR Glasses profile (Vite
+  // restarts) and back.
+  'glasses',
 ];
 const ALWAYS = new Set(['placement']);
 
@@ -874,7 +885,121 @@ const GROUP_RUNNERS = {
       r.restored,
     );
   },
+
+  // 21. Meta VR Glasses (iwsdk-glasses-test): the metaVRGlasses emulator
+  // profile, every surface inside its view (37° left/right, 25° up, 43°
+  // down) at the fallback and table poses, level 1 and every in-XR button
+  // by gaze plus pinch, and field-of-view-masked screenshots.
+  async glasses() {
+    if (game('page.search').value !== '') await navigateSearch('');
+    const r = await glassesFit({ tableHead: TABLE_HEAD, fallbackHead: FALLBACK_HEAD, takeShot: (name) => screenshot(name) });
+    summary.data.glasses = r;
+    const d = r.device;
+    check(
+      "glasses: the emulator runs 'Meta VR Glasses' with an immersive-ar session, 'gaze-tracking' granted and a connected gaze source",
+      d.deviceName === 'Meta VR Glasses' && d.sessionActive && d.sessionMode === 'immersive-ar' && d.gazeGranted && d.gazeConnected,
+      { deviceName: d.deviceName, before: d.before, sessionMode: d.sessionMode, gazeGranted: d.gazeGranted, gazeConnected: d.gazeConnected, restartMs: d.restartMs },
+    );
+    const fit = (label) => r.fits.find((f) => f.label === label);
+    const brief = (f) => f && { boardSource: f.boardSource, head: f.head, ...Object.fromEntries(Object.entries(f.surfaces).map(([k, s]) => [k, { h: s.h, v: s.v, marginDeg: s.marginDeg }])) };
+    const allFit = (labels, required) =>
+      labels.every((label) => {
+        const f = fit(label);
+        return f && required[label].every((name) => f.surfaces[name]?.fits);
+      });
+    const FALLBACK = {
+      'fallback: level 1': ['board', 'hud', 'rimButton'],
+      'fallback: level select': ['board', 'hud', 'rimButton', 'levelSelect'],
+      'fallback: Settings page': ['settings'],
+      'fallback: Your Table': ['board', 'hud', 'rimButton', 'yourTable'],
+    };
+    const TABLE = {
+      'table: level 1': ['board', 'hud', 'rimButton'],
+      'table: level select': ['levelSelect'],
+      'table: Settings page': ['settings'],
+      'table: Your Table': ['board', 'hud', 'rimButton', 'yourTable'],
+    };
+    check(
+      `glasses: at the fallback pose (head 1.2 m up, level gaze) the board, HUD, near-rim button, level select, Settings page and Your Table panel fit the view (every corner ${GLASSES_VIEW.marginDeg}° inside)`,
+      fit('fallback: level 1')?.boardSource === 'fallback' && allFit(Object.keys(FALLBACK), FALLBACK),
+      Object.keys(FALLBACK).map((label) => ({ label, ...brief(fit(label)) })),
+    );
+    check(
+      `glasses: seated at the coffee table looking at the board, the same six surfaces fit the view (every corner ${GLASSES_VIEW.marginDeg}° inside)`,
+      fit('table: level 1')?.boardSource === 'table-plane' && allFit(Object.keys(TABLE), TABLE),
+      Object.keys(TABLE).map((label) => ({ label, ...brief(fit(label)) })),
+    );
+    const l = r.level1;
+    check(
+      'glasses: level 1 by gaze plus pinch: the gaze hovers planet 1, a right-hand pinch grabs it, the hand carries it to the solution and the release solves the level',
+      l.hoverPlanet.includes(`Body ${l.body}`) && l.heldAfterPinch && l.heldWhileMoving && l.error <= 0.03 && l.attempts[1] === l.attempts[0] + 1 && l.solved,
+      l,
+    );
+    const PANELS = {
+      hud: ['launch-button', 'next-button', 'levels-button', 'play-again-button'],
+      'rim-button': ['rim-launch-button'],
+      'level-select': ['level-1', 'level-2', 'level-3', 'level-4', 'level-5', 'level-6', 'sandbox-button', 'settings-button', 'close-levels'],
+      settings: ['left-handed-button', 'contrast-button', 'motion-button', 'board-size-button', 'mute-button', 'volume-down', 'volume-up', 'quiet-button', 'settings-back'],
+      'sandbox-panel': ['make-well', 'add-puck', 'height-down', 'height-up', 'clear-wells', 'next-target', 'exit-sandbox'],
+    };
+    const entityOf = { hud: 'hud-panel', 'rim-button': 'rim-button', 'level-select': 'level-select', settings: 'level-select', 'sandbox-panel': 'sandbox-panel' };
+    for (const [panel, ids] of Object.entries(PANELS)) {
+      const records = ids.map((id) => ({ id, presses: r.presses.filter((p) => p.id === id) }));
+      check(
+        `glasses: gaze plus pinch presses every ${panel} button (gaze hovers '${entityOf[panel]}', the pinch clicks, the state changes)`,
+        records.every((x) => x.presses.length > 0 && x.presses.every((p) => p.ok && p.hovered.includes(entityOf[panel]))),
+        records.map((x) => ({ id: x.id, ok: x.presses.map((p) => p.ok), hand: [...new Set(x.presses.map((p) => p.hand))], hovered: x.presses[0]?.hovered })),
+      );
+    }
+    check(
+      'glasses: Make well armed by gaze plus pinch; the next pinch places a well or puck and disarms',
+      r.confirm.wells[1] === r.confirm.wells[0] + 1 && !r.confirm.armedAfter,
+      r.confirm,
+    );
+    const left = r.presses.filter((p) => p.hand === 'hand-left');
+    check('glasses: a left-hand pinch also clicks the gazed button (Close)', left.length > 0 && left.every((p) => p.ok), left);
+    const f = r.fallback;
+    check(
+      'glasses: with gaze disconnected the hand ray clicks Levels; reconnected, gaze targets again and Close closes the panel',
+      f.gazeConnected[0] === false && f.gazeConnected[1] === true && f.handHovered.includes('hud-panel') && f.openedByHand && f.closeByGaze.ok && f.closeByGaze.hovered.includes('level-select'),
+      f,
+    );
+    check(
+      "glasses: the console shows 'gaze-tracking' granted and the gaze source, and no errors",
+      r.gazeLines.some((x) => x.includes('granted')) && r.gazeLines.some((x) => x.includes('XRInputSource appeared')) && (r.errors === null || r.errors.length === 0),
+      { gazeLines: r.gazeLines, errors: r.errors },
+    );
+    check('glasses: field-of-view-masked screenshots saved', Object.values(r.shots).length === 7 && Object.values(r.shots).every(Boolean), r.shots);
+    check(
+      'glasses: settings back to the defaults and the emulator back to the Quest 3 profile',
+      JSON.stringify(r.restoredSettings) === JSON.stringify(DEFAULT_TEST_SETTINGS) && r.restored?.deviceName === 'Meta Quest 3',
+      { settings: r.restoredSettings, restored: r.restored },
+    );
+  },
 };
+
+/**
+ * After the glasses group's in-place Vite restarts (it edits
+ * iwsdk.config.json), `dev down` reports the runtime stopped but leaves the
+ * first Vite process running with no listener, and its npm wrapper waiting
+ * on it. Stops this workspace's Vite processes (the wrapper then exits) and
+ * returns their ids. Windows only, like the rest of this runner's setup.
+ */
+function stopOrphanVite() {
+  if (process.platform !== 'win32') return [];
+  const script = [
+    `$root = '${root.replaceAll("'", "''").toLowerCase()}'`,
+    "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" |",
+    "  Where-Object { $_.CommandLine -and $_.CommandLine.ToLower().Contains($root) -and $_.CommandLine -match 'vite[\\\\/]bin[\\\\/]vite\\.js' } |",
+    '  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.ProcessId }',
+  ].join('\n');
+  try {
+    const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 60_000 });
+    return out.split(/\s+/).filter(Boolean).map(Number);
+  } catch (error) {
+    return [`failed: ${String(error?.message ?? error).slice(0, 200)}`];
+  }
+}
 
 async function main() {
   const selected = selectedGroups(process.argv.slice(2));
@@ -932,6 +1057,8 @@ try {
   summary.error = String(error?.stack ?? error);
   console.error(error);
 } finally {
+  // The glasses group restores iwsdk.config.json itself; this covers a crash.
+  if (restoreEmulatorDevice()) console.log('restored dev.emulator.device in iwsdk.config.json');
   try {
     run(['xr', 'exit'], { input: {} });
   } catch {
@@ -953,6 +1080,7 @@ try {
   }
   summary.runtimeStopped = !stillRunning;
   if (stillRunning) exitCode = 1;
+  else if (summary.groups.includes('glasses')) summary.orphanViteStopped = stopOrphanVite();
   writeFileSync(path.join(RESULTS, 'verify-iwer-summary.json'), JSON.stringify(summary, null, 2));
   const { planes: _planes, ...printed } = summary.data; // full list stays in the summary file
   console.log(JSON.stringify({ ok: summary.ok && exitCode === 0, groups: summary.groups, checks: summary.checks.length, failed: summary.checks.filter((c) => !c.pass).map((c) => c.name), runtimeStopped: summary.runtimeStopped, error: summary.error }, null, 2));
