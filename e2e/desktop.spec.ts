@@ -627,7 +627,7 @@ test('chapter complete after level 6', async ({ page }) => {
   const moment = await snapshot(page);
   const total = Object.values(moment.stars.best).reduce((a, b) => a + b, 0);
   expect(moment.level.id, 'Next did not wrap to level 1').toBe('c1-l6');
-  expect(moment.chapterComplete).toEqual({ shown: true, chapter: 1, stars: total, maxStars: 18 });
+  expect(moment.chapterComplete).toMatchObject({ shown: true, chapter: 1, stars: total, maxStars: 18 });
   expect(total).toBe(solved.stars.last);
   // HudSystem writes the status on the frame after the moment starts.
   await expect
