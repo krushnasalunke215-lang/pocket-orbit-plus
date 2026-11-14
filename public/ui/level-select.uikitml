@@ -16,7 +16,9 @@
   settings-page: the accessibility settings (left-handed, high contrast,
   reduced motion, board size) and the audio settings (mute, volume, quiet).
   Each toggle's label shows its state ("...: on" / "...: off"); Board
-  cycles small, medium and large. Room view (header, beside Back, so the
+  cycles small, medium and large. Comic style: an ink border on the panel,
+  yellow titles on ink badges, bold buttons with ink borders and dark labels.
+  Room view (header, beside Back, so the
   page keeps its size) cycles Mixed, Space and Room. Back returns to the
   levels page.
 -->
@@ -29,6 +31,9 @@
     padding-left: 14;
     padding-right: 14;
     gap: 8;
+    border-width: 3;
+    border-color: #101018;
+    border-radius: 14;
   }
 
   .page {
@@ -43,9 +48,17 @@
   }
 
   .title {
-    color: #fafaf7;
+    color: #ffd23f;
     font-size: 26;
     font-weight: 700;
+    background-color: #101018;
+    border-width: 3;
+    border-color: #ff5a1f;
+    border-radius: 8;
+    padding-left: 8;
+    padding-right: 8;
+    padding-top: 1;
+    padding-bottom: 1;
   }
 
   .header-buttons {
@@ -66,11 +79,17 @@
     justify-content: center;
     align-items: center;
     gap: 3;
+    background-color: #7fd8ff;
+    border-width: 3;
+    border-color: #101018;
+    border-radius: 16;
+    color: #101018;
   }
 
   .level-label {
     font-size: 17;
     line-height: 1.2;
+    font-weight: 700;
   }
 
   .stars {
@@ -83,6 +102,8 @@
     height: 12;
     border-radius: 6;
     background-color: #5b6170;
+    border-width: 2;
+    border-color: #101018;
   }
 
   .settings-row {
@@ -94,12 +115,20 @@
   .small-button {
     height: 44;
     justify-content: center;
+    background-color: #7fd8ff;
+    border-width: 3;
+    border-color: #101018;
+    color: #101018;
   }
 
   .wide-button {
     height: 44;
     flex-grow: 1;
     justify-content: center;
+    background-color: #7fd8ff;
+    border-width: 3;
+    border-color: #101018;
+    color: #101018;
   }
 
   .toggle-button {
@@ -107,11 +136,16 @@
     flex-grow: 1;
     flex-basis: 0;
     justify-content: center;
+    background-color: #ffd23f;
+    border-width: 3;
+    border-color: #101018;
+    color: #101018;
   }
 
   .small-label {
     font-size: 17;
     line-height: 1.2;
+    font-weight: 700;
   }
 
   .value {

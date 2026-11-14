@@ -35,7 +35,8 @@ const HEAD_MOVE_EPS = 0.02;
 const FORWARD: readonly [number, number, number] = [0, 0, -1];
 /** Text colors as authored in hud.uikitml, and the high-contrast ones (pure white, bold). */
 const INFO_COLOR = '#dddfe3';
-const TITLE_COLOR = '#fafaf7';
+/** The comic title badge's yellow (white with high contrast). */
+const TITLE_COLOR = '#ffd23f';
 const CONTRAST_COLOR = '#ffffff';
 
 const FAILURE_TEXT: Record<Exclude<SimOutcome, 'solved'>, string> = {

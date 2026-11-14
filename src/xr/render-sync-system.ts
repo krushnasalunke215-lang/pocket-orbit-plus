@@ -3,6 +3,7 @@ import { colliderLocalRadius } from '../game/board-math.js';
 import type { GamePhase } from '../game/controller.js';
 import { OUTLINES } from '../render/halo-sprites.js';
 import { HIGH_CONTRAST } from '../render/shaders/common.js';
+import { INK_SCALE } from '../render/shaders/ink.js';
 import type { InteractionState } from '../render/visual-types.js';
 import { BoardBody } from './components.js';
 import {
@@ -54,6 +55,8 @@ export class RenderSyncSystem extends createSystem({
     if (settingsRevision !== this.lastSettingsRevision) {
       const settings = getSettings(this.world);
       HIGH_CONTRAST.value = settings.highContrast ? 1 : 0;
+      // High contrast also widens the comic ink outlines.
+      INK_SCALE.value = settings.highContrast ? 1.5 : 1;
       OUTLINES.mesh.visible = settings.highContrast;
       visuals.target.setHighContrast(settings.highContrast);
       visuals.trail.setStatic(settings.reducedMotion);

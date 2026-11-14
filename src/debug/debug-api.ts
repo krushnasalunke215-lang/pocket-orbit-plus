@@ -14,6 +14,7 @@ import {
   getAudio,
   getBoard,
   getChapter,
+  getComicWords,
   getCosmos,
   getGame,
   getHud,
@@ -128,6 +129,8 @@ export interface GameSnapshot {
     shootingStars: number;
     pulses: number[];
   } | null;
+  /** Comic words showing now, and the last 16 popped (oldest first). */
+  comicWords: { active: string[]; recent: string[] };
   /** HUD world position and size (meters, from the UIKit layout) and its status line. */
   hud: { ready: boolean; position: Triple | null; size: [number, number] | null; status: string | null };
   /** The attract loop drives the comet visual (before the first interaction). */
@@ -554,6 +557,7 @@ export function installDebugApi(world: World): GameDebugApi {
         },
         starfieldVisible: Boolean(world.scene.getObjectByName('Cosmos')?.visible),
         cosmos: cosmosSnapshot(),
+        comicWords: { active: getComicWords(world)?.active() ?? [], recent: getComicWords(world)?.recent() ?? [] },
         session: {
           mode: currentSessionMode(world),
           blendMode: session?.environmentBlendMode ?? null,

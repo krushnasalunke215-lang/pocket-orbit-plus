@@ -8,11 +8,13 @@ import {
   OCCLUSION_FRAGMENT_PARS,
   OCCLUSION_VERTEX,
   OCCLUSION_VERTEX_PARS,
+  TOON_GLSL,
   withOcclusion,
 } from './common.js';
 
 /*
- * Body surface: unlit fresnel-rim shading with procedural latitude bands.
+ * Body surface, comic style: three toon light bands with halftone dots in the
+ * shadow, two-tone procedural latitude bands and a fresnel rim.
  * One program for every body; each body gets a clone of `planetMaterial`
  * only for its own uniforms (colors and seed). uTime stays the shared clock.
  */
@@ -33,8 +35,10 @@ void main() {
 `;
 
 /**
- * GLSL fragment: latitude bands from warped value noise (slowly drifting),
- * a soft fake key light from above, and a fresnel rim pow(1 - N.V, 3).
+ * GLSL fragment: two-tone latitude bands from warped value noise (slowly
+ * drifting), toon bands from a fixed key light above-front (po_toon), printed
+ * halftone dots in the shadow (object space, so both eyes agree), and a
+ * fresnel rim pow(1 - N.V, uRimPower).
  */
 const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform vec3 uColor;
@@ -46,10 +50,13 @@ uniform float uBandScale;
 uniform float uRimPower;
 uniform float uRimStrength;
 uniform float uContrast;
+uniform float uOpacity;
+uniform float uDotRows;
 varying vec3 vNormalW;
 varying vec3 vWorldPos;
 varying vec3 vLocal;
 ${NOISE_GLSL}
+${TOON_GLSL}
 void main() {
   ${OCCLUSION_FRAGMENT}
   vec3 N = normalize(vNormalW);
@@ -59,11 +66,12 @@ void main() {
   float warp = po_noise3(vLocal * 2.3 + vec3(uSeed, uTime * 0.05, -uSeed));
   float lat = vLocal.y * uBandScale + warp * 1.6 + uSeed * 7.0;
   float bands = po_noise1(lat) * 0.7 + po_noise1(lat * 2.7 + 3.1) * 0.3;
-  vec3 surface = mix(uColor * 0.55, uBandColor, smoothstep(0.25, 0.85, bands));
+  vec3 surface = mix(uColor, uBandColor, step(0.55, bands));
 
-  // Fake key light from above-front so the sphere reads as round.
-  float key = 0.55 + 0.45 * max(dot(N, normalize(vec3(0.35, 0.85, 0.4))), 0.0);
-  vec3 color = surface * key;
+  // Toon key light from above-front: three crisp bands, dots in the shadow.
+  float ndl = dot(N, normalize(vec3(0.35, 0.85, 0.4)));
+  vec3 color = surface * po_toon(ndl);
+  color *= 1.0 - 0.45 * po_dots(vLocal, uDotRows, po_shade(ndl));
 
   // Fresnel rim light (a high power makes it thin: the black hole's event horizon).
   float rim = pow(1.0 - max(dot(N, V), 0.0), uRimPower);
@@ -71,7 +79,7 @@ void main() {
   color *= 1.0 + 0.2 * uContrast;
   color += mix(uRimColor, vec3(1.0), 0.4 * uContrast) * rim * uRimStrength * (1.0 + 1.2 * uContrast);
 
-  gl_FragColor = vec4(color, 1.0);
+  gl_FragColor = vec4(color, uOpacity);
   #include <colorspace_fragment>
 }
 `;
@@ -89,6 +97,8 @@ export const planetMaterial = new ShaderMaterial({
     uRimPower: { value: 3 },
     uRimStrength: { value: 1.3 },
     uContrast: HIGH_CONTRAST,
+    uOpacity: { value: 1 },
+    uDotRows: { value: 9 },
   }),
   vertexShader,
   fragmentShader,
@@ -105,6 +115,8 @@ export interface SurfaceColors {
   rimPower?: number;
   /** Rim brightness (default 1.3). */
   rimStrength?: number;
+  /** Halftone dot rows pole to pole (default 9). */
+  dotRows?: number;
 }
 
 /** Per-body clone sharing the program and the clock. */
@@ -119,5 +131,6 @@ export function createSurfaceMaterial(colors: SurfaceColors): ShaderMaterial {
   material.uniforms.uBandScale.value = colors.bandScale ?? 6;
   material.uniforms.uRimPower.value = colors.rimPower ?? 3;
   material.uniforms.uRimStrength.value = colors.rimStrength ?? 1.3;
+  material.uniforms.uDotRows.value = colors.dotRows ?? 9;
   return material;
 }

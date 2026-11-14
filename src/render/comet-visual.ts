@@ -1,23 +1,23 @@
 import {
-  AdditiveBlending,
   BufferAttribute,
   BufferGeometry,
   DynamicDrawUsage,
   Group,
   Mesh,
-  MeshBasicMaterial,
   Points,
   SphereGeometry,
   Vector2,
 } from '@iwsdk/core';
 import { HALOS } from './halo-sprites.js';
 import { ROLE_COLORS } from './palette.js';
-import { markRange, noRaycast, occludeBuiltin, setSharedTime } from './shaders/common.js';
+import { INK_COLOR, markRange, noRaycast, setSharedTime } from './shaders/common.js';
+import { createInkMaterial } from './shaders/ink.js';
+import { createSurfaceMaterial } from './shaders/planet.js';
 import { tailMaterial } from './shaders/tail.js';
 import type { CometVisual } from './visual-types.js';
 
 /*
- * Comet: a small additive white head with an orange halo slot, and a
+ * Comet: a chunky toon white-yellow head with an ink outline and an orange halo slot, and a
  * particle tail in a 256-slot ring buffer. The root stays at the board
  * origin; the head moves, and tail particles keep the board position they
  * were emitted at, so the tail streams behind the head. Two particles are
@@ -32,14 +32,11 @@ const MAX_STEP = 0.25;
 const HALO_SIZE = 0.17;
 const HALO_ALPHA = 0.6;
 
-const headGeometry = new SphereGeometry(0.026, 16, 12);
-const headMaterial = occludeBuiltin(new MeshBasicMaterial({
-  color: ROLE_COLORS.comet,
-  transparent: true,
-  blending: AdditiveBlending,
-  depthWrite: false,
-  toneMapped: false,
-}));
+const headGeometry = new SphereGeometry(0.04, 20, 14);
+/** Toon white-yellow head (transparent, so setOpacity fades it) with an ink outline. */
+const headMaterial = createSurfaceMaterial({ color: 0xfff7d6, band: 0xffe066, rim: ROLE_COLORS.comet, seed: 0.5, bandScale: 60, rimStrength: 0.8, dotRows: 7 });
+headMaterial.transparent = true;
+const headInk = createInkMaterial(INK_COLOR, undefined, true);
 
 /** Deterministic jitter source (mulberry32). */
 function mulberry32(seed: number): () => number {
@@ -62,7 +59,12 @@ export function createCometVisual(): CometVisual {
   head.name = 'CometHead';
   const headMesh = new Mesh(headGeometry, headMaterial);
   headMesh.renderOrder = 4;
-  head.add(headMesh);
+  headMesh.raycast = noRaycast;
+  const headHull = new Mesh(headGeometry, headInk);
+  headHull.name = 'InkHull';
+  headHull.renderOrder = 3.9;
+  headHull.raycast = noRaycast;
+  head.add(headHull, headMesh);
 
   const positions = new BufferAttribute(new Float32Array(TAIL_CAPACITY * 3), 3).setUsage(DynamicDrawUsage);
   const births = new BufferAttribute(new Float32Array(TAIL_CAPACITY).fill(-1e4), 1).setUsage(DynamicDrawUsage);
@@ -124,7 +126,10 @@ export function createCometVisual(): CometVisual {
       if (a === opacity) return;
       opacity = a;
       // One comet per page, so its module-shared materials carry its opacity.
-      headMaterial.opacity = a;
+      headMaterial.uniforms.uOpacity.value = a;
+      headInk.uniforms.uOpacity.value = a;
+      headMesh.visible = a > 0;
+      headHull.visible = a > 0;
       tailMaterial.uniforms.uOpacity.value = a;
       HALOS.setAlpha(halo, HALO_ALPHA * a);
       // An invisible comet may jump (relaunch); no tail along the jump.

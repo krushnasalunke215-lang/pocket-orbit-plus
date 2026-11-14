@@ -4,7 +4,8 @@
   26 x 33 cm (SANDBOX_PANEL_SIZE in src/game/hud-layout.ts). Shown only in
   sandbox mode, beside the HUD beyond the far rim. Button labels ignore
   pointers (set in code) so a fingertip press and release land on the
-  same button. The "-" placeholders are written at runtime.
+  same button. The "-" placeholders are written at runtime. Comic style:
+  ink border, a yellow title on an ink badge, bold inked buttons.
 -->
 <style>
   .sandbox-root {
@@ -15,12 +16,24 @@
     padding-left: 14;
     padding-right: 14;
     gap: 7;
+    border-width: 3;
+    border-color: #101018;
+    border-radius: 14;
   }
 
   .title {
-    color: #fafaf7;
+    color: #ffd23f;
     font-size: 22;
     font-weight: 700;
+    background-color: #101018;
+    border-width: 3;
+    border-color: #ff5a1f;
+    border-radius: 8;
+    padding-left: 8;
+    padding-right: 8;
+    padding-top: 1;
+    padding-bottom: 1;
+    align-self: flex-start;
   }
 
   .info {
@@ -40,16 +53,25 @@
     flex-grow: 1;
     flex-basis: 0;
     justify-content: center;
+    background-color: #ffd23f;
+    border-width: 3;
+    border-color: #101018;
+    color: #101018;
   }
 
   .small-button {
     height: 44;
     justify-content: center;
+    background-color: #7fd8ff;
+    border-width: 3;
+    border-color: #101018;
+    color: #101018;
   }
 
   .label {
     font-size: 16;
     line-height: 1.2;
+    font-weight: 700;
   }
 
   .value {

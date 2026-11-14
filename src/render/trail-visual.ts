@@ -27,10 +27,11 @@ const NO_FADE = 1e9;
 
 const flightMaterial = createRibbonMaterial({
   color: ROLE_COLORS.cometTrail,
-  width: 0.024,
+  width: 0.05,
   fade: FLIGHT_FADE,
   floor: 0.3,
   dashed: false,
+  inked: true,
 });
 const previewMaterial = createRibbonMaterial({
   color: ROLE_COLORS.preview,

@@ -7,17 +7,22 @@
   replaced at runtime (the title from APP_NAME in src/config.ts; never write
   the app name here). The Levels button shares the title row and the action
   buttons share one row, to keep the panel short; Play again replaces
-  Launch and Next during the chapter-complete moment.
+  Launch and Next during the chapter-complete moment. Comic style: an ink
+  border on the panel, a yellow title on an ink badge with a vermillion
+  border, and bold buttons with ink borders and dark labels.
 -->
 <style>
   .hud-root {
     flex-direction: column;
     width: 300;
-    padding-top: 12;
-    padding-bottom: 12;
-    padding-left: 16;
-    padding-right: 16;
+    padding-top: 10;
+    padding-bottom: 10;
+    padding-left: 14;
+    padding-right: 14;
     gap: 7;
+    border-width: 3;
+    border-color: #101018;
+    border-radius: 14;
   }
 
   .title-row {
@@ -27,8 +32,20 @@
     gap: 8;
   }
 
+  .title-badge {
+    flex-shrink: 0;
+    background-color: #101018;
+    border-width: 3;
+    border-color: #ff5a1f;
+    border-radius: 8;
+    padding-left: 8;
+    padding-right: 8;
+    padding-top: 1;
+    padding-bottom: 1;
+  }
+
   .title {
-    color: #fafaf7;
+    color: #ffd23f;
     font-size: 24;
     font-weight: 700;
   }
@@ -48,16 +65,27 @@
     height: 70;
     flex-grow: 1;
     justify-content: center;
+    padding-left: 8;
+    padding-right: 8;
+    background-color: #ffd23f;
+    border-width: 3;
+    border-color: #101018;
+    color: #101018;
   }
 
   .button-label {
     font-size: 24;
     line-height: 30px;
+    font-weight: 700;
   }
 
   .levels-button {
     height: 40;
     justify-content: center;
+    background-color: #7fd8ff;
+    border-width: 3;
+    border-color: #101018;
+    color: #101018;
   }
 
   .levels-label {
@@ -67,7 +95,9 @@
 </style>
 <Panel class="hud-root">
   <div class="title-row">
-    <div id="title-text" class="title">-</div>
+    <div class="title-badge">
+      <div id="title-text" class="title">-</div>
+    </div>
     <Button id="levels-button" class="levels-button">
       <ButtonLabel class="levels-label">Levels</ButtonLabel>
     </Button>

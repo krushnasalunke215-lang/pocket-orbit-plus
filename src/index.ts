@@ -10,6 +10,7 @@ import projectOptions from 'virtual:iwsdk-project';
 import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
 import { ChapterSystem } from './xr/chapter-system.js';
+import { ComicFxSystem } from './xr/comic-fx-system.js';
 import { CosmosSystem } from './xr/cosmos-system.js';
 import { DebugOverlaySystem, debugOverlayRequested } from './xr/debug-overlay-system.js';
 import { GameAudioSystem } from './xr/game-audio-system.js';
@@ -73,6 +74,8 @@ async function main(): Promise<void> {
     .registerSystem(RenderSyncSystem, { priority: 20 })
     // After RenderSync, so flyby notes ring from this frame's body positions.
     .registerSystem(GameAudioSystem, { priority: 21 })
+    // Comic words (WHOOSH!, DING!, KA-POW!...) from the game state.
+    .registerSystem(ComicFxSystem, { priority: 22 })
     // The surrounding cosmos: AR fade-in, Room view mask, slow orbits.
     .registerSystem(CosmosSystem, { priority: 23 })
     .registerSystem(HudSystem, { priority: 30 })

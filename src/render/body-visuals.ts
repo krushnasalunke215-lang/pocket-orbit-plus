@@ -16,6 +16,7 @@ import { HALOS, OUTLINES, PULL_RINGS } from './halo-sprites.js';
 import { PALETTE, ROLE_COLORS } from './palette.js';
 import { ACCRETION_INNER, ACCRETION_OUTER, accretionMaterial } from './shaders/accretion.js';
 import { noRaycast, setMotionTime } from './shaders/common.js';
+import { inkDark, inkLight } from './shaders/ink.js';
 import { createSurfaceMaterial, type SurfaceColors } from './shaders/planet.js';
 import { PULL_PATTERN } from './shaders/pull-ring.js';
 import { createRingMaterial, RING_PATTERN } from './shaders/ring.js';
@@ -34,6 +35,8 @@ import type { BodyVisual, InteractionState } from './visual-types.js';
  * Each body also owns one halo slot (fake bloom) and one pull-ring slot
  * (its influence radius on the board). Geometry and ring materials are
  * shared module resources; only the surface material is cloned per body.
+ * Comic style: toon bands with halftone dots in the shadow (planet.ts) and
+ * an ink outline (an inverted hull, shaders/ink.ts) on every body.
  */
 
 /** White-star pulse rate (rad/s). */
@@ -81,6 +84,8 @@ interface KindStyle {
   pulse: number;
   /** Farthest point of the shape in radii (the high-contrast outline circles it). */
   extent: number;
+  /** Comic ink outline material (light cream for the black hole, so it reads on dark space). */
+  ink: Material;
 }
 
 /** High-contrast outline ring: outer radius over the shape's extent, and its inner radius fraction. */
@@ -101,7 +106,7 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
       const color = movable ? ROLE_COLORS.movablePlanet : ROLE_COLORS.fixedPlanet;
       return {
         geometry: sphere,
-        surface: { color, band: movable ? 0xb9e3fa : 0x7fdcc0, rim: color, seed },
+        surface: { color, band: movable ? 0x9fd9ff : 0x6fe6bf, rim: color, seed },
         ring: {
           geometry: planetRing,
           material: movable ? ringMaterials.movablePlanet : ringMaterials.fixedPlanet,
@@ -112,18 +117,20 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
         spin: 0.25,
         pulse: 0,
         extent: 1,
+        ink: inkDark,
       };
     }
     case 'moon':
       return {
         geometry: facets,
-        surface: { color: ROLE_COLORS.moon, band: 0xf0c4dc, rim: 0xf6dceb, seed, bandScale: 3 },
+        surface: { color: ROLE_COLORS.moon, band: 0xf7b3dc, rim: 0xf6dceb, seed, bandScale: 3, dotRows: 6 },
         ring: { geometry: moonRing, material: ringMaterials.moon, tilt: 0 },
         halo: { color: ROLE_COLORS.moon, size: 2.4, alpha: 0.3 },
         pull: { color: ROLE_COLORS.moon, alpha: 0.3, pattern: PULL_PATTERN.dotted },
         spin: 0.6,
         pulse: 0,
         extent: 1,
+        ink: inkDark,
       };
     case 'black-hole':
       return {
@@ -142,6 +149,7 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
         spin: 0,
         pulse: 0,
         extent: 1,
+        ink: inkLight,
       };
     case 'repulsor':
       return {
@@ -160,6 +168,7 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
         spin: 0.8,
         pulse: 0.07,
         extent: 1.15,
+        ink: inkDark,
       };
   }
 }
@@ -176,6 +185,12 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
   const mesh = new Mesh(style.geometry, surfaceMaterial);
   mesh.scale.setScalar(radius);
   root.add(mesh);
+  // Comic ink outline: the same shape's back faces pushed out (a child, so it
+  // follows the mesh's scale, spin and pulse).
+  const hull = new Mesh(style.geometry, style.ink);
+  hull.name = 'InkHull';
+  hull.raycast = noRaycast;
+  mesh.add(hull);
 
   if (style.ring) {
     const ring = new Mesh(style.ring.geometry, style.ring.material);

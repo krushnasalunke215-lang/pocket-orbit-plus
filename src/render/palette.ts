@@ -14,21 +14,36 @@ export const PALETTE = {
   white: 0xffffff,
 } as const;
 
+/**
+ * Comic print: punchier, more saturated variants of each Okabe-Ito hue (each
+ * stays in its hue family, so the colour-blind intent holds; shapes and ring
+ * patterns remain the kind cue).
+ */
+export const COMIC = {
+  orange: 0xff9f1c,
+  skyBlue: 0x3fb6ff,
+  bluishGreen: 0x00c48c,
+  yellow: 0xffe03a,
+  blue: 0x1f7fe0,
+  vermillion: 0xff5a1f,
+  reddishPurple: 0xe46fb6,
+} as const;
+
 /** Color roles used by the visuals. */
 export const ROLE_COLORS = {
   board: 0x0b1324,
-  boardRim: PALETTE.blue,
-  movablePlanet: PALETTE.skyBlue,
-  fixedPlanet: PALETTE.bluishGreen,
-  moon: PALETTE.reddishPurple,
+  boardRim: COMIC.blue,
+  movablePlanet: COMIC.skyBlue,
+  fixedPlanet: COMIC.bluishGreen,
+  moon: COMIC.reddishPurple,
   blackHoleCore: PALETTE.black,
-  blackHoleRing: PALETTE.vermillion,
+  blackHoleRing: COMIC.vermillion,
   repulsor: PALETTE.white,
-  repulsorRing: PALETTE.blue,
+  repulsorRing: COMIC.blue,
   comet: PALETTE.white,
-  cometTrail: PALETTE.orange,
+  cometTrail: COMIC.orange,
   preview: PALETTE.white,
-  target: PALETTE.yellow,
+  target: COMIC.yellow,
   star: PALETTE.white,
   /** Onboarding ghost hand: white tinted toward sky blue. */
   ghost: 0xcfe9fb,

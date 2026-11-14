@@ -13,6 +13,7 @@ import {
 } from '../game/state.js';
 import type { BoardPlacement } from '../game/placement.js';
 import type { CosmosMask } from '../game/cosmos-rules.js';
+import type { ComicWords } from '../render/comic-words.js';
 import type { BodyVisual, CometVisual, CosmosVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
 
 /*
@@ -320,7 +321,15 @@ const KEYS = {
   hitLog: 'hitLog',
   motionClock: 'motionClock',
   cosmos: 'cosmos',
+  comicWords: 'comicWords',
 } as const;
+
+export function setComicWords(world: World, words: ComicWords): void {
+  world.globals[KEYS.comicWords] = words;
+}
+export function getComicWords(world: World): ComicWords | undefined {
+  return world.globals[KEYS.comicWords] as ComicWords | undefined;
+}
 
 export function setCosmos(world: World, cosmos: CosmosRuntime): void {
   world.globals[KEYS.cosmos] = cosmos;

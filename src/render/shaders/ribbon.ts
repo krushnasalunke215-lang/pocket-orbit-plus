@@ -7,9 +7,11 @@ import {
   DynamicDrawUsage,
   InstancedBufferAttribute,
   InstancedMesh,
+  NormalBlending,
   ShaderMaterial,
 } from '@iwsdk/core';
 import {
+  INK_COLOR,
   linkOcclusion,
   noRaycast,
   OCCLUSION_FRAGMENT,
@@ -65,16 +67,31 @@ void main() {
 }
 `;
 
-/** GLSL fragment: soft edges across the strip with a hot white core. */
+/**
+ * GLSL fragment: soft edges across the strip with a hot white core; the comic
+ * variant (uInkEdge 1, normal blending) draws a solid colour band with a hot
+ * core and dark ink edges across the strip.
+ */
 const fragmentShader = /* glsl */ `${OCCLUSION_FRAGMENT_PARS}
 uniform vec3 uColor;
+uniform vec3 uInk;
+uniform float uInkEdge;
 varying float vSide;
 varying float vAlpha;
 void main() {
   ${OCCLUSION_FRAGMENT}
   float core = 1.0 - abs(vSide);
-  float alpha = pow(core, 1.3) * vAlpha;
-  vec3 color = mix(uColor, vec3(1.0), pow(core, 6.0) * 0.45);
+  vec3 color;
+  float alpha;
+  if (uInkEdge > 0.5) {
+    float s = abs(vSide);
+    color = mix(uColor, vec3(1.0, 0.98, 0.85), 1.0 - smoothstep(0.18, 0.34, s));
+    color = mix(color, uInk, smoothstep(0.62, 0.7, s));
+    alpha = vAlpha * (1.0 - smoothstep(0.93, 1.0, s));
+  } else {
+    alpha = pow(core, 1.3) * vAlpha;
+    color = mix(uColor, vec3(1.0), pow(core, 6.0) * 0.45);
+  }
   gl_FragColor = vec4(color, alpha);
   #include <colorspace_fragment>
 }
@@ -90,6 +107,8 @@ const ribbonTemplate = new ShaderMaterial({
     uFloor: { value: 0.3 },
     uDash: { value: 0 },
     uDashCount: { value: 14 },
+    uInk: { value: new Color(INK_COLOR) },
+    uInkEdge: { value: 0 },
   }),
   vertexShader,
   fragmentShader,
@@ -108,6 +127,8 @@ export interface RibbonStyle {
   fade: number;
   floor: number;
   dashed: boolean;
+  /** Comic stroke: hot core, ink edges, normal blending (default: additive glow). */
+  inked?: boolean;
 }
 
 /** A ribbon material sharing the program and the clock; create once per module. */
@@ -119,6 +140,8 @@ export function createRibbonMaterial(style: RibbonStyle): ShaderMaterial {
   material.uniforms.uFade.value = style.fade;
   material.uniforms.uFloor.value = style.floor;
   material.uniforms.uDash.value = style.dashed ? 1 : 0;
+  material.uniforms.uInkEdge.value = style.inked ? 1 : 0;
+  if (style.inked) material.blending = NormalBlending;
   return material;
 }
 

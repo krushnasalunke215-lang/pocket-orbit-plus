@@ -682,6 +682,44 @@ test('chapter complete after level 6', async ({ page }) => {
   await expect.poll(async () => (await snapshot(page)).rimButton.shown, { timeout: 5_000 }).toBe(true);
 });
 
+test('comic words: WHOOSH and DING in flight, KA-POW on a solve, BOOM on a swallow', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openGame(page);
+  const levels = await page.evaluate(() => window.__game!.levels());
+  const recent = async () => (await snapshot(page)).comicWords.recent;
+
+  // Level 4 with no moves: the black hole swallows the comet.
+  await page.evaluate(() => window.__game!.loadLevel(3));
+  await page.evaluate(() => window.__game!.launch());
+  await expect.poll(async () => (await snapshot(page)).lastOutcome, { timeout: 30_000 }).toBe('swallowed');
+  await expect.poll(recent, { timeout: 5_000 }).toContain('BOOM!');
+  expect(await recent()).toContain('WHOOSH!');
+
+  // Level 6 solved: WHOOSH at the start, DING (ZAP off the white star) at each flyby, KA-POW at the target.
+  await page.evaluate(() => window.__game!.loadLevel(5));
+  await page.evaluate((p) => window.__game!.setPlacements(p), levels[5].solution);
+  await page.evaluate(() => window.__game!.launch());
+  await expect
+    .poll(async () => (await snapshot(page)).comicWords.active, { timeout: 5_000, intervals: [30] })
+    .toContain('WHOOSH!');
+  await expect
+    .poll(
+      async () => {
+        const s = await snapshot(page);
+        return s.phase === 'flying' && s.flightTime >= 0.45 * s.flightDuration;
+      },
+      { timeout: 30_000, intervals: [30] },
+    )
+    .toBe(true);
+  await page.screenshot({ path: screenshotPath('l2-desktop-l6-midflight.png') });
+  await expect.poll(async () => (await snapshot(page)).solved, { timeout: 30_000 }).toBe(true);
+  await expect.poll(recent, { timeout: 5_000 }).toContain('KA-POW!');
+  const words = (await recent()).slice(-6);
+  console.log('comic words', JSON.stringify(words));
+  expect(words.some((w) => w === 'DING!' || w === 'ZAP!')).toBe(true);
+  expect(words.lastIndexOf('WHOOSH!')).toBeLessThan(words.lastIndexOf('KA-POW!'));
+});
+
 test('render budget', async ({ page }) => {
   await openGame(page);
   await page.evaluate(() => window.__game!.loadLevel(0));
