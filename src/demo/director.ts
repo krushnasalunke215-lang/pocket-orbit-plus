@@ -445,7 +445,7 @@ const SHOTS: readonly Shot[] = [
   {
     id: 2,
     name: 'Level 1, start to finish',
-    target: 25,
+    target: 24,
     async setup(d) {
       d.api.resetOnboarding();
       await d.api.loadLevel(0);
@@ -461,7 +461,7 @@ const SHOTS: readonly Shot[] = [
       const before = await d.placeBody('p1', d.goal(0, 'solution', 'p1'));
       d.key();
       d.expectSolved(await d.flightEnd(before), 3);
-      await sleep(2500);
+      await sleep(4500);
     },
   },
   {
@@ -482,11 +482,11 @@ const SHOTS: readonly Shot[] = [
           await d.api.loadLevel(step.index);
           if (step.index === 5) d.api.setPlacements({ w1: d.goal(5, 'solution', 'w1') });
         }
-        await sleep(1000);
+        await sleep(1600);
         const before = await d.placeBody(step.id, step.goal);
         if (step.key) d.key();
         d.expectSolved(await d.flightEnd(before));
-        await sleep(1100);
+        await sleep(2600);
       }
     },
   },
@@ -519,7 +519,7 @@ const SHOTS: readonly Shot[] = [
   {
     id: 5,
     name: 'Your Table: a well on the real cup',
-    target: 25,
+    target: 23,
     async setup(d) {
       await d.api.sandbox.enter(1);
     },
@@ -547,7 +547,14 @@ const SHOTS: readonly Shot[] = [
       d.head = SIDE_HEAD;
       await d.remote.move('headset', SIDE_HEAD, lookRotation(SIDE_HEAD, CUP_TOP), 2.6);
       await d.flightEnd(before);
-      await sleep(1500);
+      await sleep(1200);
+      // Replay from the side: the comet passes behind the cup once more.
+      // The HUD's Replay, so the ray stays high above the planets.
+      const replay = d.snap().attempts;
+      await d.rayClick('launch-button', (s) => s.attempts > replay);
+      await d.handDown(RIGHT);
+      await d.flightEnd(replay);
+      await sleep(2000);
     },
   },
   {
@@ -563,7 +570,7 @@ const SHOTS: readonly Shot[] = [
       await d.handsDown();
     },
     async run(d) {
-      await sleep(1500);
+      await sleep(2500);
       const before = await d.gazeCarry('p1', d.goal(0, 'solution', 'p1'));
       await d.remote.lookAt('gaze', d.snap().board.center);
       d.key();
@@ -572,13 +579,13 @@ const SHOTS: readonly Shot[] = [
       await d.gazeClick('levels-button', (s) => s.levelSelect.open);
       await sleep(1400);
       await d.gazeClick('level-2', (s) => s.level.index === 1 && !s.levelSelect.open);
-      await sleep(2200);
+      await sleep(4200);
     },
   },
   {
     id: 7,
     name: 'Accessibility settings',
-    target: 22,
+    target: 27,
     async setup(d) {
       d.api.resetOnboarding();
       await d.api.loadLevel(0);
