@@ -36,6 +36,8 @@ JSON line every 5 s with `console.info`.
 - `src/xr/`: IWSDK systems and components.
 - `src/render/`: procedural visuals and shaders.
 - `src/debug/`: the `window.__game` debug API (dev and e2e builds only).
+- `src/demo/`: director mode (`?demo=1&shot=N`, dev server only), which plays
+  the trailer shots in IWER; [VIDEO.md](VIDEO.md) is the recording guide.
 - `public/ui/`: UIKitML panels: `hud.uikitml` (HUD), `rim-button.uikitml`
   (near-rim Launch/Replay), `level-select.uikitml` (levels, stars, and the
   Settings page: left-handed, high contrast, reduced motion, board size and
@@ -55,6 +57,8 @@ npm run build
 npm run test:e2e      # Playwright, desktop mouse play against a dist-e2e build
 npm run verify:iwer   # IWER emulated Quest 3 session in a synthetic room; the last group
                       # (glasses) switches iwsdk.config.json to the Meta VR Glasses profile and back
+npm run demo:shots    # director mode: every trailer shot in a headed IWER window, no errors
+npm run demo:clips    # backup trailer clips (silent, 1280x720) to .agents/tasks/video-clips/
 npm run build:pages && npm run smoke:pages   # Pages base path /pocket-orbit-plus/: no 4xx, no external requests
 npm run build         # afterwards, so dist/ matches the default base again
 npm.cmd run solve -- c1-l1   # print robust solutions of a level (PowerShell)
