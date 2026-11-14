@@ -47,6 +47,7 @@ import {
 } from './xr-helpers.mjs';
 import {
   accessibilitySettings,
+  budgetViews,
   debugOverlay,
   DEFAULT_TEST_SETTINGS,
   handleDrag,
@@ -107,6 +108,8 @@ const GROUPS = [
   'level-select-budget',
   // It changes the saved settings (and restores the defaults).
   'accessibility',
+  // Before/after render numbers of the busiest views with ?debug=1 (AR, then VR).
+  'budget-views',
   // Last: it switches the emulator to the Meta VR Glasses profile (Vite
   // restarts) and back.
   'glasses',
@@ -886,7 +889,34 @@ const GROUP_RUNNERS = {
     );
   },
 
-  // 21. Meta VR Glasses (iwsdk-glasses-test): the metaVRGlasses emulator
+  // 21. Render numbers of the busiest views with ?debug=1, in AR at the
+  // table pose and in VR (the Cosmos + Comic before/after table).
+  async 'budget-views'() {
+    const r = await budgetViews({ tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name) });
+    summary.data.budgetViews = r;
+    writeFileSync(path.join(RESULTS, 'render-stats-cosmos.json'), JSON.stringify({ room: 'sunlit_living_room', head: TABLE_HEAD, budget: BUDGET, ...r }, null, 2));
+    const views = r.passes.flatMap((p) => p.views.map((v) => ({ session: p.session, ...v })));
+    const brief = views.map((v) => ({ session: v.session, view: v.view, max: { calls: v.max.calls, triangles: v.max.triangles }, fps: v.fps, frames: v.frames }));
+    const intended = {
+      'level 6 mid-flight': (v) => v.level === 'c1-l6' && v.mode === 'story',
+      'chapter complete': (v) => v.chapter,
+      'Your Table, 3 wells': (v) => v.mode === 'sandbox' && v.wells === 3,
+      'level select open': (v) => v.levelSelectOpen,
+    };
+    check(
+      'budget-views: with ?debug=1, level 6 mid-flight, the chapter moment, Your Table with 3 wells and the level select open, in immersive-ar then immersive-vr',
+      r.search === '?debug=1' && r.passes.length === 2 && r.passes[0].appMode === 'immersive-ar' && r.passes[1].appMode === 'immersive-vr' &&
+        views.length === 8 && views.every((v) => intended[v.view]?.(v)),
+      views.map((v) => ({ session: v.session, view: v.view, level: v.level, mode: v.mode, phase: v.phase, chapter: v.chapter, open: v.levelSelectOpen, wells: v.wells })),
+    );
+    check(
+      `budget-views: XR calls <= ${BUDGET.calls} and triangles <= ${BUDGET.triangles} in each of those views`,
+      views.length === 8 && views.every((v) => v.frames > 0 && v.max.calls > 0 && v.max.calls <= BUDGET.calls && v.max.triangles <= BUDGET.triangles),
+      brief,
+    );
+  },
+
+  // 22. Meta VR Glasses (iwsdk-glasses-test): the metaVRGlasses emulator
   // profile, every surface inside its view (37° left/right, 25° up, 43°
   // down) at the fallback and table poses, level 1 and every in-XR button
   // by gaze plus pinch, and field-of-view-masked screenshots.

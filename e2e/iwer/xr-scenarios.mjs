@@ -1951,6 +1951,108 @@ export async function glassesFit({ tableHead, fallbackHead, takeShot }) {
   return result;
 }
 
+/**
+ * Before/after numbers of the busiest views with ?debug=1 (the URL testers
+ * use): level 6 mid-flight, the chapter-complete moment, Your Table with
+ * three pucks, and the level select open, first in immersive-ar at the table
+ * pose, then in immersive-vr. Each view: the most draw calls and triangles
+ * over 2.5 s and the IWER frame rate (frames / seconds), occlusion on.
+ */
+export async function budgetViews({ tableHead, takeShot }) {
+  if (xr('status').sessionActive) await exitXR();
+  const nav = game('page.search').value === '?debug=1' ? null : await navigateSearch('?debug=1');
+  const SAMPLE_MS = 2500;
+  const levels = game('levels').value;
+  const last = levels.length - 1;
+  const passes = [];
+  for (const session of ['immersive-ar', 'immersive-vr']) {
+    if (xr('status').sessionActive) await exitXR();
+    if (session === 'immersive-ar') await enterXR();
+    else {
+      game('enterVR');
+      await waitFor('an active immersive-vr session', () => xr('status').sessionActive, 20_000);
+      xr('set-input-mode', { mode: 'hand' });
+      await sleep(3000);
+    }
+    xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+    await sleep(300);
+    game('placeBoard');
+    await sleep(1500);
+    const seatLook = async () => {
+      xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+      await sleep(200);
+      xr('look-at', { device: 'headset', target: vec(snapshot().board.center) });
+      await sleep(300);
+    };
+    await seatLook();
+    const views = [];
+    const sample = async (view, shot) => {
+      const s = snapshot();
+      game('resetRenderStats');
+      await sleep(SAMPLE_MS);
+      const stats = game('renderStats').value;
+      const file = shot ? takeShot(shot) : null;
+      views.push({
+        view,
+        level: s.level.id,
+        mode: s.mode,
+        phase: s.phase,
+        chapter: s.chapterComplete.shown,
+        levelSelectOpen: s.levelSelect.open,
+        wells: s.sandbox.wells.length,
+        max: stats.max,
+        frames: stats.frames,
+        fps: round(stats.frames / (SAMPLE_MS / 1000), 1),
+        programs: stats.programs,
+        shot: file,
+      });
+    };
+    const tag = session === 'immersive-ar' ? 'ar' : 'vr';
+
+    // 1. Level 6 mid-flight (the most bodies, comet and trail).
+    await game('loadLevel', last);
+    await sleep(500);
+    game('setPlacements', levels[last].solution);
+    game('launch');
+    await sleep(800);
+    await sample('level 6 mid-flight', `budget-${tag}-l6-midflight.png`);
+
+    // 2. The chapter-complete moment (solve level 6, then Next).
+    await waitFor('level 6 solved', () => snapshot().solved, 90_000, 500).catch(() => null);
+    await seatLook();
+    await rayClick('next-button');
+    await waitFor('the chapter moment', () => snapshot().chapterComplete.shown, 10_000, 300).catch(() => null);
+    await sleep(1500);
+    await sample('chapter complete', `budget-${tag}-chapter.png`);
+
+    // 3. Your Table with three wells (pucks).
+    game('sandbox.enter', 0);
+    await sleep(500);
+    for (let i = 0; i < 3; i++) game('sandbox.addPuck');
+    await sleep(500);
+    await seatLook();
+    await sample('Your Table, 3 wells', `budget-${tag}-your-table.png`);
+    game('sandbox.clear');
+    game('sandbox.exit');
+    await sleep(500);
+
+    // 4. The level select open (over level 1).
+    await game('loadLevel', 0);
+    await sleep(500);
+    await seatLook();
+    if (!snapshot().levelSelect.open) await rayClick('levels-button');
+    await waitFor('the level select open', () => snapshot().levelSelect.open, 10_000, 300).catch(() => null);
+    await sleep(800);
+    await sample('level select open', `budget-${tag}-level-select.png`);
+    if (snapshot().levelSelect.open) await rayClick('close-levels');
+    await sleep(400);
+    passes.push({ session, appMode: snapshot().session.mode, views });
+  }
+  if (xr('status').sessionActive) await exitXR();
+  const back = await navigateSearch('');
+  return { search: nav?.search ?? '?debug=1', searchAfter: back.search, passes };
+}
+
 /** Most XR render counts over `ms` of the current view with depth occlusion on or off. */
 async function budgetSample(on, ms) {
   game('setOcclusion', on);

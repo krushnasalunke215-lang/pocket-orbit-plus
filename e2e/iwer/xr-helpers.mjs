@@ -7,7 +7,7 @@ import { call, root, run, sleep } from './cli.mjs';
 
 const { boardToWorld } = await tsImport('../../src/game/board-math.ts', import.meta.url);
 
-export const SHOTS = path.join(root, '.agents', 'tasks', 'screenshots', 'phase3');
+export const SHOTS = path.join(root, '.agents', 'tasks', 'screenshots', 'cosmos-comic');
 export const RESULTS = path.join(root, 'test-results');
 const REQUEST = path.join(root, 'e2e', 'iwer', '.request.json');
 

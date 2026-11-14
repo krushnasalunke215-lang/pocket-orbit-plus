@@ -14,7 +14,7 @@ import type { Placements } from '../src/sim/level';
  */
 
 function screenshotPath(name: string): string {
-  const dir = path.resolve(test.info().config.rootDir, '..', '.agents', 'tasks', 'screenshots', 'phase3');
+  const dir = path.resolve(test.info().config.rootDir, '..', '.agents', 'tasks', 'screenshots', 'cosmos-comic');
   mkdirSync(dir, { recursive: true });
   return path.join(dir, name);
 }
