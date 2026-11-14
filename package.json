@@ -21,6 +21,7 @@
     "test:e2e": "playwright test",
     "test:watch": "vitest",
     "verify:iwer": "node e2e/iwer/verify-iwer.mjs",
+    "demo:shots": "node e2e/demo/play-shots.mjs",
     "solve": "tsx scripts/solve.ts"
   },
   "dependencies": {
