@@ -356,11 +356,15 @@ class Director {
     await sleep(600);
     await this.remote.click(RIGHT, 0.2);
     try {
-      await waitFor(`the ${id} gaze click`, () => done(this.snap()), 2500, 100);
+      // Long enough for a slow glasses frame: a second click after a late
+      // first one would land on the panel the first one opened.
+      await waitFor(`the ${id} gaze click`, () => done(this.snap()), 4000, 100);
     } catch {
-      this.warn(`${id} took a second gaze click`);
+      this.warn(`${id} took a second gaze click (hovered: ${this.hoveredNames()})`);
+      await this.remote.lookAt('gaze', point);
+      await sleep(600);
       await this.remote.click(RIGHT, 0.2);
-      await waitFor(`the ${id} gaze click`, () => done(this.snap()), 2500, 100);
+      await this.expect(`the ${id} gaze click`, () => done(this.snap()), 4000);
     }
   }
 
