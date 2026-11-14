@@ -48,6 +48,7 @@ import {
 import {
   accessibilitySettings,
   budgetViews,
+  cosmosModes,
   debugOverlay,
   DEFAULT_TEST_SETTINGS,
   handleDrag,
@@ -108,6 +109,8 @@ const GROUPS = [
   'level-select-budget',
   // It changes the saved settings (and restores the defaults).
   'accessibility',
+  // The surrounding cosmos (it changes the Room view and restores Mixed).
+  'cosmos',
   // Before/after render numbers of the busiest views with ?debug=1 (AR, then VR).
   'budget-views',
   // Last: it switches the emulator to the Meta VR Glasses profile (Vite
@@ -797,7 +800,7 @@ const GROUP_RUNNERS = {
       brief,
     );
     check(
-      'level-select-budget: XR calls <= 100 and triangles <= 150k in each of those views, occlusion on and off',
+      `level-select-budget: XR calls <= ${BUDGET.calls} and triangles <= ${BUDGET.triangles} in each of those views, occlusion on and off`,
       views.length === 8 &&
         views.every((v) => [v.on, v.off].every((s) => s.frames > 0 && s.max.calls > 0 && s.max.calls <= BUDGET.calls && s.max.triangles <= BUDGET.triangles)),
       brief,
@@ -849,7 +852,7 @@ const GROUP_RUNNERS = {
     );
     const k = r.contrast;
     check(
-      'accessibility: high contrast alone shows the body outlines and the target outline; XR calls <= 100 and triangles <= 150k off and on (screenshots)',
+      `accessibility: high contrast alone shows the body outlines and the target outline; XR calls <= ${BUDGET.calls} and triangles <= ${BUDGET.triangles} off and on (screenshots)`,
       k.highContrast === 1 &&
         k.outlinesVisible &&
         k.targetOutlineVisible &&
@@ -886,6 +889,48 @@ const GROUP_RUNNERS = {
       'accessibility: settings back to the defaults afterwards (medium board, nothing on)',
       JSON.stringify(r.restored.settings) === JSON.stringify(DEFAULT_TEST_SETTINGS) && !r.restored.chapter,
       r.restored,
+    );
+  },
+
+  // The surrounding cosmos: the AR fade-in, the Room view modes, Your
+  // Table, reduced motion and VR.
+  async cosmos() {
+    if (game('page.search').value !== '') await navigateSearch('');
+    const r = await cosmosModes({ tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name) });
+    summary.data.cosmos = r;
+    const f = r.fade;
+    check(
+      'cosmos: an AR session fades the cosmos in over the room (fade below 0.5 about 0.5 s after the start, 1 from 3 s on)',
+      f.first !== null && f.first < 0.5 && f.atHalfSecond >= 0 && f.atHalfSecond < 0.5 && f.atThreeSeconds === 1 && f.after3s.length > 0 && f.after3s.every((x) => x === 1),
+      { ...f, after3s: f.after3s.length },
+    );
+    const m = r.mixed;
+    check(
+      'cosmos: Mixed (the default) at the table pose: drawn, opacity 1, the island mask, and the table area clear (boardMask 0)',
+      m.board === 'table-plane' && m.roomView === 'mixed' && m.visible && m.opacity === 1 && m.mask === 'island' && m.boardMask === 0 && Boolean(m.shot && r.mixedAhead),
+      m,
+    );
+    check('cosmos: Space: no mask (the room fills with space)', r.space.roomView === 'space' && r.space.visible && r.space.mask === 'none' && r.space.opacity === 1, r.space);
+    check(
+      'cosmos: Room: the cosmos is not drawn and costs no draw calls',
+      r.room.roomView === 'room' && !r.room.visible && r.room.maxCalls < m.maxCalls,
+      { room: r.room.maxCalls, mixed: m.maxCalls, visible: r.room.visible },
+    );
+    check(
+      'cosmos: Your Table over passthrough: opacity at most 0.45 with the island mask',
+      r.yourTable.mode === 'sandbox' && r.yourTable.visible && r.yourTable.opacity <= 0.45 && r.yourTable.mask === 'island',
+      r.yourTable,
+    );
+    const d = r.reduced;
+    check(
+      'cosmos: reduced motion: the orbiting planets and the belt stand still and no shooting star flies; they move again after',
+      JSON.stringify(d.motion[0]) === JSON.stringify(d.motion[1]) && d.shootingStars.every((n) => n === 0) && JSON.stringify(d.movingAfter) !== JSON.stringify(d.motion[1]),
+      d,
+    );
+    check(
+      'cosmos: immersive-vr: the cosmos is drawn fully opaque with no mask',
+      r.vr.session === 'immersive-vr' && r.vr.blendMode === 'opaque' && r.vr.visible && r.vr.opacity === 1 && r.vr.mask === 'none',
+      r.vr,
     );
   },
 

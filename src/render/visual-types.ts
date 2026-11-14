@@ -99,6 +99,22 @@ export interface BoardVisual {
   update(t: number): void;
 }
 
-export interface Starfield {
+/**
+ * The surrounding cosmos in world meters (sky dome, stars, planets, belt,
+ * shooting stars). Its opacity and island mask are the shared
+ * COSMOS_UNIFORMS, which CosmosSystem writes.
+ */
+export interface CosmosVisual {
   readonly root: Object3D;
+  /** motionT: the decorative clock (still under reduced motion); realT, dt: the real clock. */
+  update(motionT: number, realT: number, dt: number, reducedMotion: boolean): void;
+  /** Eye height above the cosmos center (meters); the asteroid belt sits just below it. */
+  setEyeHeight(height: number): void;
+  /** Brightens and swells cosmos planet `index` (0 giant, 1 sky blue, 2 green, 3 moon); it decays. */
+  pulse(index: number, strength: number): void;
+  pulseLevel(index: number): number;
+  /** Shooting stars alive at real time `realT`. */
+  activeShootingStars(realT: number): number;
+  /** Debug: the first orbiting planet's position (cosmos frame) and the belt's turn, [x, y, z, yaw]. */
+  motionProbe(): number[];
 }

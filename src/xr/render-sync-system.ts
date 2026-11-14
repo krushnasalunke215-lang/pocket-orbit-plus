@@ -1,9 +1,8 @@
-import { createSystem, Grabbed, Hovered, VisibilityState, type Entity } from '@iwsdk/core';
+import { createSystem, Grabbed, Hovered } from '@iwsdk/core';
 import { colliderLocalRadius } from '../game/board-math.js';
 import type { GamePhase } from '../game/controller.js';
 import { OUTLINES } from '../render/halo-sprites.js';
 import { HIGH_CONTRAST } from '../render/shaders/common.js';
-import { createStarfield } from '../render/starfield.js';
 import type { InteractionState } from '../render/visual-types.js';
 import { BoardBody } from './components.js';
 import {
@@ -15,7 +14,6 @@ import {
   getVisuals,
   motionTime,
 } from './runtime.js';
-import { currentSessionMode } from './session.js';
 
 const EMPTY_SAMPLES = new Float32Array(0);
 
@@ -24,8 +22,7 @@ const EMPTY_SAMPLES = new Float32Array(0);
  * (held bodies belong to BoardConstraintSystem), the comet (or the visual-only
  * CometOverride of the attract and chapter-complete loops), the flight trail,
  * the preview arc while placing, the target's solved state, collider sizes
- * for the current board radius, and starfield visibility (desktop and VR,
- * never over passthrough). Applies the visual accessibility settings: high
+ * for the current board radius. Applies the visual accessibility settings: high
  * contrast (brighter board and body rims, body outlines, the target's star
  * outline) and reduced motion (the decorative clock motionTime() stands
  * still, flight trails stop fading).
@@ -35,7 +32,6 @@ export class RenderSyncSystem extends createSystem({
 }) {
   private readonly pos = [0, 0, 0];
   private readonly comet = [0, 0, 0];
-  private starfield!: Entity;
   private lastLevelRevision = -1;
   private lastBoardVersion = -1;
   private lastFlightId = -1;
@@ -44,10 +40,6 @@ export class RenderSyncSystem extends createSystem({
   private lastPhase: GamePhase | null = null;
   private previewShown = false;
   private lastSettingsRevision = -1;
-
-  init(): void {
-    this.starfield = this.world.createTransformEntity(createStarfield().root, { persistent: true });
-  }
 
   update(delta: number, time: number): void {
     const game = getGame(this.world);
@@ -134,10 +126,6 @@ export class RenderSyncSystem extends createSystem({
 
     visuals.target.setSolved(game.phase === 'solved');
     visuals.target.update(motion);
-
-    const visibility = this.visibilityState.peek();
-    this.starfield.object3D!.visible =
-      visibility === VisibilityState.NonImmersive || currentSessionMode(this.world) === 'immersive-vr';
 
     this.lastPhase = game.phase;
     this.lastLevelRevision = game.levelRevision;

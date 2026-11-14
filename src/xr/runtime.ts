@@ -6,11 +6,14 @@ import {
   BOARD_SIZES,
   DEFAULT_ONBOARDING,
   DEFAULT_SETTINGS as SAVED_DEFAULT_SETTINGS,
+  ROOM_VIEWS,
   type BoardSize,
   type OnboardingFlags,
+  type RoomView,
 } from '../game/state.js';
 import type { BoardPlacement } from '../game/placement.js';
-import type { BodyVisual, CometVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
+import type { CosmosMask } from '../game/cosmos-rules.js';
+import type { BodyVisual, CometVisual, CosmosVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
 
 /*
  * Shared state between systems, stored in world.globals under fixed keys.
@@ -176,6 +179,8 @@ export interface AppSettings {
   readonly reducedMotion: boolean;
   /** Board radius factor BOARD_SIZE_SCALE[boardSize] (BoardPlacementSystem). */
   readonly boardSize: BoardSize;
+  /** How much of the room the cosmos covers in mixed reality (CosmosSystem). */
+  readonly roomView: RoomView;
 }
 
 /** The saved defaults (src/game/state.ts), so a fresh game and a migrated save agree. */
@@ -262,6 +267,22 @@ export interface ChapterRuntime {
   hide(): void;
 }
 
+/** The surrounding cosmos (CosmosSystem). */
+export interface CosmosRuntime {
+  readonly visual: CosmosVisual;
+  /** Drawn this frame. */
+  visible: boolean;
+  /** The opacity uniform this frame (the AR fade, Your Table's cap). */
+  opacity: number;
+  /** AR fade-in progress 0..1 (1 outside AR). */
+  fade: number;
+  mask: CosmosMask;
+  /** Restarts the AR fade-in from the room now ("the room dissolves into space"). */
+  replayFade(): void;
+  /** Holds the AR fade at 0 (the room only) until replayFade (the director's hook shot). */
+  holdFade(): void;
+}
+
 /** Phase 3 hook (the sky gallery): called when a chapter-complete moment starts. */
 export type ChapterCompleteListener = (chapter: number, stars: number) => void;
 
@@ -298,7 +319,15 @@ const KEYS = {
   sandboxPanel: 'sandboxPanel',
   hitLog: 'hitLog',
   motionClock: 'motionClock',
+  cosmos: 'cosmos',
 } as const;
+
+export function setCosmos(world: World, cosmos: CosmosRuntime): void {
+  world.globals[KEYS.cosmos] = cosmos;
+}
+export function getCosmos(world: World): CosmosRuntime | undefined {
+  return world.globals[KEYS.cosmos] as CosmosRuntime | undefined;
+}
 
 export function setSandbox(world: World, sandbox: SandboxRuntime): void {
   world.globals[KEYS.sandbox] = sandbox;
@@ -502,6 +531,10 @@ export function setSettings(world: World, partial: Partial<AppSettings>): AppSet
   if (partial.boardSize !== undefined) {
     if (!BOARD_SIZES.includes(partial.boardSize)) throw new TypeError(`settings.boardSize must be one of ${BOARD_SIZES.join(', ')}`);
     next.boardSize = partial.boardSize;
+  }
+  if (partial.roomView !== undefined) {
+    if (!ROOM_VIEWS.includes(partial.roomView)) throw new TypeError(`settings.roomView must be one of ${ROOM_VIEWS.join(', ')}`);
+    next.roomView = partial.roomView;
   }
   store.value = next;
   store.revision++;

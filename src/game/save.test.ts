@@ -38,7 +38,7 @@ const STATE: GameState = {
   solvedLevelIds: ['c1-l1', 'c1-l2'],
   stars: { 'c1-l1': 3, 'c1-l2': 2 },
   lastOutcome: null,
-  settings: { muted: false, volume: 0.6, quiet: true, leftHanded: true, highContrast: false, reducedMotion: true, boardSize: 'small' },
+  settings: { muted: false, volume: 0.6, quiet: true, leftHanded: true, highContrast: false, reducedMotion: true, boardSize: 'small', roomView: 'room' },
   onboarding: { ghostHandDone: true },
 };
 

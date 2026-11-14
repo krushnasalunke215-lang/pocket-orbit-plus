@@ -8,11 +8,34 @@
  */
 export const APP_NAME = 'Pocket Orbit+';
 
-/** Per-frame render budget checked against renderer.info. */
+/**
+ * Per-frame render budget checked against renderer.info (in XR the counts
+ * cover both eyes: 150 stereo calls is about 75 per eye).
+ */
 export const RENDER_BUDGET = {
-  maxDrawCalls: 100,
-  maxTriangles: 150_000,
+  maxDrawCalls: 150,
+  maxTriangles: 300_000,
 } as const;
+
+/**
+ * The surrounding cosmos, and its cheapest fallback toggles for a slow
+ * headset: starLayers 3 to 1, skyTexture [1024, 512] to [512, 256],
+ * asteroids 160 to 60, cosmosInk and shootingStars false.
+ */
+export const COSMOS_QUALITY = {
+  /** Instanced star layers (far dust, twinkling mid stars, near sparkles), 1-3. */
+  starLayers: 3,
+  /** Size of the sky texture baked once at init (equirect, width x height). */
+  skyTexture: [1024, 512],
+  /** Rocks in the asteroid belt (one instanced draw call). */
+  asteroids: 160,
+  shootingStars: true,
+  /** Ink outlines (inverted hulls) on the cosmos planets and rocks. */
+  cosmosInk: true,
+} as const;
+
+/** Seconds the cosmos takes to fade in over the room when an AR session starts. */
+export const COSMOS_FADE_SECONDS = 2.5;
 
 /** A release launches only if the hand was tracked within this window. */
 export const LAUNCH_TRACKING_GRACE_MS = 100;

@@ -411,6 +411,7 @@ export class GameController {
         highContrast: settings.highContrast,
         reducedMotion: settings.reducedMotion,
         boardSize: settings.boardSize,
+        roomView: settings.roomView,
       },
       onboarding: { ghostHandDone: onboarding.ghostHandDone },
     };

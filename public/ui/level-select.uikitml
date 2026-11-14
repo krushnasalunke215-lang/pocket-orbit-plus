@@ -16,7 +16,9 @@
   settings-page: the accessibility settings (left-handed, high contrast,
   reduced motion, board size) and the audio settings (mute, volume, quiet).
   Each toggle's label shows its state ("...: on" / "...: off"); Board
-  cycles small, medium and large. Back returns to the levels page.
+  cycles small, medium and large. Room view (header, beside Back, so the
+  page keeps its size) cycles Mixed, Space and Room. Back returns to the
+  levels page.
 -->
 <style>
   .levels-root {
@@ -198,9 +200,14 @@
   <div id="settings-page" class="page" style="display: none">
     <div class="header">
       <div id="settings-title" class="title">Settings</div>
-      <Button id="settings-back" class="small-button">
-        <ButtonLabel id="settings-back-label" class="small-label">Back</ButtonLabel>
-      </Button>
+      <div class="header-buttons">
+        <Button id="room-view-button" class="small-button">
+          <ButtonLabel id="room-view-label" class="small-label">Room view: Mixed</ButtonLabel>
+        </Button>
+        <Button id="settings-back" class="small-button">
+          <ButtonLabel id="settings-back-label" class="small-label">Back</ButtonLabel>
+        </Button>
+      </div>
     </div>
 
     <div class="settings-row">

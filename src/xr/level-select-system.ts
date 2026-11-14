@@ -9,7 +9,7 @@ import {
   type UIKitMLAsset,
 } from '@iwsdk/core';
 import { levelSelectPose } from '../game/hud-layout.js';
-import { BOARD_SIZES } from '../game/state.js';
+import { BOARD_SIZES, ROOM_VIEWS } from '../game/state.js';
 import {
   getBoard,
   getGame,
@@ -40,6 +40,7 @@ const LABEL_IDS = [
   'close-levels-label',
   'settings-label',
   'settings-back-label',
+  'room-view-label',
   'left-handed-label',
   'contrast-label',
   'motion-label',
@@ -50,6 +51,7 @@ const LABEL_IDS = [
   'quiet-label',
 ] as const;
 const BOARD_SIZE_LABELS = { small: 'Board: small', medium: 'Board: medium', large: 'Board: large' } as const;
+const ROOM_VIEW_LABELS = { mixed: 'Room view: Mixed', space: 'Room view: Space', room: 'Room view: Room' } as const;
 
 interface SlotElements {
   readonly button: UIKit.Text;
@@ -64,7 +66,8 @@ interface SlotElements {
  * solved level's best stars (unsolved levels show none; nothing is
  * locked), the Your Table button (opens the sandbox) and Settings, which
  * switches the panel to its settings page: left-handed, high contrast,
- * reduced motion, board size, and the audio settings (mute, volume, quiet).
+ * reduced motion, board size, Room view (how much of the real room the
+ * cosmos covers in mixed reality), and the audio settings (mute, volume, quiet).
  * They edit the runtime AppSettings that SaveSystem persists and the other
  * systems apply; Back returns to the levels. Hidden by default; the HUD
  * Levels button opens it on the levels page (show()) and closes it from
@@ -85,6 +88,7 @@ export class LevelSelectSystem extends createSystem({}) {
   private contrastLabel: UIKit.Text | null = null;
   private motionLabel: UIKit.Text | null = null;
   private boardSizeLabel: UIKit.Text | null = null;
+  private roomViewLabel: UIKit.Text | null = null;
   private levelsPage: UIKit.Text | null = null;
   private settingsPage: UIKit.Text | null = null;
   private lastStarsRevision = -1;
@@ -158,6 +162,7 @@ export class LevelSelectSystem extends createSystem({}) {
     onClick('contrast-button', () => setSettings(this.world, { highContrast: !getSettings(this.world).highContrast }));
     onClick('motion-button', () => setSettings(this.world, { reducedMotion: !getSettings(this.world).reducedMotion }));
     onClick('board-size-button', () => this.cycleBoardSize());
+    onClick('room-view-button', () => this.cycleRoomView());
     onClick('mute-button', () => setSettings(this.world, { muted: !getSettings(this.world).muted }));
     onClick('volume-down', () => this.stepVolume(-VOLUME_STEP));
     onClick('volume-up', () => this.stepVolume(VOLUME_STEP));
@@ -171,6 +176,7 @@ export class LevelSelectSystem extends createSystem({}) {
     this.contrastLabel = element('contrast-label');
     this.motionLabel = element('motion-label');
     this.boardSizeLabel = element('board-size-label');
+    this.roomViewLabel = element('room-view-label');
     this.levelsPage = element('levels-page');
     this.settingsPage = element('settings-page');
 
@@ -234,6 +240,12 @@ export class LevelSelectSystem extends createSystem({}) {
     setSettings(this.world, { boardSize: BOARD_SIZES[(i + 1) % BOARD_SIZES.length] });
   }
 
+  /** Room view (mixed reality comfort): Mixed, Space, Room. */
+  private cycleRoomView(): void {
+    const i = ROOM_VIEWS.indexOf(getSettings(this.world).roomView);
+    setSettings(this.world, { roomView: ROOM_VIEWS[(i + 1) % ROOM_VIEWS.length] });
+  }
+
   private stepVolume(step: number): void {
     const v = getSettings(this.world).volume;
     // Snap to the 0.1 grid, so 0.8 - 0.1 shows 70% and not 69.99...%.
@@ -267,6 +279,7 @@ export class LevelSelectSystem extends createSystem({}) {
       this.contrastLabel?.setProperties({ text: s.highContrast ? 'High contrast: on' : 'High contrast: off' });
       this.motionLabel?.setProperties({ text: s.reducedMotion ? 'Reduced motion: on' : 'Reduced motion: off' });
       this.boardSizeLabel?.setProperties({ text: BOARD_SIZE_LABELS[s.boardSize] });
+      this.roomViewLabel?.setProperties({ text: ROOM_VIEW_LABELS[s.roomView] });
       this.lastSettingsRevision = settingsRevision;
     }
 

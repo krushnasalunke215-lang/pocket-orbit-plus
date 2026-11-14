@@ -6,6 +6,7 @@ import {
   DEFAULT_ONBOARDING,
   DEFAULT_SETTINGS,
   deserializeGameState,
+  ROOM_VIEWS,
   serializeGameState,
   type GameState,
 } from './state.js';
@@ -18,7 +19,7 @@ const STATE: GameState = {
   solvedLevelIds: ['c1-l1'],
   stars: { 'c1-l1': 3 },
   lastOutcome: 'collision',
-  settings: { muted: true, volume: 0.35, quiet: false, leftHanded: true, highContrast: true, reducedMotion: false, boardSize: 'large' },
+  settings: { muted: true, volume: 0.35, quiet: false, leftHanded: true, highContrast: true, reducedMotion: false, boardSize: 'large', roomView: 'space' },
   onboarding: { ghostHandDone: true },
 };
 
@@ -29,7 +30,7 @@ describe('GameState serialization', () => {
 
     const reordered: GameState = {
       onboarding: { ghostHandDone: true },
-      settings: { boardSize: 'large', reducedMotion: false, highContrast: true, leftHanded: true, quiet: false, volume: 0.35, muted: true },
+      settings: { roomView: 'space', boardSize: 'large', reducedMotion: false, highContrast: true, leftHanded: true, quiet: false, volume: 0.35, muted: true },
       lastOutcome: STATE.lastOutcome,
       stars: { 'c1-l1': 3 },
       solvedLevelIds: STATE.solvedLevelIds,
@@ -119,7 +120,21 @@ describe('GameState serialization', () => {
       volume: 0.35,
       quiet: true,
     });
-    expect(DEFAULT_SETTINGS).toMatchObject({ leftHanded: false, highContrast: false, reducedMotion: false, boardSize: 'medium' });
+    expect(DEFAULT_SETTINGS).toMatchObject({ leftHanded: false, highContrast: false, reducedMotion: false, boardSize: 'medium', roomView: 'mixed' });
+  });
+
+  it('round-trips the room view, defaults a missing one to mixed and rejects bad values', () => {
+    for (const roomView of ROOM_VIEWS) {
+      const json = serializeGameState({ ...STATE, settings: { ...STATE.settings, roomView } });
+      expect(deserializeGameState(json).settings.roomView).toBe(roomView);
+    }
+    const missing = JSON.parse(serializeGameState(STATE));
+    delete missing.settings.roomView;
+    expect(deserializeGameState(JSON.stringify(missing)).settings.roomView).toBe('mixed');
+    for (const bad of ['huge', 1, null, '']) {
+      const json = serializeGameState({ ...STATE, settings: { ...STATE.settings, roomView: bad as unknown as 'space' } });
+      expect(() => deserializeGameState(json), String(bad)).toThrow(/roomView/);
+    }
   });
 
   it('rejects bad accessibility settings (the save then counts as corrupt)', () => {

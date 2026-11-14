@@ -10,6 +10,7 @@ import projectOptions from 'virtual:iwsdk-project';
 import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
 import { ChapterSystem } from './xr/chapter-system.js';
+import { CosmosSystem } from './xr/cosmos-system.js';
 import { DebugOverlaySystem, debugOverlayRequested } from './xr/debug-overlay-system.js';
 import { GameAudioSystem } from './xr/game-audio-system.js';
 import { GameSystem } from './xr/game-system.js';
@@ -72,6 +73,8 @@ async function main(): Promise<void> {
     .registerSystem(RenderSyncSystem, { priority: 20 })
     // After RenderSync, so flyby notes ring from this frame's body positions.
     .registerSystem(GameAudioSystem, { priority: 21 })
+    // The surrounding cosmos: AR fade-in, Room view mask, slow orbits.
+    .registerSystem(CosmosSystem, { priority: 23 })
     .registerSystem(HudSystem, { priority: 30 })
     .registerSystem(RimButtonSystem, { priority: 31 })
     .registerSystem(LevelSelectSystem, { priority: 32 })

@@ -50,6 +50,8 @@ const METHODS = new Set([
   'page.setSearch',
   'page.search',
   'page.debugOverlayText',
+  'cosmos.traceStart',
+  'cosmos.traceRead',
 ]);
 
 export default async function run({ frame, page, workspaceRoot }) {
@@ -89,6 +91,22 @@ export default async function run({ frame, page, workspaceRoot }) {
       if (method === 'page.debugOverlayText') {
         const el = document.getElementById('debug-overlay');
         return { value: el ? { text: el.textContent, display: el.style.display } : null, perfNow: performance.now() };
+      }
+      // Cosmos fade trace: page timers sample the session mode and the AR
+      // fade every 100 ms for args[0] ms (timers keep running during XR).
+      if (method === 'cosmos.traceStart') {
+        const trace = { samples: [] };
+        window.__iwerCosmosTrace = trace;
+        const started = performance.now();
+        const id = setInterval(() => {
+          const s = game.snapshot();
+          trace.samples.push({ t: performance.now(), mode: s.session.mode, visibility: s.session.visibility, fade: s.cosmos?.fade ?? null, opacity: s.cosmos?.opacity ?? null });
+          if (performance.now() - started > (args[0] ?? 8000)) clearInterval(id);
+        }, 100);
+        return { value: { started }, perfNow: performance.now() };
+      }
+      if (method === 'cosmos.traceRead') {
+        return { value: window.__iwerCosmosTrace ?? null, perfNow: performance.now() };
       }
       if (method === 'watchLaunch.read') {
         return { value: window.__iwerLaunchWatch ?? null, perfNow: performance.now() };

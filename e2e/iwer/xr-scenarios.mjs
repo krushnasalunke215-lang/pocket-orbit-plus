@@ -1401,6 +1401,7 @@ export const DEFAULT_TEST_SETTINGS = {
   highContrast: false,
   reducedMotion: false,
   boardSize: 'medium',
+  roomView: 'mixed',
 };
 
 /**
@@ -1949,6 +1950,118 @@ export async function glassesFit({ tableHead, fallbackHead, takeShot }) {
     }
   }
   return result;
+}
+
+/**
+ * The surrounding cosmos (L1): the AR fade-in on session start (traced by
+ * page timers), the Room view modes at the table pose (Mixed keeps the
+ * table clear, Space fills the room, Room draws no cosmos), Your Table's
+ * opacity cap, reduced motion (orbits, belt and shooting stars stand
+ * still) and the opaque cosmos in VR. Screenshots of each.
+ */
+export async function cosmosModes({ tableHead, takeShot }) {
+  const setRoomView = (roomView) => game('audio.setSettings', { roomView });
+  const seatLook = async (target) => {
+    xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+    await sleep(200);
+    xr('look-at', { device: 'headset', target: vec(target ?? snapshot().board.center) });
+    await sleep(900);
+  };
+  setRoomView('mixed');
+  if (xr('status').sessionActive) await exitXR();
+  await sleep(500);
+
+  // 1. The fade-in: traced from just before the session starts.
+  game('cosmos.traceStart', 9000);
+  await enterXR();
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  await sleep(1500);
+  const trace = game('cosmos.traceRead').value?.samples ?? [];
+  const ar = trace.filter((s) => s.mode === 'immersive-ar' && s.visibility !== 'non-immersive');
+  const t0 = ar[0]?.t ?? null;
+  const near = (dt) => ar.reduce((best, s) => (best === null || Math.abs(s.t - t0 - dt) < Math.abs(best.t - t0 - dt) ? s : best), null);
+  const fade = {
+    first: ar[0] ? round(ar[0].fade, 3) : null,
+    atHalfSecond: t0 === null ? null : round(near(500)?.fade ?? -1, 3),
+    atHalfSecondDt: t0 === null ? null : Math.round((near(500)?.t ?? 0) - t0),
+    atThreeSeconds: t0 === null ? null : round(near(3000)?.fade ?? -1, 3),
+    after3s: ar.filter((s) => s.t - t0 >= 3000).map((s) => s.fade),
+    samples: trace.length,
+  };
+
+  game('placeBoard');
+  await sleep(1500);
+  xr('set-transform', { device: 'hand-left', position: { x: tableHead.x - 0.18, y: tableHead.y - 0.25, z: tableHead.z - 0.2 } });
+  xr('set-transform', { device: 'hand-right', position: { x: tableHead.x + 0.15, y: tableHead.y - 0.2, z: tableHead.z - 0.15 } });
+  await game('loadLevel', 0);
+  await seatLook();
+  const view = (s) => ({ ...s.cosmos, calls: s.renderer.calls });
+  const sampleCalls = async () => {
+    game('resetRenderStats');
+    await sleep(1500);
+    return game('renderStats').value.max.calls;
+  };
+
+  // 2. Mixed (the default): the table area is clear.
+  let s = snapshot();
+  const mixed = { ...view(s), board: s.board.source, maxCalls: await sampleCalls(), shot: takeShot('l1-ar-mixed-table.png') };
+  const c = s.board.center;
+  await seatLook([c[0] - 1.5, tableHead.y + 0.9, c[2] - 3]);
+  const mixedAhead = takeShot('l1-ar-mixed-ahead.png');
+
+  // 3. Space: no mask, the room fills with space.
+  setRoomView('space');
+  await seatLook();
+  s = snapshot();
+  const space = { ...view(s), shot: takeShot('l1-ar-space.png') };
+
+  // 4. Room: no cosmos at all.
+  setRoomView('room');
+  await seatLook();
+  s = snapshot();
+  const room = { ...view(s), maxCalls: await sampleCalls(), shot: takeShot('l1-ar-room.png') };
+
+  // 5. Your Table (Mixed): capped opacity, island mask.
+  setRoomView('mixed');
+  await game('sandbox.enter', 0);
+  await sleep(400);
+  await seatLook();
+  s = snapshot();
+  const yourTable = { ...view(s), mode: s.mode, shot: takeShot('l1-ar-your-table.png') };
+  game('sandbox.exit');
+  await sleep(500);
+
+  // 6. Reduced motion: orbits and the belt stand still, no shooting star.
+  game('audio.setSettings', { reducedMotion: true });
+  await sleep(600);
+  const m0 = snapshot().cosmos;
+  await sleep(2000);
+  const m1 = snapshot().cosmos;
+  const stillTrace = [];
+  for (let i = 0; i < 4; i++) {
+    stillTrace.push(snapshot().cosmos.shootingStars);
+    await sleep(500);
+  }
+  game('audio.setSettings', { reducedMotion: false });
+  await sleep(1500);
+  const moving = snapshot().cosmos.motion;
+  const reduced = { motion: [m0.motion, m1.motion], shootingStars: stillTrace, movingAfter: moving };
+
+  // 7. VR: opaque, no mask.
+  await exitXR();
+  game('enterVR');
+  await waitFor('an active immersive-vr session', () => xr('status').sessionActive, 20_000);
+  xr('set-input-mode', { mode: 'hand' });
+  await sleep(3000);
+  xr('set-transform', { device: 'headset', position: tableHead, orientation: { x: 0, y: 0, z: 0, w: 1 } });
+  await sleep(300);
+  game('placeBoard');
+  await sleep(1500);
+  await seatLook([c[0] - 1.2, tableHead.y + 0.3, c[2] - 3]);
+  s = snapshot();
+  const vr = { ...view(s), session: s.session.mode, blendMode: s.session.blendMode, shot: takeShot('l1-vr.png') };
+  await exitXR();
+  return { fade, mixed, mixedAhead, space, room, yourTable, reduced, vr };
 }
 
 /**

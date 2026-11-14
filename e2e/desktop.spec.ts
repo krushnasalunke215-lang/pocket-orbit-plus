@@ -459,6 +459,7 @@ test('settings page: every accessibility and audio button by mouse, saved over a
     highContrast: false,
     reducedMotion: false,
     boardSize: 'medium',
+    roomView: 'mixed',
   });
   console.log('settings page', JSON.stringify({ position: start.levelSelect.position, size: start.levelSelect.size }));
   expect(start.levelSelect.size![0]).toBeLessThanOrEqual(0.461);
@@ -484,6 +485,10 @@ test('settings page: every accessibility and audio button by mouse, saved over a
   await clickUi(page, 'volume-up');
   await clickUi(page, 'quiet-button');
   await expect.poll(async () => (await audioState(page)).volume, { timeout: 5_000 }).toBeCloseTo(0.9, 6);
+  // Room view cycles Mixed (the default), Space, Room; the desktop cosmos stays fully shown.
+  await clickUi(page, 'room-view-button');
+  await expect.poll(async () => (await a11y()).settings.roomView, { timeout: 5_000 }).toBe('space');
+  expect((await snapshot(page)).cosmos).toMatchObject({ visible: true, opacity: 1, mask: 'none', roomView: 'space' });
   const on = await snapshot(page);
   expect(on.accessibility.settings).toEqual({
     muted: true,
@@ -493,6 +498,7 @@ test('settings page: every accessibility and audio button by mouse, saved over a
     highContrast: true,
     reducedMotion: true,
     boardSize: 'large',
+    roomView: 'space',
   });
   expect(on.levelSelect.open).toBe(true);
   expect(on.levelSelect.page).toBe('settings');
@@ -687,6 +693,9 @@ test('render budget', async ({ page }) => {
   }
   await expect.poll(async () => (await snapshot(page)).solved, { timeout: 30_000 }).toBe(true);
   await page.waitForTimeout(500); // a few frames of the solved state (halo swell, full trail)
+  // The surrounding cosmos on the desktop: fully drawn, no mask.
+  expect((await snapshot(page)).cosmos).toMatchObject({ visible: true, opacity: 1, mask: 'none' });
+  await page.screenshot({ path: screenshotPath('l1-desktop.png') });
 
   const stats = await page.evaluate(() => window.__game!.renderStats());
   const report = { level: levels[0].id, budget: RENDER_BUDGET, ...stats };

@@ -13,6 +13,16 @@ export type BoardSize = 'small' | 'medium' | 'large';
 
 export const BOARD_SIZES: readonly BoardSize[] = ['small', 'medium', 'large'];
 
+/**
+ * Room view (comfort) in mixed reality: 'space' fills the room with the
+ * cosmos, 'mixed' keeps the table and the space below eye level clear (the
+ * table is an island in space), 'room' shows no cosmos. VR and the desktop
+ * always show the full cosmos.
+ */
+export type RoomView = 'space' | 'mixed' | 'room';
+
+export const ROOM_VIEWS: readonly RoomView[] = ['mixed', 'space', 'room'];
+
 /** User audio and accessibility settings as saved. */
 export interface SavedSettings {
   muted: boolean;
@@ -26,6 +36,7 @@ export interface SavedSettings {
   /** No decorative motion (spins, pulses, flowing rings), no chapter-moment burst, static trails. */
   reducedMotion: boolean;
   boardSize: BoardSize;
+  roomView: RoomView;
 }
 
 export const DEFAULT_SETTINGS: Readonly<SavedSettings> = Object.freeze({
@@ -36,6 +47,7 @@ export const DEFAULT_SETTINGS: Readonly<SavedSettings> = Object.freeze({
   highContrast: false,
   reducedMotion: false,
   boardSize: 'medium',
+  roomView: 'mixed',
 });
 
 /** One-time onboarding steps the player has completed. */
@@ -110,7 +122,7 @@ function optionalFlag(value: Record<string, unknown>, key: 'leftHanded' | 'highC
 
 function parseSettings(value: unknown): SavedSettings {
   if (!isRecord(value)) throw new Error('Game state settings must be an object');
-  const { muted, volume, quiet, boardSize } = value;
+  const { muted, volume, quiet, boardSize, roomView } = value;
   if (typeof muted !== 'boolean') throw new Error('Game state settings.muted must be a boolean');
   if (typeof quiet !== 'boolean') throw new Error('Game state settings.quiet must be a boolean');
   if (typeof volume !== 'number' || !Number.isFinite(volume) || volume < 0 || volume > 1) {
@@ -121,6 +133,9 @@ function parseSettings(value: unknown): SavedSettings {
   if (boardSize !== undefined && !BOARD_SIZES.includes(boardSize as BoardSize)) {
     throw new Error(`Game state settings.boardSize must be one of ${BOARD_SIZES.join(', ')}`);
   }
+  if (roomView !== undefined && !ROOM_VIEWS.includes(roomView as RoomView)) {
+    throw new Error(`Game state settings.roomView must be one of ${ROOM_VIEWS.join(', ')}`);
+  }
   return {
     muted,
     volume,
@@ -129,6 +144,7 @@ function parseSettings(value: unknown): SavedSettings {
     highContrast: optionalFlag(value, 'highContrast'),
     reducedMotion: optionalFlag(value, 'reducedMotion'),
     boardSize: (boardSize as BoardSize | undefined) ?? DEFAULT_SETTINGS.boardSize,
+    roomView: (roomView as RoomView | undefined) ?? DEFAULT_SETTINGS.roomView,
   };
 }
 

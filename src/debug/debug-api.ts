@@ -1,6 +1,7 @@
 import { DepthOccludable, DepthSensingSystem, Grabbed, Hovered, Quaternion, Vector3, type World } from '@iwsdk/core';
 import { OUTLINES } from '../render/halo-sprites.js';
-import { HIGH_CONTRAST, MOTION_TIME, OCCLUSION_UNIFORMS } from '../render/shaders/common.js';
+import { HIGH_CONTRAST, MOTION_TIME, OCCLUSION_UNIFORMS, SHARED_TIME } from '../render/shaders/common.js';
+import { islandMask } from '../game/cosmos-rules.js';
 import { HIT_LOG_SIZE as HIT_LOG_CAPACITY } from '../xr/runtime.js';
 import type { AudioEngineState, AudioEvent } from '../audio/engine.js';
 import { renderVoiceOffline, type OfflineRender, type OfflineVoice } from '../audio/voices.js';
@@ -13,6 +14,7 @@ import {
   getAudio,
   getBoard,
   getChapter,
+  getCosmos,
   getGame,
   getHud,
   getLevelSelect,
@@ -106,8 +108,26 @@ export interface GameSnapshot {
     handleHovered: boolean;
   };
   session: { mode: string; blendMode: string | null; enabledFeatures: string[]; visibility: string };
-  /** The VR / desktop starfield is drawn (never over passthrough). */
+  /** The surrounding cosmos (named 'Cosmos') is drawn. */
   starfieldVisible: boolean;
+  /**
+   * The cosmos: drawn, opacity, AR fade progress, mask ('island' in Mixed),
+   * the Room view setting, and the island mask's largest value over the
+   * board center and 8 rim points seen from the head (0: the table area is
+   * clear). motion: the first orbiting planet's position and the belt's
+   * turn; shootingStars alive now; pulses per cosmos planet.
+   */
+  cosmos: {
+    visible: boolean;
+    opacity: number;
+    fade: number;
+    mask: string;
+    roomView: string;
+    boardMask: number;
+    motion: number[];
+    shootingStars: number;
+    pulses: number[];
+  } | null;
   /** HUD world position and size (meters, from the UIKit layout) and its status line. */
   hud: { ready: boolean; position: Triple | null; size: [number, number] | null; status: string | null };
   /** The attract loop drives the comet visual (before the first interaction). */
@@ -425,6 +445,34 @@ export function installDebugApi(world: World): GameDebugApi {
     };
   };
 
+  const cosmosSnapshot = (): GameSnapshot['cosmos'] => {
+    const cosmos = getCosmos(world);
+    const board = getBoard(world);
+    if (!cosmos || !board) return null;
+    const head = world.camera.getWorldPosition(new Vector3());
+    const root = board.entity.object3D!;
+    root.updateWorldMatrix(true, false);
+    const center = root.getWorldPosition(new Vector3()).sub(head);
+    let boardMask = islandMask(center.x, center.y, center.z, center.x, center.y, center.z);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      const p = root.localToWorld(new Vector3(Math.cos(a), 0, Math.sin(a))).sub(head);
+      boardMask = Math.max(boardMask, cosmos.mask === 'island' ? islandMask(p.x, p.y, p.z, center.x, center.y, center.z) : 1);
+    }
+    if (cosmos.mask !== 'island') boardMask = 1;
+    return {
+      visible: cosmos.visible,
+      opacity: cosmos.opacity,
+      fade: cosmos.fade,
+      mask: cosmos.mask,
+      roomView: getSettings(world).roomView,
+      boardMask,
+      motion: cosmos.visual.motionProbe(),
+      shootingStars: cosmos.visual.activeShootingStars(SHARED_TIME.value),
+      pulses: [0, 1, 2, 3].map((i) => cosmos.visual.pulseLevel(i)),
+    };
+  };
+
   const api: GameDebugApi = {
     get ready() {
       return Boolean(
@@ -504,7 +552,8 @@ export function installDebugApi(world: World): GameDebugApi {
           handleHeld: board.handleEntity.hasComponent(Grabbed),
           handleHovered: board.handleEntity.hasComponent(Hovered),
         },
-        starfieldVisible: Boolean(world.scene.getObjectByName('Starfield')?.visible),
+        starfieldVisible: Boolean(world.scene.getObjectByName('Cosmos')?.visible),
+        cosmos: cosmosSnapshot(),
         session: {
           mode: currentSessionMode(world),
           blendMode: session?.environmentBlendMode ?? null,

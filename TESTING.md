@@ -91,7 +91,9 @@ For each item, write down what happened. Short notes are fine.
    reading text? If you are left-handed, was a right ghost hand a problem?
    **Levels**, then **Settings**, has Left-handed (the ghost hand then uses
    the left hand), High contrast, Reduced motion, Board (small, medium,
-   large) and the sound controls. If you try one, say which and whether it
+   large), Room view (Space, Mixed, Room: how much of your real room the
+   space around you covers; Mixed keeps the table and the floor visible)
+   and the sound controls. If you try one, say which and whether it
    helped.
 10. **Level 6 three stars.** If you get that far: is 3 stars on level 6
     (Light and Dark) possible or frustrating?
