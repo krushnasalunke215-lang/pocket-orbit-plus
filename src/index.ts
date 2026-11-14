@@ -33,6 +33,11 @@ async function main(): Promise<void> {
   // Before any system and any XR session, so hand models never load from the CDN.
   installLocalHandVisuals(world);
 
+  // Director mode (?demo=1, dev builds only; see VIDEO.md): plays the
+  // trailer shots in IWER. It starts from a fresh game and saves nothing,
+  // so every take is the same and the player's save is untouched. In a
+  // production build `demo` is the constant false.
+  const demo = import.meta.env.DEV && new URLSearchParams(window.location.search).get('demo') === '1';
   // Registration order matters (each init reads what the previous created);
   // priorities set the per-frame order. Built-ins run first: Input -4,
   // GrabSystem -3, SceneUnderstanding -1.
@@ -53,9 +58,10 @@ async function main(): Promise<void> {
       },
     })
     .registerSystem(BoardPlacementSystem, { priority: 5 })
-    .registerSystem(GameSystem, { priority: 10 })
-    // Right after GameSystem: restores the save before other systems read state.
-    .registerSystem(SaveSystem, { priority: 11 })
+    .registerSystem(GameSystem, { priority: 10 });
+  // Right after GameSystem: restores the save before other systems read state.
+  if (!demo) world.registerSystem(SaveSystem, { priority: 11 });
+  world
     // Your Table wells (sandbox mode): reticles, hit-test pinch, pucks.
     .registerSystem(RealObjectSystem, { priority: 12 })
     .registerSystem(BoardConstraintSystem, { priority: 0 })
@@ -80,7 +86,11 @@ async function main(): Promise<void> {
 
   if (import.meta.env.DEV || import.meta.env.MODE === 'e2e') {
     const { installDebugApi } = await import('./debug/debug-api.js');
-    installDebugApi(world);
+    const api = installDebugApi(world);
+    if (import.meta.env.DEV && demo) {
+      const { startDirector } = await import('./demo/director.js');
+      startDirector(world, api);
+    }
   }
 }
 
