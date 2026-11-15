@@ -4,7 +4,7 @@ The competition video must be real gameplay (no AI-generated footage), with
 captions on, and the game's own audio as the soundtrack. There is no headset,
 so every shot is recorded in IWER, IWSDK's browser XR emulator, in its
 `sunlit_living_room` room. The video must stay under 3:00; this plan comes
-to **2:37** (seven shots, 2:28, then a 9-second end card).
+to **2:34** (eight shots, 2:25, then a 9-second end card).
 
 **Director mode** plays each shot for you, with the same input a player would
 use: emulated hands pinch, carry and let go of the planets, hand rays click the
@@ -75,7 +75,7 @@ When you are done, stop the server with `npx @iwsdk/cli dev down`.
 5. In the editor, cut the first second (the card) and trim to the "Edit" length.
 
 To retake a shot, reload the page (F5) and repeat. `https://localhost:8081/?demo=1`
-plays shots 1-5 and 7 one after another in one take; it is handy for a
+plays shots 0-5 and 7 one after another in one take; it is handy for a
 rehearsal, but separate takes are easier to edit.
 
 If a shot stops, a card says where and why (for example "Shot 6 needs the Meta
@@ -107,13 +107,14 @@ takes on this machine, measured by `npm run demo:shots`.
 
 | # | URL (after `https://localhost:8081/`) | Edit | Plays | What happens | Stop when |
 | --- | --- | --- | --- | --- | --- |
-| 1 | `?demo=1&shot=1` | 0:06 | 6.6 s | Level 6 with the white star already set. A hand pinches the planet from the tray onto the coffee table and lets go. The comet curves past the planet, the white star and the black hole (three bells) and hits the star. | The star is hit and the HUD shows the stars |
-| 2 | `?demo=1&shot=2` | 0:24 | 24.9 s | Level 1 from a fresh game: the comet's attract loop and the ghost hand showing pinch, drag and let go. Then a real hand places the planet, the comet misses, the hand moves it and the comet hits the star (3 stars). | The HUD has shown 3 stars for about 4 s |
-| 3 | `?demo=1&shot=3` | 0:30 | 30.8 s | Levels 4, 5 and 6 in a row, each placed by hand and flying: the black hole slings the comet, the white star pushes it, then both together. | Level 6 is solved |
-| 4 | `?demo=1&shot=4` | 0:20 | 20.6 s | Level 6 solved with its melody (planet, white star, black hole: 3 stars); the notes replay as a phrase and end on a chord. The hand ray clicks Next and the chapter-complete moment opens: the ring of stars over the board, the looping comet, the arpeggio and "Chapter 1 complete: 18 of 18 stars". | The chapter moment has played about 8 s |
-| 5 | `?demo=1&shot=5` | 0:23 | 23.5 s | Your Table: the hand ray clicks Make well, aims at the real cup on the coffee table (the reticle sits on it) and pinches: the cup becomes a gravity well. The hand places the planet and lets go; the comet bends around the cup while the camera leans to the side. Then the hand ray clicks Replay, and from the side the cup hides the comet as it passes behind it (depth occlusion). | The replayed comet has left the board |
-| 6 | `?demo=1&shot=6` (glasses device) | 0:18 | 18.8 s | Meta VR Glasses view with its field-of-view mask. The gaze picks the planet, a pinch with the hand at rest (out of view) carries it, and level 1 is solved. Then gaze plus pinch opens Levels and picks level 2. | Level 2 has loaded |
-| 7 | `?demo=1&shot=7` | 0:27 | 28.5 s | The hand ray opens Levels, then Settings: High contrast on (brighter rims, outlines), Board size large, small, medium, Left-handed on, Reduced motion on, Back, Close. The board then shows the left ghost hand on the high-contrast board, with nothing else moving. | The ghost hand has shown its move |
+| 0 | `?demo=1&shot=0` | 0:12 | 14.3 s | The opening hook. Seated at the coffee table, the real room only. On the click your room dissolves into space over 2.5 s: a comic nebula, stars, a giant ringed planet and an asteroid belt, while the table, the floor and your hands stay real (Room view: Mixed). The head turns up to the giant planet and back to the table; a hand pinches the planet onto its spot and lets go: WHOOSH!, the flight, KA-POW!, and the comet rises into the sky as a star. | The comet has risen into the sky |
+| 1 | `?demo=1&shot=1` | 0:06 | 7.5 s | Level 6 with the white star already set. A hand pinches the planet from the tray onto the coffee table and lets go. The comet curves past the planet, the white star and the black hole (three bells) and hits the star. | The star is hit and the HUD shows the stars |
+| 2 | `?demo=1&shot=2` | 0:20 | 25.8 s | Level 1 from a fresh game: the comet's attract loop and the ghost hand showing pinch, drag and let go. Then a real hand places the planet, the comet misses, the hand moves it and the comet hits the star (3 stars). | The HUD has shown 3 stars for about 4 s |
+| 3 | `?demo=1&shot=3` | 0:26 | 31.9 s | Levels 4, 5 and 6 in a row, each placed by hand and flying: the black hole slings the comet, the white star pushes it, then both together. | Level 6 is solved |
+| 4 | `?demo=1&shot=4` | 0:22 | 22.8 s | Level 6 solved with its melody (planet, white star, black hole: 3 stars); the notes replay as a phrase and end on a chord. The hand ray clicks Next and the chapter-complete moment opens: the ring of stars over the board, the looping comet, the arpeggio and "Chapter 1 complete: 18 of 18 stars". Then the head tilts up: the six solved levels form the chapter constellation in the sky, its links drawn in order, while the big planets pulse with the chord. | The constellation has been on screen about 4 s |
+| 5 | `?demo=1&shot=5` | 0:21 | 25.6 s | Your Table: the hand ray clicks Make well, aims at the real cup on the coffee table (the reticle sits on it) and pinches: the cup becomes a gravity well. The hand places the planet and lets go; the comet bends around the cup while the camera leans to the side. Then the hand ray clicks Replay, and from the side the cup hides the comet as it passes behind it (depth occlusion). | The replayed comet has left the board |
+| 6 | `?demo=1&shot=6` (glasses device) | 0:16 | 24.1 s | Meta VR Glasses view with its field-of-view mask. The gaze picks the planet, a pinch with the hand at rest (out of view) carries it, and level 1 is solved. Then gaze plus pinch opens Levels and picks level 2. | Level 2 has loaded |
+| 7 | `?demo=1&shot=7` | 0:22 | 29.2 s | The hand ray opens Levels, then Settings: High contrast on (brighter rims, outlines), Board size large, small, medium, Left-handed on, Reduced motion on, Back, Close. The board then shows the left ghost hand on the high-contrast board, with nothing else moving. | The ghost hand has shown its move |
 
 Shot 4 starts with levels 1-5 already at 3 stars: before the card, the
 director plays their stored 3-star solutions through the game's own launch
@@ -123,6 +124,13 @@ the chapter moment shows 18 of 18.
 Shot 5: where the room puts the cup, no Your Table target can be solved with
 that well, so the shot shows the comet bending around the cup and flying on,
 not a hit. Say "bends" in the caption, not "solves".
+
+Every shot now plays in the Cosmos + Comic look: the comic nebula sky,
+the giant ringed planet and the asteroid belt around the table (Room view:
+Mixed keeps the table, the floor and the hands real), floating comic
+planets with ink outlines, and the WHOOSH!, DING!, ZAP!, BOOM! and KA-POW!
+words. Shot 0 holds the cosmos back until the click, then lets it dissolve
+in over the room.
 
 The Quest shots film from a camera leaning in over the board (about 0.7 m
 from its center), closer than the seated pose the board was placed from, so
@@ -138,17 +146,19 @@ and let the bells play on their own where the script says so.
 
 | Time | Shot | Voiceover (also the caption) | Extra on-screen text |
 | --- | --- | --- | --- |
-| 0:00-0:06 | 1 | (no voice for 3 s: let the three bells ring) "Pinch a planet onto your real table." | Over the hit: **[NAME]**, then the tagline "Every solution plays a song." Small, bottom corner, for the whole video's first 6 s: "Real gameplay, recorded in the IWER emulator" |
-| 0:06-0:30 | 2 | "Your table is the board. The ghost hand shows the move: pinch, drag, let go. Miss, nudge the planet, try again. First level, about thirty seconds." | |
-| 0:30-1:00 | 3 | "Every body bends the comet. A black hole slings it. A white star pushes it away. Each one you pass rings its own note." | "Black hole" and "White star" as labels while each flies |
-| 1:00-1:20 | 4 | "Ring the notes in the right order and you earn the third star: your solution plays back as a melody. Finish the chapter and the stars gather over your table." | |
-| 1:20-1:43 | 5 | "Your Table mode turns real things into gravity. Aim at a cup and pinch: now it pulls the comet. Depth sensing keeps the cup in front of the comet when it passes behind." | "Depth occlusion" during the replay |
-| 1:43-2:01 | 6 | "Built for Meta VR Glasses too: look at a planet, pinch anywhere, and move it. Every button works by gaze." | "Meta VR Glasses view (emulated)" |
-| 2:01-2:28 | 7 | "Left-handed, high contrast, reduced motion, and three board sizes, all from the Settings page." | |
-| 2:28-2:37 | end card | "Built with the Immersive Web SDK. Play it in your Quest browser." | "Built with IWSDK", "N automated tests, solver-verified levels" (take N from `npm test` and `npm run verify:iwer`), then the URL: https://krushnasalunke215-lang.github.io/pocket-orbit-plus/ |
+| 0:00-0:12 | 0 | "Your room dissolves into space. The table stays." (then let WHOOSH and KA-POW play on screen) | Over the rising star: **[NAME]**. Small, bottom corner, for the whole video's first 12 s: "Real gameplay, recorded in the IWER emulator" |
+| 0:12-0:18 | 1 | (no voice for 3 s: let the three bells ring) "Pinch a planet onto your real table." | The tagline "Every solution plays a song." |
+| 0:18-0:38 | 2 | "Your table is the board. The ghost hand shows the move: pinch, drag, let go. Miss, nudge the planet, try again. First level, about thirty seconds." | |
+| 0:38-1:04 | 3 | "Every body bends the comet. A black hole slings it. A white star pushes it away. Each one you pass rings its own note." | "Black hole" and "White star" as labels while each flies |
+| 1:04-1:26 | 4 | "Ring the notes in the right order and you earn the third star: your solution plays back as a melody. Every solve becomes a star overhead; finish the chapter and they join into a constellation." | |
+| 1:26-1:47 | 5 | "Your Table mode turns real things into gravity. Aim at a cup and pinch: now it pulls the comet. Depth sensing keeps the cup in front of the comet when it passes behind." | "Depth occlusion" during the replay |
+| 1:47-2:03 | 6 | "Built for Meta VR Glasses too: look at a planet, pinch anywhere, and move it. Every button works by gaze." | "Meta VR Glasses view (emulated)" |
+| 2:03-2:25 | 7 | "Left-handed, high contrast, reduced motion, three board sizes, and how much of your room turns to space, all from the Settings page." | |
+| 2:25-2:34 | end card | "Built with the Immersive Web SDK. Play it in your Quest browser." | "Built with IWSDK", "N automated tests, solver-verified levels" (take N from `npm test` and `npm run verify:iwer`), then the URL: https://krushnasalunke215-lang.github.io/pocket-orbit-plus/ |
 
 For the end card, freeze the last frame of shot 4 (the constellation) or
-shot 7 and put the text over it. Keep each caption on screen while its line
+shot 7 and put the text over it. WHOOSH!, DING!, BOOM!, ZAP! and KA-POW! are
+on screen in the game itself; do not repeat them in the captions. Keep each caption on screen while its line
 is spoken; split lines longer than about 40 characters into two.
 
 Then export at 1080p, 30 or 60 fps, check that it is under 3:00, and upload
@@ -157,7 +167,7 @@ it as public on YouTube or Vimeo.
 ## 6. Backup clips (silent)
 
 `npm run demo:clips` records every shot with Playwright as a silent
-1280x720 `.webm` in `.agents/tasks/video-clips/` (`shot-1-hook.webm` to
+1280x720 `.webm` in `.agents/tasks/video-clips/` (`shot-0-dissolve.webm` to
 `shot-7-accessibility.webm`), with one frame of each saved beside it as a
 `.png`. It starts the dev server itself (no managed window), switches to the
 glasses device for shot 6 and back, and stops the server at the end. Use the
@@ -166,8 +176,8 @@ from a live take under them.
 
 ## 7. Checks
 
-`npm run demo:shots` plays every shot (`?demo=1&shot=1` to `shot=7`, without
+`npm run demo:shots` plays every shot (`?demo=1&shot=0` to `shot=7`, without
 the start card) in a headed managed IWER window and fails on a director error
 or a console error; it saves one frame of each shot to
-`.agents/tasks/screenshots/phase3/demo-shot-N.png` and the timings to
+`.agents/tasks/screenshots/cosmos-comic/demo-shot-N.png` and the timings to
 `test-results/demo-shots-summary.json`.

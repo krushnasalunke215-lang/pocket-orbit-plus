@@ -88,13 +88,18 @@ export const BOARD = {
 export const BOARD_SIZE_SCALE = { small: 0.75, medium: 1, large: 1.25 } as const;
 
 /**
- * Fixed camera and board pose for non-immersive (desktop) play. The camera
- * aims a little beyond the board center so the HUD above the far rim stays
- * in frame.
+ * Fixed camera and board pose for non-immersive (desktop) play. The board
+ * faces cameraPosition (straight ahead of a seated player); the camera
+ * itself sits at viewPosition, a seated three-quarter view from the right,
+ * low enough that the surrounding cosmos and the giant planet are in the
+ * frame above the board and the HUD, and DesktopCameraSystem drifts it
+ * slowly around that pose (parallax) while nothing is touched.
  */
 export const DESKTOP_VIEW = {
   cameraPosition: [0, 1.45, -0.05],
   cameraLookAt: [0, 1.0, -0.57],
+  viewPosition: [0.24, 1.3, 0.0],
+  viewLookAt: [-0.02, 1.08, -0.6],
   boardCenter: [0, 1.0, -0.45],
   boardRadius: 0.2,
 } as const;

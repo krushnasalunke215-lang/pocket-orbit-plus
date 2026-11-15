@@ -19,12 +19,12 @@ const CLIPS = path.join(root, '.agents', 'tasks', 'video-clips');
 const TMP = path.join(CLIPS, '.tmp');
 const BASE = 'https://localhost:8081/';
 const SIZE = { width: 1280, height: 720 };
-const NAMES = { 1: 'hook', 2: 'level-1', 3: 'levels-4-6', 4: 'chapter-complete', 5: 'your-table', 6: 'glasses', 7: 'accessibility' };
-const ORDER = [1, 2, 3, 4, 5, 7, 6];
+const NAMES = { 0: 'dissolve', 1: 'hook', 2: 'level-1', 3: 'levels-4-6', 4: 'chapter-complete', 5: 'your-table', 6: 'glasses', 7: 'accessibility' };
+const ORDER = [0, 1, 2, 3, 4, 5, 7, 6];
 
 const only = process.argv.find((a) => a.startsWith('--only='));
 const wanted = only ? only.slice('--only='.length).split(',').map(Number) : ORDER;
-if (wanted.some((n) => !NAMES[n])) throw new Error(`shots are 1-7, got ${only}`);
+if (wanted.some((n) => !NAMES[n])) throw new Error(`shots are 0-7, got ${only}`);
 
 /** Loads the plain page until IWER reports `device` (after a config switch Vite restarts). */
 async function waitForDevice(browser, device) {

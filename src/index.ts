@@ -13,6 +13,7 @@ import { ChapterSystem } from './xr/chapter-system.js';
 import { ComicFxSystem } from './xr/comic-fx-system.js';
 import { SkyStorySystem } from './xr/sky-story-system.js';
 import { CosmosSystem } from './xr/cosmos-system.js';
+import { DesktopCameraSystem } from './xr/desktop-camera-system.js';
 import { DebugOverlaySystem, debugOverlayRequested } from './xr/debug-overlay-system.js';
 import { GameAudioSystem } from './xr/game-audio-system.js';
 import { GameSystem } from './xr/game-system.js';
@@ -61,6 +62,8 @@ async function main(): Promise<void> {
       },
     })
     .registerSystem(BoardPlacementSystem, { priority: 5 })
+    // The desktop three-quarter camera and its slow parallax drift.
+    .registerSystem(DesktopCameraSystem, { priority: 6 })
     .registerSystem(GameSystem, { priority: 10 });
   // Right after GameSystem: restores the save before other systems read state.
   if (!demo) world.registerSystem(SaveSystem, { priority: 11 });

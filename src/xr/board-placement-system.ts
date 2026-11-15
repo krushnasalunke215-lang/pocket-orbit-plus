@@ -165,8 +165,8 @@ export class BoardPlacementSystem extends createSystem({
       this.pendingXRPlacement = false;
       handle.visible = false;
       this.apply(desktopPlacement(this.sizeScale()));
-      const [px, py, pz] = DESKTOP_VIEW.cameraPosition;
-      const [lx, ly, lz] = DESKTOP_VIEW.cameraLookAt;
+      const [px, py, pz] = DESKTOP_VIEW.viewPosition;
+      const [lx, ly, lz] = DESKTOP_VIEW.viewLookAt;
       this.camera.position.set(px, py, pz);
       this.camera.lookAt(lx, ly, lz);
     } else if (state === VisibilityState.Visible) {

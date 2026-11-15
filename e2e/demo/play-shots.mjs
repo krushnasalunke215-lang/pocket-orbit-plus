@@ -3,7 +3,7 @@
 // fails on a director error or a console error. Shot 6 switches the
 // emulator to metaVRGlasses (iwsdk.config.json; Vite restarts in place) and
 // back. A frame of each shot (at its key moment) goes to
-// .agents/tasks/screenshots/phase3/demo-shot-N.png; the summary to
+// .agents/tasks/screenshots/cosmos-comic/demo-shot-N.png; the summary to
 // test-results/demo-shots-summary.json. The runtime is always stopped.
 // Usage: npm run demo:shots
 //        node e2e/demo/play-shots.mjs --only=1,6
@@ -13,12 +13,12 @@ import path from 'node:path';
 import { call, root, run, sleep } from '../iwer/cli.mjs';
 import { RESULTS, SHOTS, restoreEmulatorDevice, setEmulatorDevice, waitFor } from '../iwer/xr-helpers.mjs';
 
-const ALL = [1, 2, 3, 4, 5, 6, 7];
+const ALL = [0, 1, 2, 3, 4, 5, 6, 7];
 const REQUEST = path.join(root, 'e2e', 'demo', '.request.json');
 
 const only = process.argv.find((a) => a.startsWith('--only='));
 const wanted = only ? only.slice('--only='.length).split(',').map(Number) : ALL;
-if (wanted.some((n) => !ALL.includes(n))) throw new Error(`shots are 1-7, got ${only}`);
+if (wanted.some((n) => !ALL.includes(n))) throw new Error(`shots are 0-7, got ${only}`);
 
 function frameCall(action, search) {
   writeFileSync(REQUEST, JSON.stringify({ action, search }));

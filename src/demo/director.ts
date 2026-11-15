@@ -1,9 +1,20 @@
 import { Hovered, type World } from '@iwsdk/core';
 import type { BodySnapshot, GameDebugApi, GameSnapshot } from '../debug/debug-api.js';
 import { boardToWorld } from '../game/board-math.js';
+import { CONSTELLATION } from '../game/sky-story.js';
+import { GIANT_POSITION } from '../render/cosmos/planets.js';
 import { LEVEL_SOURCE, simulate } from '../sim/simulate.js';
 import type { Vec2 } from '../sim/vec.js';
-import { DEFAULT_SETTINGS, getChapter, getGame, getLevelSelect, setSettings } from '../xr/runtime.js';
+import {
+  DEFAULT_SETTINGS,
+  getChapter,
+  getCosmos,
+  getGame,
+  getLevelSelect,
+  markInteracted,
+  setOnboarding,
+  setSettings,
+} from '../xr/runtime.js';
 import { GLASSES_DEVICE_NAME, IwerRemote, lookRotation, sleep, waitFor, type HandDevice, type Quat, type Triple } from './iwer.js';
 
 /*
@@ -14,8 +25,8 @@ import { GLASSES_DEVICE_NAME, IwerRemote, lookRotation, sleep, waitFor, type Han
  * Dev builds only (index.ts); the SaveSystem is off, so every take starts
  * from a fresh game and saves nothing.
  *
- *   ?demo=1&shot=N   one shot (1-7), so it can be retaken
- *   ?demo=1          shots 1-5 and 7 in one session (the Quest 3 device),
+ *   ?demo=1&shot=N   one shot (0-7), so it can be retaken
+ *   ?demo=1          shots 0-5 and 7 in one session (the Quest 3 device),
  *                    or shot 6 alone on the metaVRGlasses device
  *   &autostart=1     no "click to start" card (automation; audio may stay locked)
  *
@@ -114,6 +125,22 @@ class Director {
   warn(message: string): void {
     this.status.warnings.push(`shot ${this.status.shot}: ${message}`);
     console.warn(`[demo] ${message}`);
+  }
+
+  /** World point of a cosmos-frame point (meters from the board center, in the board's turn). */
+  cosmosPoint(p: readonly number[]): Triple {
+    const board = this.snap().board;
+    const r = board.radius;
+    return boardToWorld(board, [p[0] / r, p[1] / r, p[2] / r]) as Triple;
+  }
+
+  /** Turns (and if needed moves) the camera smoothly to the close pose over the board (seat() jumps there). */
+  async seatSmoothly(seconds: number): Promise<void> {
+    const c = this.snap().board.center;
+    const head: Triple = [c[0], c[1] + CLOSE_HEAD[1], c[2] + CLOSE_HEAD[2]];
+    const look: Triple = [c[0], c[1] + CLOSE_LOOK[1], c[2] + CLOSE_LOOK[2]];
+    await this.remote.move('headset', head, lookRotation(head, look), seconds);
+    this.head = head;
   }
 
   /** A stored placement of level `index` (0-based). */
@@ -434,6 +461,41 @@ class Director {
 
 const SHOTS: readonly Shot[] = [
   {
+    id: 0,
+    name: 'The room dissolves into space',
+    target: 12,
+    async setup(d) {
+      // Level 1 with the ghost hand done and no attract loop: just the room.
+      setOnboarding(d.world, { ghostHandDone: true });
+      markInteracted(d.world);
+      await d.api.loadLevel(0);
+      // The close camera of the Quest shots from the start: the shot turns
+      // the head only, so the near-rim button stays placed for this pose.
+      await d.seat();
+      await d.handsDown();
+      // Hold the cosmos back until the click: the real room only.
+      getCosmos(d.world)?.holdFade();
+    },
+    async run(d) {
+      d.beat('the room dissolves into space');
+      getCosmos(d.world)?.replayFade();
+      // The head turns slowly toward the giant planet while the room
+      // dissolves (2.5 s), then back down to the table.
+      const giant = d.cosmosPoint(GIANT_POSITION);
+      await d.remote.move('headset', d.head, lookRotation(d.head, giant), 2.8);
+      await sleep(900);
+      await d.seatSmoothly(1.8);
+      // The hands rest relative to the new pose, as after seat() in the other shots.
+      await d.handsDown();
+      await sleep(500);
+      // The first pinch and launch: WHOOSH, the flight, KA-POW, the comet rises.
+      const before = await d.placeBody('p1', d.goal(0, 'solution', 'p1'));
+      d.key();
+      d.expectSolved(await d.flightEnd(before));
+      await sleep(2400);
+    },
+  },
+  {
     id: 1,
     name: 'Hook: a pinch, three bells, the star',
     target: 6,
@@ -451,7 +513,7 @@ const SHOTS: readonly Shot[] = [
   {
     id: 2,
     name: 'Level 1, start to finish',
-    target: 24,
+    target: 20,
     async setup(d) {
       d.api.resetOnboarding();
       await d.api.loadLevel(0);
@@ -473,7 +535,7 @@ const SHOTS: readonly Shot[] = [
   {
     id: 3,
     name: 'Levels 4-6 mid-flight: black hole and white star',
-    target: 30,
+    target: 26,
     async setup(d) {
       await d.api.loadLevel(3);
     },
@@ -499,7 +561,7 @@ const SHOTS: readonly Shot[] = [
   {
     id: 4,
     name: 'The 3-star melody and the chapter-complete moment',
-    target: 20,
+    target: 22,
     async setup(d) {
       d.earnStars([0, 1, 2, 3, 4]);
       await d.api.loadLevel(5);
@@ -519,13 +581,19 @@ const SHOTS: readonly Shot[] = [
       d.beat('chapter moment');
       await sleep(1800);
       d.key();
-      await sleep(7000);
+      await sleep(1500);
+      // Look up: the solved levels' stars form the chapter constellation in the sky.
+      d.beat('the constellation');
+      const stars = CONSTELLATION[1];
+      const mid = [0, 1, 2].map((k) => stars.reduce((sum, p) => sum + p[k], 0) / stars.length);
+      await d.remote.move('headset', d.head, lookRotation(d.head, d.cosmosPoint(mid)), 2.4);
+      await sleep(4200);
     },
   },
   {
     id: 5,
     name: 'Your Table: a well on the real cup',
-    target: 23,
+    target: 21,
     async setup(d) {
       await d.api.sandbox.enter(1);
     },
@@ -566,7 +634,7 @@ const SHOTS: readonly Shot[] = [
   {
     id: 6,
     name: 'Meta VR Glasses: gaze plus pinch',
-    target: 18,
+    target: 16,
     glasses: true,
     async setup(d) {
       d.remote.device.visibilityMaskEnabled = true;
@@ -591,7 +659,7 @@ const SHOTS: readonly Shot[] = [
   {
     id: 7,
     name: 'Accessibility settings',
-    target: 27,
+    target: 22,
     async setup(d) {
       d.api.resetOnboarding();
       await d.api.loadLevel(0);
@@ -665,7 +733,7 @@ function waitForClick(shot: Shot, all: boolean): Promise<void> {
 function shotPlan(param: string | null, glasses: boolean, status: DemoStatus): Shot[] {
   if (param !== null) {
     const shot = SHOTS.find((s) => String(s.id) === param);
-    if (!shot) throw new Error(`Unknown shot "${param}": use shot=1 to shot=7.`);
+    if (!shot) throw new Error(`Unknown shot "${param}": use shot=0 to shot=7.`);
     if (shot.glasses && !glasses) {
       throw new Error('Shot 6 needs the Meta VR Glasses emulator: set "device" to "metaVRGlasses" in iwsdk.config.json (VIDEO.md), then reload.');
     }
