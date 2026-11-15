@@ -85,9 +85,10 @@ export async function nearPinch() {
   const side = [-toHead[2], 0, toHead[0]];
   // Ray origin 3 cm toward the head and 2 cm above the planet center.
   const hand = [p[0] + toHead[0] * 0.03, p[1] + 0.02, p[2] + toHead[2] * 0.03];
-  // Aim past the planet and 6 cm to its side, so the ray passes the center
-  // about 2.3 cm away: outside the visible sphere, inside the collider.
-  const aim = [p[0] - toHead[0] * 0.05 + side[0] * 0.06, p[1], p[2] - toHead[2] * 0.05 + side[2] * 0.06];
+  // Aim past the planet and 10 cm to its side, so the ray passes the center
+  // about 2.9 cm away: outside the visible sphere (drawn VISUAL_BODY_SCALE
+  // larger, plus its ink outline), inside the collider.
+  const aim = [p[0] - toHead[0] * 0.05 + side[0] * 0.1, p[1], p[2] - toHead[2] * 0.05 + side[2] * 0.1];
   xr('set-transform', { device: DEVICE, position: vec(hand) });
   xr('look-at', { device: DEVICE, target: vec(aim) });
   await sleep(600);
@@ -101,7 +102,8 @@ export async function nearPinch() {
   const geometry = {
     handToCenterM: round(dist(hand, p)),
     rayMissM: round(Math.hypot(...cross) / ul),
-    visibleRadiusM: round(0.07 * r),
+    // Drawn radius (0.07 x VISUAL_BODY_SCALE 1.25) plus the ink outline (0.0045 rad of view).
+    visibleRadiusM: round(0.07 * 1.25 * r + 0.0045 * Math.hypot(head.x - p[0], head.y - p[1], head.z - p[2])),
     colliderRadiusM: round(Math.max(0.16, 0.035 / r) * r),
   };
 
@@ -1128,7 +1130,7 @@ async function regrabPlanet(bodyId) {
   let movedBoard = 0;
   if (grab.held) {
     const sign = body.board[0] > 0 ? -1 : 1;
-    await rayMoveTo(DEVICE, toWorld(before.board, [body.board[0] + sign * 0.15, 0, body.board[2]]), grab.distance);
+    await rayMoveTo(DEVICE, toWorld(before.board, [body.board[0] + sign * 0.15, body.board[1], body.board[2]]), grab.distance);
     const mid = bodyOf(snapshot(), bodyId);
     movedBoard = round(dist(body.board, mid.board));
   }
@@ -1662,7 +1664,19 @@ async function gazePress(elementId, done, hand = DEVICE) {
     s = snapshot();
     ok = Boolean(done(s));
   }
-  return { id: elementId, hand, point: round(point, 3), hovered, ok };
+  let retried = false;
+  if (!ok) {
+    // A slow glasses frame can drop a click (no press and release on the
+    // same element): aim again and pinch once more, as a player would.
+    retried = true;
+    const again = game('uiWorldPoint', elementId).value ?? point;
+    xr('look-at', { device: 'gaze', target: vec(again) });
+    await sleep(600);
+    xr('select', { device: hand });
+    await sleep(1200);
+    ok = Boolean(done(snapshot()));
+  }
+  return { id: elementId, hand, point: round(point, 3), hovered, ok, retried };
 }
 
 /**
@@ -1777,7 +1791,7 @@ export async function glassesFit({ tableHead, fallbackHead, takeShot }) {
     let reached = bodyOf(snap, body.id).board;
     let heldWhileMoving = false;
     if (heldAfterPinch) {
-      const goal = toWorld(snap.board, [solution[0], 0, solution[1]]);
+      const goal = toWorld(snap.board, [solution[0], bodyOf(snap, body.id).board[1], solution[1]]);
       const h = xr('get-transform', { device: DEVICE }).position;
       const hand = [h.x, h.y, h.z];
       let planet = bodyOf(snap, body.id).world;

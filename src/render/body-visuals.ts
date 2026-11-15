@@ -10,8 +10,10 @@ import {
   SphereGeometry,
   type Material,
 } from '@iwsdk/core';
+import { VISUAL_BODY_SCALE } from '../config.js';
 import { KIND_DEFAULTS, type BodyKind } from '../sim/bodies.js';
 import type { BodyDef } from '../sim/level.js';
+import { POSTS, SHADOWS } from './contact-shadows.js';
 import { HALOS, OUTLINES, PULL_RINGS } from './halo-sprites.js';
 import { PALETTE, ROLE_COLORS } from './palette.js';
 import { ACCRETION_INNER, ACCRETION_OUTER, accretionMaterial } from './shaders/accretion.js';
@@ -92,6 +94,10 @@ interface KindStyle {
 const OUTLINE_OUTER = 1.24;
 const OUTLINE_INNER = 1.03 / OUTLINE_OUTER;
 const OUTLINE_ALPHA = 0.95;
+/** Contact shadow and light post strength, and the post's half width (board units). */
+const SHADOW_ALPHA = 0.5;
+const POST_ALPHA = 0.55;
+const POST_HALF_WIDTH = 0.006;
 
 /** Small stable hash of the body id, so band patterns differ per body but never per run. */
 function seedOf(id: string): number {
@@ -175,7 +181,8 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
 
 /** Visual for one level body, in board units, centered on the body. */
 export function createBodyVisual(def: BodyDef): BodyVisual {
-  const radius = def.radius ?? KIND_DEFAULTS[def.kind].radius;
+  // Drawn VISUAL_BODY_SCALE larger than simulated (the grab collider stays larger still).
+  const radius = (def.radius ?? KIND_DEFAULTS[def.kind].radius) * VISUAL_BODY_SCALE;
   const influence = KIND_DEFAULTS[def.kind].influenceRadius;
   const style = styleFor(def.kind, Boolean(def.movable), seedOf(def.id));
   const root = new Group();
@@ -212,6 +219,11 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
   const pull = PULL_RINGS.allocate(style.pull.color, style.pull.alpha, style.pull.pattern);
   PULL_RINGS.setSize(pull, influence);
   const outline = OUTLINES.allocate(PALETTE.white, OUTLINE_ALPHA, OUTLINE_INNER);
+  // Depth cues: a contact shadow on the glass and a light post up to the body.
+  const shadow = SHADOWS.allocate(PALETTE.black, SHADOW_ALPHA);
+  SHADOWS.setSize(shadow, radius * style.extent * 1.15);
+  const post = POSTS.allocate(style.halo.color, POST_ALPHA);
+  POSTS.setSize(post, POST_HALF_WIDTH);
   let state: InteractionState = 'idle';
   let disposed = false;
 
@@ -243,6 +255,9 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
         HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state]);
       }
       PULL_RINGS.setPosition(pull, p.x, 0, p.z);
+      SHADOWS.setPosition(shadow, p.x, 0, p.z);
+      POSTS.setPosition(post, p.x, p.y, p.z);
+      POSTS.setPattern(post, p.y);
       OUTLINES.setPosition(outline, p.x, p.y, p.z);
       OUTLINES.setSize(outline, radius * style.extent * STATE_SCALE[state] * pulse * OUTLINE_OUTER);
     },
@@ -252,6 +267,8 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
       HALOS.release(halo);
       PULL_RINGS.release(pull);
       OUTLINES.release(outline);
+      SHADOWS.release(shadow);
+      POSTS.release(post);
       surfaceMaterial.dispose();
     },
   };

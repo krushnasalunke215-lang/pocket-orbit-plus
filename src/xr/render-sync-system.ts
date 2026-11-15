@@ -1,4 +1,5 @@
 import { createSystem, Grabbed, Hovered } from '@iwsdk/core';
+import { VISUAL_LIFT } from '../config.js';
 import { colliderLocalRadius } from '../game/board-math.js';
 import type { GamePhase } from '../game/controller.js';
 import { OUTLINES } from '../render/halo-sprites.js';
@@ -70,7 +71,7 @@ export class RenderSyncSystem extends createSystem({
       const visual = visuals.bodies.get(id);
       const held = entity.hasComponent(Grabbed);
       if (!held && game.bodyBoardPosition(id, this.pos)) {
-        entity.object3D?.position.set(this.pos[0], this.pos[1], this.pos[2]);
+        entity.object3D?.position.set(this.pos[0], this.pos[1] + VISUAL_LIFT, this.pos[2]);
       }
       if (!visual) continue;
       const state: InteractionState = held ? 'held' : entity.hasComponent(Hovered) ? 'hover' : 'idle';

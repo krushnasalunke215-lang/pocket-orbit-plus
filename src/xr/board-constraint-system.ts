@@ -7,7 +7,7 @@ import {
   VisibilityState,
   type Entity,
 } from '@iwsdk/core';
-import { PLACE_RADIUS } from '../config.js';
+import { PLACE_RADIUS, VISUAL_LIFT } from '../config.js';
 import { clampToDisc, intersectRayWithBoardPlane } from '../game/board-math.js';
 import { isOverBoard, shouldLaunch, trackingAge } from '../game/launch-gate.js';
 import type { Vec2 } from '../sim/vec.js';
@@ -152,7 +152,9 @@ export class BoardConstraintSystem extends createSystem({
       bodyId,
       levelRevision: game.levelRevision,
       preGrab: committed,
-      height: this.bodyPos[1],
+      // The body floats VISUAL_LIFT above the glass: hold it there, and the
+      // desktop cursor ray meets that lifted plane (placements stay in x/z).
+      height: this.bodyPos[1] + VISUAL_LIFT,
       rawX: committed[0],
       rawZ: committed[1],
       rawValid: true,

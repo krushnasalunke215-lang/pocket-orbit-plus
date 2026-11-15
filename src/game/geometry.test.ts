@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { VISUAL_LIFT } from '../config.js';
 import type { Placements } from '../sim/level.js';
 import { ALL_LEVELS } from '../sim/levels/index.js';
 import type { Vec3 } from '../sim/vec.js';
@@ -256,7 +257,8 @@ describe('level-select panel', () => {
     it(`${c.name}: its lower edge clears every planet collider, so no board object stands between the eyes and a button`, () => {
       const up = quatRotate(panel.quaternion, [0, 1, 0]);
       const lowerEdge = panel.position[1] - up[1] * (LEVEL_SELECT_SIZE.height / 2);
-      const colliderTop = c.board.center[1] + colliderLocalRadius(c.board.radius) * c.board.radius;
+      // The colliders float VISUAL_LIFT above the glass with the bodies.
+      const colliderTop = c.board.center[1] + (VISUAL_LIFT + colliderLocalRadius(c.board.radius)) * c.board.radius;
       expect(lowerEdge - colliderTop).toBeGreaterThanOrEqual(0.015 - 1e-9);
     });
   }
@@ -345,6 +347,14 @@ describe('Meta VR Glasses fit at the fallback and table poses', () => {
       for (let k = 0; k < 16; k++) {
         const a = (2 * Math.PI * k) / 16;
         expectFits(c, `rim ${k}`, boardToWorld(c.board, [Math.cos(a), 0, Math.sin(a)]));
+      }
+    });
+
+    it(`${c.name}: the top of a floating planet (VISUAL_LIFT plus a held planet's radius) at every rim point`, () => {
+      const top = VISUAL_LIFT + 1.5 * 0.07;
+      for (let k = 0; k < 16; k++) {
+        const a = (2 * Math.PI * k) / 16;
+        expectFits(c, `lifted body at rim ${k}`, boardToWorld(c.board, [Math.cos(a), top, Math.sin(a)]));
       }
     });
 

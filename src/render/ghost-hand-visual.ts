@@ -8,6 +8,7 @@ import {
   SphereGeometry,
   Vector3,
 } from '@iwsdk/core';
+import { VISUAL_BODY_SCALE } from '../config.js';
 import { KIND_DEFAULTS } from '../sim/bodies.js';
 import { ROLE_COLORS } from './palette.js';
 import { noRaycast } from './shaders/common.js';
@@ -40,7 +41,7 @@ const HAND_SCALE = 1.8;
  * seen in profile and the wrist never hides it.
  */
 const HAND_YAW = 1.2;
-const PLANET_RADIUS = KIND_DEFAULTS.planet.radius;
+const PLANET_RADIUS = KIND_DEFAULTS.planet.radius * VISUAL_BODY_SCALE;
 /** Pinch point height above a resting planet's center (board units). */
 const PINCH_HEIGHT = PLANET_RADIUS + 0.008;
 

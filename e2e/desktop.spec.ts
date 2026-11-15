@@ -44,7 +44,9 @@ async function dragBody(page: Page, bodyId: string, to: readonly number[] | Scre
   const index = before.bodies.findIndex((b) => b.id === bodyId);
   expect(index, `body ${bodyId}`).toBeGreaterThanOrEqual(0);
   const from = await screenPoint(page, before.bodies[index].board);
-  const target = 'x' in to ? to : await screenPoint(page, to);
+  // A board goal [x, z] is at the body's own (lifted) height, where the cursor ray meets the drag plane.
+  const goal = 'x' in to ? null : to.length === 2 ? [to[0], before.bodies[index].board[1], to[1]] : to;
+  const target = 'x' in to ? to : await screenPoint(page, goal!);
 
   // Hover is computed only when the pointer moves, and the very first move
   // into a fresh page never registers in @pmndrs/pointer-events, so arrive

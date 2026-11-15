@@ -1,4 +1,5 @@
 import { createSystem, DepthOccludable, OcclusionShadersMode } from '@iwsdk/core';
+import { VISUAL_LIFT } from '../config.js';
 import { colliderLocalRadius } from '../game/board-math.js';
 import { GameController } from '../game/controller.js';
 import { createBodyVisual } from '../render/body-visuals.js';
@@ -45,6 +46,9 @@ export class GameSystem extends createSystem({
       const entity = this.world.createTransformEntity(visual.root, { parent: board.entity });
       entity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.HardOcclusion });
     }
+    // The comet and its trail fly VISUAL_LIFT above the glass (visual only).
+    comet.root.position.y = VISUAL_LIFT;
+    trail.root.position.y = VISUAL_LIFT;
     this.visuals = { bodies: new Map(), builtRevision: -1, comet, target, trail };
     setVisuals(this.world, this.visuals);
     this.buildLevel();
@@ -69,7 +73,9 @@ export class GameSystem extends createSystem({
     for (const def of level.bodies) {
       const visual = createBodyVisual(def);
       this.game.bodyBoardPosition(def.id, this.tmp);
-      visual.root.position.set(this.tmp[0], this.tmp[1], this.tmp[2]);
+      // The whole body entity floats VISUAL_LIFT above the glass, so its grab
+      // collider stays centered on what the player sees.
+      visual.root.position.set(this.tmp[0], this.tmp[1] + VISUAL_LIFT, this.tmp[2]);
       visual.collider?.scale.setScalar(colliderRadius);
       const entity = this.world.createTransformEntity(visual.root, { parent: this.board.entity });
       entity.addComponent(BoardBody, { bodyId: def.id, movable: Boolean(def.movable) });

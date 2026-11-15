@@ -96,6 +96,14 @@ export class SpritePool {
     markRange(this.alpha, slot, 1);
   }
 
+  setPattern(slot: number, pattern: number): void {
+    if (slot < 0) return;
+    const a = this.pattern.array as Float32Array;
+    if (a[slot] === pattern) return;
+    a[slot] = pattern;
+    markRange(this.pattern, slot, 1);
+  }
+
   setColor(slot: number, hex: number): void {
     if (slot < 0) return;
     scratchColor.setHex(hex);

@@ -1,3 +1,4 @@
+import { VISUAL_LIFT } from '../config.js';
 import type { Vec3 } from '../sim/vec.js';
 import {
   colliderLocalRadius,
@@ -160,7 +161,8 @@ export function levelSelectPose(board: BoardPose, head: HeadPose): Pose {
   // The panel faces the head, so at aim elevation t its lower edge is
   // D sin t - (H / 2) cos t above the eyes. Keep that at or above `floor`.
   const half = LEVEL_SELECT_SIZE.height / 2;
-  const floor = board.center[1] + colliderLocalRadius(board.radius) * board.radius + LEVEL_SELECT_BOARD_CLEARANCE - hy;
+  // The colliders float VISUAL_LIFT above the glass with the bodies.
+  const floor = board.center[1] + (VISUAL_LIFT + colliderLocalRadius(board.radius)) * board.radius + LEVEL_SELECT_BOARD_CLEARANCE - hy;
   const horizontal = Math.hypot(dx, dz);
   const reach = Math.hypot(LEVEL_SELECT_DISTANCE, half);
   if (horizontal > 1e-6 && LEVEL_SELECT_DISTANCE * dy - half * horizontal < floor && Math.abs(floor) < reach) {

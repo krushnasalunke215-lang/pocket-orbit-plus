@@ -1,4 +1,5 @@
 import { createSystem, Grabbed, Hovered } from '@iwsdk/core';
+import { VISUAL_LIFT } from '../config.js';
 import { attractFrame, type AttractFrame } from '../game/attract.js';
 import type { GameController } from '../game/controller.js';
 import { createGhostHandVisual } from '../render/ghost-hand-visual.js';
@@ -63,6 +64,8 @@ export class OnboardingSystem extends createSystem({
     this.game = game;
     this.lastFlightId = game.flightId;
     this.ghost = createGhostHandVisual();
+    // At the floating planets' height.
+    this.ghost.root.position.y = VISUAL_LIFT;
     this.world.createTransformEntity(this.ghost.root, { parent: board.entity });
     this.cleanupFuncs.push(
       this.queries.hovered.subscribe('qualify', () => markInteracted(this.world)),

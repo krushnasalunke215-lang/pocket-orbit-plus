@@ -275,7 +275,8 @@ class Director {
     await this.remote.pinch(hand, 1);
     await this.expect(`${id} held`, () => this.body(id).held, 1500);
 
-    const goalWorld = boardToWorld(snap.board, [goal[0], 0, goal[1]]);
+    // The planet floats at its own (lifted) board height.
+    const goalWorld = boardToWorld(snap.board, [goal[0], this.body(id, snap).board[1], goal[1]]);
     let at: Triple = origin;
     let w = p;
     let error = Infinity;
@@ -327,7 +328,8 @@ class Director {
     await this.remote.pinch(RIGHT, 1);
     await waitFor(`${id} held by gaze plus pinch`, () => this.body(id).held, 1500);
     const t = await this.remote.transform(RIGHT);
-    const goalWorld = boardToWorld(snap.board, [goal[0], 0, goal[1]]);
+    // The planet floats at its own (lifted) board height.
+    const goalWorld = boardToWorld(snap.board, [goal[0], this.body(id, snap).board[1], goal[1]]);
     let at = t.position;
     let w = p;
     let error = Infinity;

@@ -241,12 +241,14 @@ export async function rayDrag(device, body, solution, { expectSolve = true, afte
   // surface, so the first move lands a few mm short; correct like a person
   // watching the planet would (at most 4 times).
   const d = dist(planet, hand);
-  const goal = [solution[0], 0, solution[1]];
+  // The planet floats at its own (lifted) board height; aim the goal there.
+  const lift = bodyOf(snap, body).board[1];
+  const goal = [solution[0], lift, solution[1]];
   const correction = [0, 0, 0];
   let reached = null;
   let heldWhileMoving = false;
   for (let i = 0; i < 5; i++) {
-    const target = toWorld(board, [goal[0] + correction[0], 0, goal[2] + correction[2]]);
+    const target = toWorld(board, [goal[0] + correction[0], lift, goal[2] + correction[2]]);
     xr('look-at', { device, target: vec(target), moveToDistance: d });
     await sleep(800);
     snap = snapshot();

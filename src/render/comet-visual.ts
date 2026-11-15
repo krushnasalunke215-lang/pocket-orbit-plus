@@ -8,6 +8,7 @@ import {
   SphereGeometry,
   Vector2,
 } from '@iwsdk/core';
+import { SHADOWS } from './contact-shadows.js';
 import { HALOS } from './halo-sprites.js';
 import { ROLE_COLORS } from './palette.js';
 import { INK_COLOR, markRange, noRaycast, setSharedTime } from './shaders/common.js';
@@ -31,6 +32,8 @@ const EMIT_PER_FRAME = 2;
 const MAX_STEP = 0.25;
 const HALO_SIZE = 0.17;
 const HALO_ALPHA = 0.6;
+/** Contact shadow radius on the glass under the head (board units). */
+const SHADOW_SIZE = 0.05;
 
 const headGeometry = new SphereGeometry(0.04, 20, 14);
 /** Toon white-yellow head (transparent, so setOpacity fades it) with an ink outline. */
@@ -86,6 +89,7 @@ export function createCometVisual(): CometVisual {
   root.add(tail, head);
 
   const halo = HALOS.allocate(ROLE_COLORS.cometTrail, HALO_ALPHA);
+  const shadow = SHADOWS.allocate(0x000000, 0.45);
   const random = mulberry32(0xc0e7);
   const last = [0, 0, 0];
   let hasLast = false;
@@ -155,7 +159,10 @@ export function createCometVisual(): CometVisual {
         last[2] = hp.z;
         hasLast = true;
       }
-      HALOS.setPosition(halo, hp.x, hp.y, hp.z);
+      // HALOS lives under the board visual, the head under the (lifted) comet root.
+      HALOS.setPosition(halo, hp.x, hp.y + root.position.y, hp.z);
+      SHADOWS.setPosition(shadow, hp.x, 0, hp.z);
+      SHADOWS.setSize(shadow, root.visible && opacity > 0 ? SHADOW_SIZE : 0);
       HALOS.setSize(halo, root.visible ? HALO_SIZE : 0);
     },
   };

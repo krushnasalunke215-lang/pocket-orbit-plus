@@ -34,6 +34,18 @@ export const COSMOS_QUALITY = {
   cosmosInk: true,
 } as const;
 
+/**
+ * Visual height of the play layer above the glass (board units, so it
+ * scales with the board: 5.9 cm on the 0.27 m table board, 4.4 cm on the
+ * 0.2 m fallback). Planets, moons, the target star, the comet and its
+ * trail float there; their grab colliders move with them. The simulation
+ * still runs on the board plane.
+ */
+export const VISUAL_LIFT = 0.22;
+
+/** Board bodies are drawn this much larger than their simulated radius (still inside the grab collider). */
+export const VISUAL_BODY_SCALE = 1.25;
+
 /** Seconds the cosmos takes to fade in over the room when an AR session starts. */
 export const COSMOS_FADE_SECONDS = 2.5;
 

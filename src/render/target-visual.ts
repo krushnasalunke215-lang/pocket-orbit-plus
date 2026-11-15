@@ -9,6 +9,8 @@ import {
   ShapeGeometry,
   type ShaderMaterial,
 } from '@iwsdk/core';
+import { VISUAL_LIFT } from '../config.js';
+import { POSTS, SHADOWS } from './contact-shadows.js';
 import { HALOS } from './halo-sprites.js';
 import { PALETTE, ROLE_COLORS } from './palette.js';
 import { noRaycast, occludeBuiltin, setMotionTime } from './shaders/common.js';
@@ -17,7 +19,7 @@ import { createSurfaceMaterial } from './shaders/planet.js';
 import type { TargetVisual } from './visual-types.js';
 
 // Target: a thin yellow ring at the capture radius on the board plane and a
-// chunky five-point star (extruded, toon-shaded, ink-outlined) that turns
+// chunky five-point star floating VISUAL_LIFT above it (with a contact shadow and a light post) (extruded, toon-shaded, ink-outlined) that turns
 // about board +Y and pulses, with a halo slot for glow. Solved turns the
 // star white and swells the halo. Unit size; the caller scales the root by
 // the target radius.
@@ -108,6 +110,9 @@ export function createTargetVisual(): TargetVisual {
   star.add(outline);
   root.add(ring, star);
   const halo = HALOS.allocate(ROLE_COLORS.target, 0.35);
+  const shadow = SHADOWS.allocate(0x000000, 0.45);
+  const post = POSTS.allocate(ROLE_COLORS.target, 0.6);
+  POSTS.setSize(post, 0.006);
   let solved = false;
   const setStarColor = (hex: number) => {
     scratch.setHex(hex);
@@ -128,12 +133,19 @@ export function createTargetVisual(): TargetVisual {
     },
     update(t) {
       setMotionTime(t);
+      // The star floats with the play layer; the capture ring stays on the glass.
+      star.position.y = STAR_HEIGHT + VISUAL_LIFT / root.scale.x;
       star.rotation.y = t * (solved ? 2.4 : 0.6);
       const pulse = 1 + (solved ? 0.12 : 0.06) * Math.sin(t * (solved ? 6 : 2.5));
       star.scale.setScalar(pulse);
       const p = root.position;
       HALOS.setPosition(halo, p.x, p.y + star.position.y * root.scale.y, p.z);
       HALOS.setSize(halo, root.scale.x * (solved ? HALO_SOLVED : HALO_IDLE) * pulse);
+      const starY = p.y + star.position.y * root.scale.y;
+      SHADOWS.setPosition(shadow, p.x, 0, p.z);
+      SHADOWS.setSize(shadow, root.scale.x * 0.7);
+      POSTS.setPosition(post, p.x, starY, p.z);
+      POSTS.setPattern(post, starY);
     },
   };
 }
