@@ -282,6 +282,8 @@ export interface CosmosRuntime {
   replayFade(): void;
   /** Holds the AR fade at 0 (the room only) until replayFade (the director's hook shot). */
   holdFade(): void;
+  /** A solved comet is rising into the sky (SkyStorySystem). */
+  solveRise: boolean;
 }
 
 /** Phase 3 hook (the sky gallery): called when a chapter-complete moment starts. */

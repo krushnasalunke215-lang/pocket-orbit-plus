@@ -14,6 +14,7 @@ import { noRaycast, setMotionTime } from '../shaders/common.js';
 import { createSkyMaterial } from '../shaders/sky.js';
 import type { CosmosVisual } from '../visual-types.js';
 import { createAsteroidBelt } from './asteroids.js';
+import { createConstellation } from './constellation.js';
 import { createCosmosPlanets, PULSE_SCALE } from './planets.js';
 import { createShootingStars } from './shooting-stars.js';
 import { bakeSkyPixels } from './sky-pixels.js';
@@ -25,7 +26,8 @@ export { COSMOS_UNIFORMS } from '../shaders/sky.js';
  * The surrounding cosmos, in world meters under one root named 'Cosmos'
  * (CosmosSystem keeps it at the board center with the board's turn): the
  * baked nebula sky dome (12 m), the star layers, the giant ringed planet and
- * the orbiting planets, the asteroid belt and the shooting stars. Out of
+ * the orbiting planets, the asteroid belt, the shooting stars and the chapter
+ * constellation (L4). Out of
  * reach (1.5-12 m), never raycast, never occluded by real surfaces.
  */
 
@@ -54,12 +56,14 @@ export function createCosmosVisual(): CosmosVisual {
   const planets = createCosmosPlanets(COSMOS_QUALITY.cosmosInk);
   const belt = createAsteroidBelt(COSMOS_QUALITY.asteroids, COSMOS_QUALITY.cosmosInk);
   const shooting = COSMOS_QUALITY.shootingStars ? createShootingStars() : null;
-  root.add(dome, stars, planets.root, belt.root);
+  const constellation = createConstellation();
+  root.add(dome, stars, planets.root, belt.root, constellation.root);
   if (shooting) root.add(shooting.mesh);
 
   const probe = new Matrix4();
   return {
     root,
+    constellation,
     motionProbe() {
       planets.smallMesh.getMatrixAt(0, probe);
       const e = probe.elements;
@@ -71,6 +75,7 @@ export function createCosmosVisual(): CosmosVisual {
       planets.update(motionT, dt);
       belt.update(motionT);
       shooting?.update(realT, reducedMotion);
+      constellation.update(dt, reducedMotion);
     },
     setEyeHeight(height) {
       belt.setEyeHeight(height);

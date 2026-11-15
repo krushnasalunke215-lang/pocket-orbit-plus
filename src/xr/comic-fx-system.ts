@@ -1,7 +1,8 @@
 import { createSystem, DepthOccludable, OcclusionShadersMode } from '@iwsdk/core';
 import type { GamePhase } from '../game/controller.js';
+import { echoPlanet } from '../game/sky-story.js';
 import { createComicWords, type ComicWords } from '../render/comic-words.js';
-import { getBoard, getGame, getPause, getSettings, setComicWords } from './runtime.js';
+import { getBoard, getCosmos, getGame, getPause, getSettings, setComicWords } from './runtime.js';
 
 /** Height above a body's center where its word starts (board units). */
 const ABOVE = 0.06;
@@ -10,7 +11,8 @@ const ABOVE = 0.06;
  * Comic onomatopoeia on the board (src/render/comic-words.ts), driven by the
  * game state only (independent of the audio unlock): WHOOSH! when a flight
  * starts, DING! at each body the comet passes (ZAP! off the white star), as
- * the flight reaches each flyby note; KA-POW! at the target on a solve and
+ * the flight reaches each flyby note (and the matching cosmos planet pulses,
+ * see echoPlanet); KA-POW! at the target on a solve and
  * BOOM! at the black hole that swallows the comet. Nothing advances while
  * the game is paused.
  */
@@ -80,6 +82,8 @@ export class ComicFxSystem extends createSystem({}) {
       const def = game.level.bodies.find((b) => b.id === note.bodyId);
       if (def && game.bodyBoardPosition(note.bodyId, this.pos)) {
         this.words.pop(def.kind === 'repulsor' ? 'ZAP!' : 'DING!', this.pos[0], this.pos[1] + ABOVE, this.pos[2]);
+        // The matching distant planet answers in the sky.
+        getCosmos(this.world)?.visual.pulse(echoPlanet(def.kind, Boolean(def.movable)), 1);
       } else {
         // A Your Table well: ring where the comet is.
         game.cometBoardPosition(this.comet);

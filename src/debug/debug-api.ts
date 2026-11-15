@@ -129,6 +129,8 @@ export interface GameSnapshot {
     shootingStars: number;
     pulses: number[];
   } | null;
+  /** The chapter constellation: lit stars, links, links still drawing, and a solved comet rising into the sky. */
+  sky: { litStars: number; links: number; drawing: boolean; solveRiseActive: boolean };
   /** Comic words showing now, and the last 16 popped (oldest first). */
   comicWords: { active: string[]; recent: string[] };
   /** HUD world position and size (meters, from the UIKit layout) and its status line. */
@@ -557,6 +559,12 @@ export function installDebugApi(world: World): GameDebugApi {
         },
         starfieldVisible: Boolean(world.scene.getObjectByName('Cosmos')?.visible),
         cosmos: cosmosSnapshot(),
+        sky: {
+          litStars: getCosmos(world)?.visual.constellation.litCount() ?? 0,
+          links: getCosmos(world)?.visual.constellation.linkCount() ?? 0,
+          drawing: getCosmos(world)?.visual.constellation.drawing() ?? false,
+          solveRiseActive: getCosmos(world)?.solveRise ?? false,
+        },
         comicWords: { active: getComicWords(world)?.active() ?? [], recent: getComicWords(world)?.recent() ?? [] },
         session: {
           mode: currentSessionMode(world),

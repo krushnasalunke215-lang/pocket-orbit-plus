@@ -225,7 +225,10 @@ test('resumes at the current level after a reload', async ({ page }) => {
     expect(solved.level.id).toBe(levels[i].id);
   }
   await page.evaluate(() => window.__game!.loadLevel(2));
+  // The sky constellation: the two solved levels' stars and their link.
+  await expect.poll(async () => (await snapshot(page)).sky.litStars, { timeout: 10_000 }).toBe(2);
   const before = await snapshot(page);
+  expect(before.sky.links).toBe(1);
   expect(before.save.lastSavedAt).not.toBeNull();
   expect(before.save.problem).toBeNull();
 
@@ -243,6 +246,8 @@ test('resumes at the current level after a reload', async ({ page }) => {
     expect(after.stars.best[id]).toBeGreaterThanOrEqual(1);
   }
   expect(after.save.problem).toBeNull();
+  // The constellation is rebuilt from the saved solved levels.
+  expect(after.sky).toMatchObject({ litStars: 2, links: 1 });
 });
 
 test('corrupt save starts fresh', async ({ page }) => {
@@ -523,11 +528,12 @@ test('settings page: every accessibility and audio button by mouse, saved over a
   await clickUi(page, 'board-size-button');
   await expect.poll(async () => (await snapshot(page)).board.radius, { timeout: 5_000 }).toBeCloseTo(radius * 1.25, 6);
 
-  // Back to the levels page; the HUD Levels button closes the panel.
+  // Back to the levels page; Close closes the panel (in the three-quarter
+  // desktop view the open panel covers the HUD's Levels button).
   await clickUi(page, 'settings-back');
   await expect.poll(async () => (await snapshot(page)).levelSelect.page, { timeout: 5_000 }).toBe('levels');
   await page.waitForTimeout(300);
-  await clickUi(page, 'levels-button');
+  await clickUi(page, 'close-levels');
   await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(false);
 
   // Saved with the game state (version 2), and restored by a reload.
@@ -649,6 +655,8 @@ test('chapter complete after level 6', async ({ page }) => {
   expect(hudSize[1]).toBeLessThanOrEqual(HUD_SIZE.height + 1e-6);
   expect((await snapshot(page)).rimButton.shown, 'near-rim button hidden during the moment').toBe(false);
   await page.screenshot({ path: screenshotPath('chapter-complete.png') });
+  await page.screenshot({ path: screenshotPath('l4-desktop-chapter.png') });
+  expect((await snapshot(page)).sky.litStars).toBe(1);
   console.log('chapter complete', JSON.stringify({ chapter: moment.chapterComplete, hud: moment.hud }));
 
   // Nothing launches under the moment: a click where the near-rim button
@@ -716,6 +724,8 @@ test('comic words: WHOOSH and DING in flight, KA-POW on a solve, BOOM on a swall
   await page.screenshot({ path: screenshotPath('l2-desktop-l6-midflight.png') });
   await expect.poll(async () => (await snapshot(page)).solved, { timeout: 30_000 }).toBe(true);
   await expect.poll(recent, { timeout: 5_000 }).toContain('KA-POW!');
+  // The solved comet rises into the sky and becomes level 6's star.
+  await expect.poll(async () => (await snapshot(page)).sky.litStars, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
   const words = (await recent()).slice(-6);
   console.log('comic words', JSON.stringify(words));
   expect(words.some((w) => w === 'DING!' || w === 'ZAP!')).toBe(true);

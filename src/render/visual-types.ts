@@ -99,6 +99,24 @@ export interface BoardVisual {
   update(t: number): void;
 }
 
+/** The chapter's constellation in the cosmos frame (meters): stars lit by solved levels, links between them. */
+export interface ConstellationVisual {
+  readonly root: Object3D;
+  /** Star positions, one per chapter level (cosmos frame, meters). */
+  setStars(points: readonly (readonly number[])[]): void;
+  /** Lights or dims star `index`; `instant` skips the fade-in. */
+  setLit(index: number, on: boolean, instant: boolean): void;
+  /** A solve's flash on star `index` (it decays; none with reduced motion). */
+  flash(index: number): void;
+  /** Links between star index pairs; `animate` draws them in order over about 1.2 s. */
+  setLinks(pairs: readonly (readonly [number, number])[], animate: boolean): void;
+  update(dt: number, reducedMotion: boolean): void;
+  litCount(): number;
+  linkCount(): number;
+  /** The links are still being drawn. */
+  drawing(): boolean;
+}
+
 /**
  * The surrounding cosmos in world meters (sky dome, stars, planets, belt,
  * shooting stars). Its opacity and island mask are the shared
@@ -106,6 +124,7 @@ export interface BoardVisual {
  */
 export interface CosmosVisual {
   readonly root: Object3D;
+  readonly constellation: ConstellationVisual;
   /** motionT: the decorative clock (still under reduced motion); realT, dt: the real clock. */
   update(motionT: number, realT: number, dt: number, reducedMotion: boolean): void;
   /** Eye height above the cosmos center (meters); the asteroid belt sits just below it. */

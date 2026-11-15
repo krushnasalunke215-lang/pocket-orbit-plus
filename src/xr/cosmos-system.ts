@@ -36,6 +36,7 @@ export class CosmosSystem extends createSystem({}) {
       opacity: 1,
       fade: 1,
       mask: 'none',
+      solveRise: false,
       replayFade: () => {
         this.held = false;
         this.replay = true;
@@ -72,7 +73,8 @@ export class CosmosSystem extends createSystem({}) {
       this.fadeStart = time;
       this.replay = false;
     }
-    const session = currentSessionMode(this.world);
+    // Desktop whenever the page is not immersive (world.session can outlive an ended session for a frame).
+    const session = visibility === VisibilityState.NonImmersive ? 'none' : currentSessionMode(this.world);
     const fade = session !== 'immersive-ar' ? 1 : this.held ? 0 : this.fadeStart < 0 ? 1 : Math.min(1, (time - this.fadeStart) / COSMOS_FADE_SECONDS);
     const settings = getSettings(this.world);
     const state = cosmosOpacity({ session, roomView: settings.roomView, sandbox: game.mode === 'sandbox', fade01: fade });

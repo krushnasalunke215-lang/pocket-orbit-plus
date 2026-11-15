@@ -27,7 +27,7 @@ import {
 /** Seconds from the solving frame to the first phrase note. */
 const PHRASE_DELAY = 0.35;
 /** Seconds from the chapter-complete moment to its arpeggio. */
-const ARPEGGIO_DELAY = 0.25;
+export const ARPEGGIO_DELAY = 0.25;
 
 /**
  * Chapter-complete fanfare: the chapter's success chord as a rising

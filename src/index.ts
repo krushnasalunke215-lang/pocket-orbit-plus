@@ -11,6 +11,7 @@ import { BoardConstraintSystem } from './xr/board-constraint-system.js';
 import { BoardPlacementSystem } from './xr/board-placement-system.js';
 import { ChapterSystem } from './xr/chapter-system.js';
 import { ComicFxSystem } from './xr/comic-fx-system.js';
+import { SkyStorySystem } from './xr/sky-story-system.js';
 import { CosmosSystem } from './xr/cosmos-system.js';
 import { DebugOverlaySystem, debugOverlayRequested } from './xr/debug-overlay-system.js';
 import { GameAudioSystem } from './xr/game-audio-system.js';
@@ -78,6 +79,9 @@ async function main(): Promise<void> {
     .registerSystem(ComicFxSystem, { priority: 22 })
     // The surrounding cosmos: AR fade-in, Room view mask, slow orbits.
     .registerSystem(CosmosSystem, { priority: 23 })
+    // The solve rise and the constellation: after Onboarding and Chapter
+    // write the comet override, before RenderSync draws it (needs the cosmos).
+    .registerSystem(SkyStorySystem, { priority: 17 })
     .registerSystem(HudSystem, { priority: 30 })
     .registerSystem(RimButtonSystem, { priority: 31 })
     .registerSystem(LevelSelectSystem, { priority: 32 })

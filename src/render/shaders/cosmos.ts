@@ -293,6 +293,122 @@ export function createSparkleMaterial(): ShaderMaterial {
   });
 }
 
+/**
+ * Constellation stars: instanced billboards (aOffset meters, aSize radius
+ * meters, aLit 0..1, aFlash 0..1). A comic five-point-ish star: bold yellow
+ * with an ink edge when lit, a dim blue-grey dot when not; a flash swells it
+ * and burns it white.
+ */
+const constellationStarVertex = /* glsl */ `
+attribute vec3 aOffset;
+attribute float aSize;
+attribute float aLit;
+attribute float aFlash;
+varying vec2 vUv;
+varying float vLit;
+varying float vFlash;
+varying float vAlpha;
+${COSMOS_MASK_GLSL}
+void main() {
+  vec4 world = modelMatrix * vec4(aOffset, 1.0);
+  vec4 mv = viewMatrix * world;
+  float size = aSize * (0.45 + 0.55 * aLit) * (1.0 + 0.8 * aFlash);
+  mv.xy += position.xy * size;
+  vUv = position.xy;
+  vLit = aLit;
+  vFlash = aFlash;
+  vAlpha = po_cosmosAlpha(world.xyz);
+  gl_Position = vAlpha > 0.002 && aSize > 0.0 ? projectionMatrix * mv : vec4(0.0, 0.0, 2.0, 1.0);
+}
+`;
+
+const constellationStarFragment = /* glsl */ `
+uniform vec3 uInk;
+varying vec2 vUv;
+varying float vLit;
+varying float vFlash;
+varying float vAlpha;
+void main() {
+  vec2 a = abs(vUv);
+  float star = pow(a.x, 0.6) + pow(a.y, 0.6);
+  float shape = mix(length(vUv) * 1.25, star, vLit);
+  if (shape > 1.0) discard;
+  vec3 fill = mix(vec3(0.42, 0.48, 0.62), vec3(1.0, 0.86, 0.24), vLit);
+  fill = mix(fill, vec3(1.0, 0.98, 0.9), max(1.0 - smoothstep(0.0, 0.45, length(vUv)), vFlash) * vLit);
+  float ink = smoothstep(0.74, 0.8, shape) * vLit;
+  vec3 color = mix(fill, uInk, ink);
+  gl_FragColor = vec4(color, vAlpha * mix(0.55, 1.0, vLit));
+  #include <colorspace_fragment>
+}
+`;
+
+export function createConstellationStarMaterial(): ShaderMaterial {
+  return new ShaderMaterial({
+    name: 'ConstellationStars',
+    uniforms: withCosmos({ uInk: { value: new Color(INK_COLOR) } }),
+    vertexShader: constellationStarVertex,
+    fragmentShader: constellationStarFragment,
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false,
+  });
+}
+
+/**
+ * Constellation links: instanced camera-facing strips from aStart to aEnd
+ * (meters), drawn to aProgress (0..1) of their length: a bright core with
+ * ink edges, like a printed line.
+ */
+const linkVertex = /* glsl */ `
+attribute vec3 aStart;
+attribute vec3 aEnd;
+attribute float aProgress;
+uniform float uWidth;
+varying float vSide;
+varying float vAlpha;
+${COSMOS_MASK_GLSL}
+void main() {
+  vec4 sw = modelMatrix * vec4(aStart, 1.0);
+  vec4 ew = modelMatrix * vec4(mix(aStart, aEnd, aProgress), 1.0);
+  vec3 s = (viewMatrix * sw).xyz;
+  vec3 e = (viewMatrix * ew).xyz;
+  vec3 d = e - s;
+  float len = length(d);
+  vec3 dir = len > 1e-6 ? d / len : vec3(1.0, 0.0, 0.0);
+  vec3 p = mix(s, e, position.x);
+  vec3 side = normalize(cross(dir, normalize(-p)) + vec3(1e-6));
+  p += side * position.y * uWidth * 0.5;
+  vSide = position.y;
+  vAlpha = po_cosmosAlpha(mix(sw.xyz, ew.xyz, position.x));
+  gl_Position = aProgress > 0.001 && vAlpha > 0.002 ? projectionMatrix * vec4(p, 1.0) : vec4(0.0, 0.0, 2.0, 1.0);
+}
+`;
+
+const linkFragment = /* glsl */ `
+uniform vec3 uInk;
+varying float vSide;
+varying float vAlpha;
+void main() {
+  float s = abs(vSide);
+  vec3 color = mix(vec3(1.0, 0.95, 0.7), uInk, smoothstep(0.42, 0.55, s));
+  gl_FragColor = vec4(color, vAlpha * (1.0 - smoothstep(0.9, 1.0, s)));
+  #include <colorspace_fragment>
+}
+`;
+
+export function createConstellationLinkMaterial(width: number): ShaderMaterial {
+  return new ShaderMaterial({
+    name: 'ConstellationLinks',
+    uniforms: withCosmos({ uInk: { value: new Color(INK_COLOR) }, uWidth: { value: width } }),
+    vertexShader: linkVertex,
+    fragmentShader: linkFragment,
+    transparent: true,
+    depthWrite: false,
+    side: DoubleSide,
+    toneMapped: false,
+  });
+}
+
 /** Shooting-star streaks: aStart, aVel (m/s), aBirth (real clock s); the quad spans tail to head. */
 const streakVertex = /* glsl */ `
 attribute vec3 aStart;
