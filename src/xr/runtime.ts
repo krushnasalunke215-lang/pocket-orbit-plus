@@ -15,7 +15,7 @@ import type { BoardPlacement } from '../game/placement.js';
 import type { CosmosMask } from '../game/cosmos-rules.js';
 import type { ComicWords } from '../render/comic-words.js';
 import type { SpaceTextureStatus } from '../render/space-textures.js';
-import type { BodyVisual, CometVisual, CosmosVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
+import type { BoardVisual, BodyVisual, CometVisual, CosmosVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
 
 /*
  * Shared state between systems, stored in world.globals under fixed keys.
@@ -27,6 +27,8 @@ import type { BodyVisual, CometVisual, CosmosVisual, TargetVisual, TrailVisual }
 export interface BoardRuntime {
   readonly entity: Entity;
   readonly handleEntity: Entity;
+  /** The glass plate with the spacetime grid (RenderSyncSystem writes its grid and shadow entries). */
+  readonly visual: BoardVisual;
   pose: BoardPose;
   placement: BoardPlacement;
   /** Increments whenever pose changes. */

@@ -246,6 +246,21 @@ vec3 po_dither(vec3 c) {
 `;
 
 /**
+ * GLSL statement for additive materials (SRC_ALPHA, ONE), after
+ * #include <colorspace_fragment>: moves the glow's strength into alpha
+ * (rgb / m, alpha m, m the brightest channel) so the added colour is
+ * unchanged but the framebuffer alpha, which blends the frame over the
+ * passthrough in mixed reality, follows the light: a glow quad written
+ * with alpha 1 covers the real room with a black square.
+ */
+export const ADDITIVE_ALPHA_FRAGMENT = /* glsl */ `
+{
+  float po_m = min(1.0, max(max(gl_FragColor.r, gl_FragColor.g), gl_FragColor.b));
+  gl_FragColor = po_m > 1e-5 ? vec4(gl_FragColor.rgb / po_m, po_m) : vec4(0.0);
+}
+`;
+
+/**
  * GLSL: cheap hash-based value noise in 1D and 3D (smoothstep interpolation
  * of random lattice values). Used for planet bands and the accretion swirl.
  */

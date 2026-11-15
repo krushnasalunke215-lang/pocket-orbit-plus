@@ -42,7 +42,8 @@ void main() {
   ${OCCLUSION_FRAGMENT}
   float d = length(vUv);
   if (d >= 1.0) discard;
-  float glow = pow(1.0 - d, 2.4) + 0.35 * pow(1.0 - d, 8.0);
+  // A soft, mostly gaussian glow that reaches zero at the quad edge (subtle: it lifts, it does not bloom).
+  float glow = (exp(-d * d * 5.0) - 0.0067) * 0.8 + 0.2 * pow(1.0 - d, 6.0);
   float alpha = glow * vAlpha;
   gl_FragColor = vec4(vColor, alpha);
   #include <colorspace_fragment>

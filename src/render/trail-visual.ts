@@ -10,8 +10,12 @@ import type { TrailVisual } from './visual-types.js';
  * each). The flight ribbon is a ring buffer of segments that keeps the last
  * three flights: each new flight halves the older segments' alpha (1, 0.5,
  * 0.25, then hidden), and every segment fades by age to a floor over about
- * 6 s. The preview arc is a dashed white ribbon at about 50%.
+ * 6 s; it is a thin soft additive line of pale comet gold. The preview arc
+ * is a dashed white ribbon at about 50%.
  */
+
+/** Pale comet gold (the dust tail's colour), softer than the role orange. */
+const FLIGHT_COLOR = 0xf0c27e;
 
 const FLIGHT_CAPACITY = 2048;
 const PREVIEW_CAPACITY = 1024;
@@ -26,12 +30,11 @@ const FLIGHT_FADE = 6;
 const NO_FADE = 1e9;
 
 const flightMaterial = createRibbonMaterial({
-  color: ROLE_COLORS.cometTrail,
-  width: 0.05,
+  color: FLIGHT_COLOR,
+  width: 0.022,
   fade: FLIGHT_FADE,
   floor: 0.3,
   dashed: false,
-  inked: true,
 });
 const previewMaterial = createRibbonMaterial({
   color: ROLE_COLORS.preview,

@@ -4,54 +4,60 @@ import {
   DynamicDrawUsage,
   Group,
   Mesh,
+  PlaneGeometry,
   Points,
-  SphereGeometry,
   Vector2,
+  type Vector3,
 } from '@iwsdk/core';
-import { SHADOWS } from './contact-shadows.js';
+import { TILE } from './cosmos/planets.js';
+import { mulberry32 } from './cosmos/random.js';
 import { HALOS } from './halo-sprites.js';
-import { ROLE_COLORS } from './palette.js';
-import { INK_COLOR, markRange, noRaycast, setSharedTime } from './shaders/common.js';
-import { createInkMaterial } from './shaders/ink.js';
+import { bakeLumpyGeometry } from './lumpy-geometry.js';
+import { markRange, noRaycast, setSharedTime } from './shaders/common.js';
 import { createSurfaceMaterial } from './shaders/planet.js';
-import { tailMaterial } from './shaders/tail.js';
+import { ANTI_SUN, ionTailMaterial, tailMaterial } from './shaders/tail.js';
 import type { CometVisual } from './visual-types.js';
 
 /*
- * Comet: a chunky toon white-yellow head with an ink outline and an orange halo slot, and a
- * particle tail in a 256-slot ring buffer. The root stays at the board
- * origin; the head moves, and tail particles keep the board position they
- * were emitted at, so the tail streams behind the head. Two particles are
- * emitted per frame whenever the head moves. setOpacity fades the head, the
- * tail and the halo together (the attract loop's fade-out).
+ * Comet: a small lumpy icy nucleus lit by the sun (the ice atlas tile, a
+ * glint), a cool coma halo slot, and two tails. The dust tail is a 512-slot
+ * particle ring buffer: three particles per frame while the head moves,
+ * each drifting back along the motion and away from the sun with a little
+ * spread, so the tail curves and fans warm white to gold to dust. The ion
+ * tail is one straight pale-blue strip from the head directly away from
+ * the sun. The root stays at the board origin (lifted); the head moves and
+ * tail particles keep the board position they were emitted at. setOpacity
+ * fades the nucleus, both tails and the coma together (the attract loop).
  */
 
-const TAIL_CAPACITY = 256;
-const EMIT_PER_FRAME = 2;
+const TAIL_CAPACITY = 512;
+const EMIT_PER_FRAME = 3;
 /** A jump longer than this (level change, replay) is a teleport: no particles. */
 const MAX_STEP = 0.25;
-const HALO_SIZE = 0.17;
-const HALO_ALPHA = 0.6;
-/** Contact shadow radius on the glass under the head (board units). */
-const SHADOW_SIZE = 0.05;
+/** Dust drift: back along the motion, away from the sun, and spread (board units/s). */
+const DRIFT_BACK = 0.1;
+const DRIFT_ANTI_SUN = 0.18;
+const DRIFT_SPREAD = 0.06;
+const COMA_SIZE = 0.12;
+const COMA_ALPHA = 0.5;
+const NUCLEUS_RADIUS = 0.026;
 
-const headGeometry = new SphereGeometry(0.04, 20, 14);
-/** Toon white-yellow head (transparent, so setOpacity fades it) with an ink outline. */
-const headMaterial = createSurfaceMaterial({ color: 0xfff7d6, band: 0xffe066, rim: ROLE_COLORS.comet, seed: 0.5, bandScale: 60, rimStrength: 0.8, dotRows: 7 });
-headMaterial.transparent = true;
-const headInk = createInkMaterial(INK_COLOR, undefined, true);
-
-/** Deterministic jitter source (mulberry32). */
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+/** The nucleus, baked once: a lumpy icosphere (radius 0.78-1.1) with a few pits. */
+const nucleusGeometry = bakeLumpyGeometry(2, 0xc0e7, 0.78, 1.1, 4);
+const nucleusMaterial = createSurfaceMaterial({
+  color: 0xc8d2dc,
+  band: 0x9aa6b4,
+  rim: 0xdff0ff,
+  seed: 0.5,
+  bandScale: 3,
+  tile: TILE.ice,
+  bump: 0.14,
+  ocean: 0.6,
+  rimStrength: 0.5,
+  atmosphere: { color: 0xbfe4ff, strength: 0.5 },
+});
+nucleusMaterial.transparent = true;
+const ionGeometry = new PlaneGeometry(1, 1, 1, 12).translate(0, 0.5, 0);
 
 const drawingBuffer = new Vector2();
 
@@ -60,14 +66,11 @@ export function createCometVisual(): CometVisual {
   root.name = 'Comet';
   const head = new Group();
   head.name = 'CometHead';
-  const headMesh = new Mesh(headGeometry, headMaterial);
-  headMesh.renderOrder = 4;
-  headMesh.raycast = noRaycast;
-  const headHull = new Mesh(headGeometry, headInk);
-  headHull.name = 'InkHull';
-  headHull.renderOrder = 3.9;
-  headHull.raycast = noRaycast;
-  head.add(headHull, headMesh);
+  const nucleus = new Mesh(nucleusGeometry, nucleusMaterial);
+  nucleus.scale.setScalar(NUCLEUS_RADIUS);
+  nucleus.renderOrder = 4;
+  nucleus.raycast = noRaycast;
+  head.add(nucleus);
 
   const positions = new BufferAttribute(new Float32Array(TAIL_CAPACITY * 3), 3).setUsage(DynamicDrawUsage);
   const births = new BufferAttribute(new Float32Array(TAIL_CAPACITY).fill(-1e4), 1).setUsage(DynamicDrawUsage);
@@ -86,10 +89,15 @@ export function createCometVisual(): CometVisual {
     renderer.getDrawingBufferSize(drawingBuffer);
     tailMaterial.uniforms.uPixelScale.value = drawingBuffer.y * 0.5;
   };
-  root.add(tail, head);
+  const ion = new Mesh(ionGeometry, ionTailMaterial);
+  ion.name = 'CometIonTail';
+  ion.frustumCulled = false;
+  ion.renderOrder = 3;
+  ion.raycast = noRaycast;
+  const ionHead = ionTailMaterial.uniforms.uHead.value as Vector3;
+  root.add(tail, ion, head);
 
-  const halo = HALOS.allocate(ROLE_COLORS.cometTrail, HALO_ALPHA);
-  const shadow = SHADOWS.allocate(0x000000, 0.45);
+  const coma = HALOS.allocate(0xbfe0ff, COMA_ALPHA);
   const random = mulberry32(0xc0e7);
   const last = [0, 0, 0];
   let hasLast = false;
@@ -105,10 +113,10 @@ export function createCometVisual(): CometVisual {
     p[k] = x + (random() - 0.5) * j;
     p[k + 1] = y + (random() - 0.5) * j;
     p[k + 2] = z + (random() - 0.5) * j;
-    // Drift slowly backward along the motion, with a little spread.
-    v[k] = -vx * 0.12 + (random() - 0.5) * 0.05;
-    v[k + 1] = -vy * 0.12 + (random() - 0.5) * 0.05;
-    v[k + 2] = -vz * 0.12 + (random() - 0.5) * 0.05;
+    // Back along the motion, away from the sun, and a little spread: the tail curves and fans.
+    v[k] = -vx * DRIFT_BACK + ANTI_SUN.x * DRIFT_ANTI_SUN + (random() - 0.5) * DRIFT_SPREAD;
+    v[k + 1] = -vy * DRIFT_BACK + ANTI_SUN.y * DRIFT_ANTI_SUN + (random() - 0.5) * DRIFT_SPREAD;
+    v[k + 2] = -vz * DRIFT_BACK + ANTI_SUN.z * DRIFT_ANTI_SUN + (random() - 0.5) * DRIFT_SPREAD;
     b[next] = t;
     markRange(positions, next, 1);
     markRange(velocities, next, 1);
@@ -130,18 +138,20 @@ export function createCometVisual(): CometVisual {
       if (a === opacity) return;
       opacity = a;
       // One comet per page, so its module-shared materials carry its opacity.
-      headMaterial.uniforms.uOpacity.value = a;
-      headInk.uniforms.uOpacity.value = a;
-      headMesh.visible = a > 0;
-      headHull.visible = a > 0;
+      nucleusMaterial.uniforms.uOpacity.value = a;
+      nucleus.visible = a > 0;
+      ion.visible = a > 0;
       tailMaterial.uniforms.uOpacity.value = a;
-      HALOS.setAlpha(halo, HALO_ALPHA * a);
+      ionTailMaterial.uniforms.uOpacity.value = a;
+      HALOS.setAlpha(coma, COMA_ALPHA * a);
       // An invisible comet may jump (relaunch); no tail along the jump.
       if (a <= 0) hasLast = false;
     },
     update(dt, t) {
       setSharedTime(t);
       const hp = head.position;
+      ionHead.copy(hp);
+      nucleus.rotation.set(t * 0.7, t * 0.45, 0);
       if (root.visible && opacity > 0) {
         const dx = hp.x - last[0];
         const dy = hp.y - last[1];
@@ -160,10 +170,15 @@ export function createCometVisual(): CometVisual {
         hasLast = true;
       }
       // HALOS lives under the board visual, the head under the (lifted) comet root.
-      HALOS.setPosition(halo, hp.x, hp.y + root.position.y, hp.z);
-      SHADOWS.setPosition(shadow, hp.x, 0, hp.z);
-      SHADOWS.setSize(shadow, root.visible && opacity > 0 ? SHADOW_SIZE : 0);
-      HALOS.setSize(halo, root.visible ? HALO_SIZE : 0);
+      HALOS.setPosition(coma, hp.x, hp.y + root.position.y, hp.z);
+      HALOS.setSize(coma, root.visible ? COMA_SIZE : 0);
+    },
+    headPose(out) {
+      const hp = head.position;
+      out[0] = hp.x;
+      out[1] = hp.y + root.position.y;
+      out[2] = hp.z;
+      return root.visible && opacity > 0 ? NUCLEUS_RADIUS * 1.3 : 0;
     },
   };
 }

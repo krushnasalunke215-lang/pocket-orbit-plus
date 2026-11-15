@@ -76,7 +76,8 @@ export class BoardPlacementSystem extends createSystem({
   init(): void {
     const boardEntity = this.world.createTransformEntity(new Group());
     boardEntity.object3D!.name = 'BoardRoot';
-    boardEntity.object3D!.add(createBoardVisual().root);
+    const boardVisual = createBoardVisual();
+    boardEntity.object3D!.add(boardVisual.root);
     // The board root's materials share the occlusion uniforms (src/render/shaders/common.ts).
     boardEntity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.HardOcclusion });
 
@@ -90,6 +91,7 @@ export class BoardPlacementSystem extends createSystem({
     this.runtime = {
       entity: boardEntity,
       handleEntity,
+      visual: boardVisual,
       pose: initial.pose,
       placement: initial,
       version: 0,

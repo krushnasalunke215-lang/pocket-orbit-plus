@@ -35,6 +35,7 @@ varying vec3 vColor;
 varying float vAlpha;
 varying float vPattern;
 varying float vRadius;
+varying float vBoardR;
 void main() {
   vLocal = position.xz;
   vColor = aColor;
@@ -42,6 +43,7 @@ void main() {
   vPattern = aPattern;
   vRadius = aSize;
   vec3 p = aOffset + position * aSize;
+  vBoardR = length(p.xz);
   gl_Position = aSize > 0.0 ? projectionMatrix * modelViewMatrix * vec4(p, 1.0) : vec4(0.0, 0.0, 2.0, 1.0);
   ${OCCLUSION_VERTEX}
 }
@@ -59,13 +61,17 @@ varying vec3 vColor;
 varying float vAlpha;
 varying float vPattern;
 varying float vRadius;
+varying float vBoardR;
 const float TAU = 6.28318530718;
 void main() {
   ${OCCLUSION_FRAGMENT}
   float r = length(vLocal);
-  if (r > 1.0) discard;
-  float width = 0.006 / max(vRadius, 1e-4);
-  float line = 1.0 - smoothstep(0.0, width, abs(r - 1.0 + width));
+  // Only on the plate: the part of a ring past the rim would float in space.
+  if (r > 1.0 || vBoardR > 1.0) discard;
+  // A thin line (0.0035 board units), never under about a pixel: wider lines fade instead.
+  float thin = 0.0035 / max(vRadius, 1e-4);
+  float width = max(thin, fwidth(r) * 1.2);
+  float line = (1.0 - smoothstep(0.0, width, abs(r - 1.0 + width))) * (thin / width);
   float a = atan(vLocal.y, vLocal.x) / TAU;
   float well = pow(1.0 - r, 3.0) * 0.18;
   float ripples = 0.0;
@@ -82,7 +88,7 @@ void main() {
   } else if (vPattern > 0.5) {
     line *= step(0.6, fract(a * 40.0));
   }
-  float alpha = (line + well + ripples) * vAlpha;
+  float alpha = (line + well + ripples) * vAlpha * (1.0 - smoothstep(0.96, 1.0, vBoardR));
   gl_FragColor = vec4(vColor, alpha);
   #include <colorspace_fragment>
 }

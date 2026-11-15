@@ -1,66 +1,77 @@
 import {
-  BufferAttribute,
-  BufferGeometry,
   DoubleSide,
   Group,
-  IcosahedronGeometry,
   Mesh,
   MeshBasicMaterial,
+  PlaneGeometry,
   RingGeometry,
   SphereGeometry,
+  type BufferGeometry,
   type Material,
+  type ShaderMaterial,
 } from '@iwsdk/core';
 import { VISUAL_BODY_SCALE } from '../config.js';
+import { gridPull } from '../game/spacetime.js';
 import { KIND_DEFAULTS, type BodyKind } from '../sim/bodies.js';
 import type { BodyDef } from '../sim/level.js';
-import { POSTS, SHADOWS } from './contact-shadows.js';
+import { TILE } from './cosmos/planets.js';
 import { HALOS, OUTLINES, PULL_RINGS } from './halo-sprites.js';
+import { bakeLumpyGeometry } from './lumpy-geometry.js';
 import { PALETTE, ROLE_COLORS } from './palette.js';
 import { ACCRETION_INNER, ACCRETION_OUTER, accretionMaterial } from './shaders/accretion.js';
-import { noRaycast, setMotionTime } from './shaders/common.js';
-import { inkDark, inkLight } from './shaders/ink.js';
+import { noRaycast, setMotionTime, SHARED_TIME } from './shaders/common.js';
+import { createLensMaterial, LENS_SIZE } from './shaders/lens.js';
 import { createSurfaceMaterial, type SurfaceColors } from './shaders/planet.js';
 import { PULL_PATTERN } from './shaders/pull-ring.js';
 import { createRingMaterial, RING_PATTERN } from './shaders/ring.js';
+import { createStarMaterial, STAR_VARIANT } from './shaders/star.js';
 import type { BodyVisual, InteractionState } from './visual-types.js';
 
 /*
- * Level bodies. Kinds differ by shape and ring pattern as well as color:
- *   planet     banded sphere + solid tilted ring, solid pull ring
- *   moon       faceted icosahedron + dotted ring, dotted pull ring
- *   black hole (danger) black core with a thin bright event-horizon rim, an
- *              accretion disc whose spiral arms fall inward, and a
- *              vermillion pull ring whose ripples flow inward
- *   repulsor   (white star, push) bright white spiky stellated octahedron
- *              with a sky-blue rim and a soft pulse, dashed rings drifting
- *              outward, and a dashed pull ring whose ripples flow outward
- * Each body also owns one halo slot (fake bloom) and one pull-ring slot
- * (its influence radius on the board). Geometry and ring materials are
- * shared module resources; only the surface material is cloned per body.
- * Comic style: toon bands with halftone dots in the shadow (planet.ts) and
- * an ink outline (an inverted hull, shaders/ink.ts) on every body.
+ * Level bodies, realistic and told apart by silhouette as well as colour:
+ *   movable planet  an Earth-like sphere with a blue atmosphere, an ocean
+ *                   glint and a tilted dusty ring; solid pull ring
+ *   fixed planet    an ice giant (Uranus map), cyan atmosphere, dusty ring
+ *   moon            a lumpy cratered rock (displaced icosphere, within 1.08
+ *                   radii) and a faint specked ring; dotted pull ring
+ *   black hole      a pure black sphere, a white-hot to deep-red accretion
+ *                   disk with Doppler beaming, and a lens billboard (photon
+ *                   ring, the disk's far side lensed over the shadow); its
+ *                   pull ring's ripples flow inward
+ *   repulsor        (white star, push) a self-lit blue-white sphere with
+ *                   granulation and limb darkening, a corona billboard with
+ *                   8 slow streamers breathing with its pulse, and faint
+ *                   outward pressure waves; its pull ring's ripples flow outward
+ * Each body owns one halo slot (a subtle glow; flash() brightens it), one
+ * pull-ring slot (its influence radius on the board) and one high-contrast
+ * outline slot. It bends the spacetime grid (gridPull) and casts a soft
+ * shadow on the plate (RenderSyncSystem writes both). Geometry and ring
+ * materials are shared module resources; the surface (and lens) materials
+ * are cloned per body.
  */
 
 /** White-star pulse rate (rad/s). */
 const PULSE_RATE = 2.6;
+/** A flash decays as exp(-age / FLASH_DECAY) on the real clock (SHARED_TIME). */
+const FLASH_DECAY = 0.22;
 
-const sphere = new SphereGeometry(1, 24, 16);
-/** Non-indexed, so computeVertexNormals gives one flat normal per facet. */
-const facets = new IcosahedronGeometry(1, 1);
-facets.computeVertexNormals();
-const spikes = createStellatedOctahedron(0.55, 1.15);
-const planetRing = new RingGeometry(1.45, 2.05, 64, 1).rotateX(-Math.PI / 2);
+const planetSphere = new SphereGeometry(1, 48, 32);
+const starSphere = new SphereGeometry(1, 32, 24);
+/** The lumpy moon, baked once: 320 triangles, radius 0.9-1.08, a few craters. */
+const moonRock = bakeLumpyGeometry(3, 0x5eed, 0.9, 1.08, 7);
+const billboard = new PlaneGeometry(2, 2);
+const planetRing = new RingGeometry(1.45, 2.05, 96, 1).rotateX(-Math.PI / 2);
 const moonRing = new RingGeometry(1.7, 2.3, 64, 1).rotateX(-Math.PI / 2);
-const accretionRing = new RingGeometry(ACCRETION_INNER, ACCRETION_OUTER, 64, 2).rotateX(-Math.PI / 2);
+const accretionRing = new RingGeometry(ACCRETION_INNER, ACCRETION_OUTER, 96, 3).rotateX(-Math.PI / 2);
 const repulsorRing = new RingGeometry(1.3, 3.0, 64, 3).rotateX(-Math.PI / 2);
 const colliderGeometry = new SphereGeometry(1, 16, 12);
 
 /** Ring materials: one per style, created once. */
 const ringMaterials = {
-  movablePlanet: createRingMaterial(ROLE_COLORS.movablePlanet, RING_PATTERN.solid, 1.45, 2.05, 0.7),
-  fixedPlanet: createRingMaterial(ROLE_COLORS.fixedPlanet, RING_PATTERN.solid, 1.45, 2.05, 0.7),
-  moon: createRingMaterial(ROLE_COLORS.moon, RING_PATTERN.dotted, 1.7, 2.3, 1),
-  repulsor: createRingMaterial(ROLE_COLORS.repulsorRing, RING_PATTERN.dashedOutward, 1.3, 3.0, 0.9),
+  movablePlanet: createRingMaterial(ROLE_COLORS.movablePlanet, RING_PATTERN.solid, 1.45, 2.05, 0.75),
+  fixedPlanet: createRingMaterial(ROLE_COLORS.fixedPlanet, RING_PATTERN.solid, 1.45, 2.05, 0.75),
+  moon: createRingMaterial(0xd8d2cc, RING_PATTERN.dotted, 1.7, 2.3, 0.7),
+  repulsor: createRingMaterial(0xbcd6ff, RING_PATTERN.dashedOutward, 1.3, 3.0, 0.8),
 };
 
 /**
@@ -72,7 +83,7 @@ const ringMaterials = {
 const colliderMaterial = new MeshBasicMaterial({ visible: false, side: DoubleSide });
 
 const STATE_SCALE: Record<InteractionState, number> = { idle: 1, hover: 1.12, held: 1.2 };
-const STATE_HALO: Record<InteractionState, number> = { idle: 1, hover: 1.6, held: 2 };
+const STATE_HALO: Record<InteractionState, number> = { idle: 1, hover: 1.8, held: 2.3 };
 const STATE_PULL: Record<InteractionState, number> = { idle: 1, hover: 1.8, held: 2.4 };
 
 interface KindStyle {
@@ -86,20 +97,20 @@ interface KindStyle {
   pulse: number;
   /** Farthest point of the shape in radii (the high-contrast outline circles it). */
   extent: number;
-  /** Comic ink outline material (light cream for the black hole, so it reads on dark space). */
-  ink: Material;
+  /** Camera-facing child: the black hole's lens or the white star's corona. */
+  billboard: 'lens' | 'corona' | null;
+  /** Shadow radius on the plate, in body radii. */
+  shadow: number;
 }
 
 /** High-contrast outline ring: outer radius over the shape's extent, and its inner radius fraction. */
 const OUTLINE_OUTER = 1.24;
 const OUTLINE_INNER = 1.03 / OUTLINE_OUTER;
 const OUTLINE_ALPHA = 0.95;
-/** Contact shadow and light post strength, and the post's half width (board units). */
-const SHADOW_ALPHA = 0.5;
-const POST_ALPHA = 0.55;
-const POST_HALF_WIDTH = 0.006;
+/** The white star's corona, in star radii. */
+const CORONA_SIZE = 3.2;
 
-/** Small stable hash of the body id, so band patterns differ per body but never per run. */
+/** Small stable hash of the body id, so patterns differ per body but never per run. */
 function seedOf(id: string): number {
   let h = 2166136261;
   for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
@@ -111,70 +122,62 @@ function styleFor(kind: BodyKind, movable: boolean, seed: number): KindStyle {
     case 'planet': {
       const color = movable ? ROLE_COLORS.movablePlanet : ROLE_COLORS.fixedPlanet;
       return {
-        geometry: sphere,
-        surface: { color, band: movable ? 0x9fd9ff : 0x6fe6bf, rim: color, seed },
+        geometry: planetSphere,
+        surface: movable
+          ? { color: 0x1d4f8f, band: 0x6f9f5a, rim: color, seed, bandScale: 4, tile: TILE.earth, atmosphere: { color: 0x6fa8ff, strength: 0.75 }, bump: 0.02, ocean: 0.7 }
+          : { color: 0x5fb8c2, band: 0x9fe6ea, rim: color, seed, bandScale: 7, tile: TILE.uranus, atmosphere: { color: 0x9ff0ea, strength: 0.6 } },
         ring: {
           geometry: planetRing,
           material: movable ? ringMaterials.movablePlanet : ringMaterials.fixedPlanet,
           tilt: 0.38,
         },
-        halo: { color, size: 2.6, alpha: 0.32 },
-        pull: { color, alpha: 0.35, pattern: PULL_PATTERN.solid },
+        halo: { color, size: 2.4, alpha: 0.12 },
+        pull: { color, alpha: 0.22, pattern: PULL_PATTERN.solid },
         spin: 0.25,
         pulse: 0,
         extent: 1,
-        ink: inkDark,
+        billboard: null,
+        shadow: 1.1,
       };
     }
     case 'moon':
       return {
-        geometry: facets,
-        surface: { color: ROLE_COLORS.moon, band: 0xf7b3dc, rim: 0xf6dceb, seed, bandScale: 3, dotRows: 6 },
+        geometry: moonRock,
+        surface: { color: 0x8a847c, band: 0x5e5952, rim: 0xffffff, seed, bandScale: 3, tile: TILE.moon, bump: 0.16 },
         ring: { geometry: moonRing, material: ringMaterials.moon, tilt: 0 },
-        halo: { color: ROLE_COLORS.moon, size: 2.4, alpha: 0.3 },
-        pull: { color: ROLE_COLORS.moon, alpha: 0.3, pattern: PULL_PATTERN.dotted },
-        spin: 0.6,
+        halo: { color: ROLE_COLORS.moon, size: 2.2, alpha: 0.1 },
+        pull: { color: ROLE_COLORS.moon, alpha: 0.2, pattern: PULL_PATTERN.dotted },
+        spin: 0.3,
         pulse: 0,
-        extent: 1,
-        ink: inkDark,
+        extent: 1.08,
+        billboard: null,
+        shadow: 1.05,
       };
     case 'black-hole':
       return {
-        geometry: sphere,
-        surface: {
-          color: PALETTE.black,
-          band: PALETTE.black,
-          rim: ROLE_COLORS.eventHorizon,
-          seed,
-          rimPower: 9,
-          rimStrength: 2.6,
-        },
+        geometry: planetSphere,
+        surface: { color: PALETTE.black, band: PALETTE.black, rim: PALETTE.black, seed },
         ring: { geometry: accretionRing, material: accretionMaterial, tilt: 0.22 },
-        halo: { color: ROLE_COLORS.blackHoleRing, size: 3.4, alpha: 0.3 },
-        pull: { color: ROLE_COLORS.blackHoleRing, alpha: 0.45, pattern: PULL_PATTERN.inward },
+        halo: { color: ROLE_COLORS.blackHoleRing, size: 3.0, alpha: 0.1 },
+        pull: { color: ROLE_COLORS.blackHoleRing, alpha: 0.3, pattern: PULL_PATTERN.inward },
         spin: 0,
         pulse: 0,
         extent: 1,
-        ink: inkLight,
+        billboard: 'lens',
+        shadow: 1.3,
       };
     case 'repulsor':
       return {
-        geometry: spikes,
-        surface: {
-          color: ROLE_COLORS.repulsor,
-          band: 0xdfefff,
-          rim: PALETTE.skyBlue,
-          seed,
-          bandScale: 2,
-          rimStrength: 1.8,
-        },
+        geometry: starSphere,
+        surface: { color: 0xd2e2ff, band: 0xffffff, rim: 0x9cc4ff, seed, rimStrength: 0.25, emissive: 1.05 },
         ring: { geometry: repulsorRing, material: ringMaterials.repulsor, tilt: 0 },
-        halo: { color: ROLE_COLORS.repulsor, size: 3.2, alpha: 0.36 },
-        pull: { color: ROLE_COLORS.repulsorRing, alpha: 0.4, pattern: PULL_PATTERN.outward },
-        spin: 0.8,
-        pulse: 0.07,
-        extent: 1.15,
-        ink: inkDark,
+        halo: { color: 0xcfe0ff, size: 3.0, alpha: 0.22 },
+        pull: { color: ROLE_COLORS.repulsorRing, alpha: 0.26, pattern: PULL_PATTERN.outward },
+        spin: 0.12,
+        pulse: 0.04,
+        extent: 1,
+        billboard: 'corona',
+        shadow: 0,
       };
   }
 }
@@ -191,13 +194,9 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
   const surfaceMaterial = createSurfaceMaterial(style.surface);
   const mesh = new Mesh(style.geometry, surfaceMaterial);
   mesh.scale.setScalar(radius);
+  // Fixed seeded tilt and phase, so planets do not all show the same face.
+  mesh.rotation.set(0.25 * (seedOf(def.id + 'x') - 0.5), 0, 0.41 * (seedOf(def.id + 'z') - 0.5));
   root.add(mesh);
-  // Comic ink outline: the same shape's back faces pushed out (a child, so it
-  // follows the mesh's scale, spin and pulse).
-  const hull = new Mesh(style.geometry, style.ink);
-  hull.name = 'InkHull';
-  hull.raycast = noRaycast;
-  mesh.add(hull);
 
   if (style.ring) {
     const ring = new Mesh(style.ring.geometry, style.ring.material);
@@ -206,6 +205,26 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
     ring.renderOrder = 1;
     ring.raycast = noRaycast;
     root.add(ring);
+  }
+
+  let lensMaterial: ShaderMaterial | null = null;
+  let coronaMaterial: ShaderMaterial | null = null;
+  let glow: Mesh | null = null;
+  if (style.billboard === 'lens') {
+    lensMaterial = createLensMaterial();
+    glow = new Mesh(billboard, lensMaterial);
+    glow.name = 'BlackHoleLens';
+  } else if (style.billboard === 'corona') {
+    coronaMaterial = createStarMaterial(STAR_VARIANT.corona, CORONA_SIZE, 0xbcd4ff);
+    glow = new Mesh(billboard, coronaMaterial);
+    glow.name = 'StarCorona';
+  }
+  if (glow) {
+    glow.scale.setScalar(radius);
+    glow.renderOrder = 2;
+    glow.frustumCulled = false;
+    glow.raycast = noRaycast;
+    root.add(glow);
   }
 
   let collider: Mesh | undefined;
@@ -219,45 +238,55 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
   const pull = PULL_RINGS.allocate(style.pull.color, style.pull.alpha, style.pull.pattern);
   PULL_RINGS.setSize(pull, influence);
   const outline = OUTLINES.allocate(PALETTE.white, OUTLINE_ALPHA, OUTLINE_INNER);
-  // Depth cues: a contact shadow on the glass and a light post up to the body.
-  const shadow = SHADOWS.allocate(PALETTE.black, SHADOW_ALPHA);
-  SHADOWS.setSize(shadow, radius * style.extent * 1.15);
-  const post = POSTS.allocate(style.halo.color, POST_ALPHA);
-  POSTS.setSize(post, POST_HALF_WIDTH);
   let state: InteractionState = 'idle';
   let disposed = false;
+  let flashStrength = 0;
+  let flashStart = -1e9;
 
   return {
     root,
     collider,
+    gridPull: gridPull(def.kind, def.mass ?? KIND_DEFAULTS[def.kind].mass),
+    influence,
+    shadowRadius: radius * style.shadow,
     setState(next) {
       if (next === state) return;
       state = next;
       mesh.scale.setScalar(radius * STATE_SCALE[next]);
-      HALOS.setAlpha(halo, Math.min(1, style.halo.alpha * STATE_HALO[next]));
       PULL_RINGS.setAlpha(pull, Math.min(1, style.pull.alpha * STATE_PULL[next]));
+    },
+    flash(strength) {
+      flashStrength = Math.max(strength, flashStrength * Math.exp(-(SHARED_TIME.value - flashStart) / FLASH_DECAY));
+      flashStart = SHARED_TIME.value;
     },
     update(t) {
       if (disposed) return;
       setMotionTime(t);
       mesh.rotation.y = t * style.spin;
       const p = root.position;
+      const age = SHARED_TIME.value - flashStart;
+      const flash = age >= 0 && age < 2 ? flashStrength * Math.exp(-age / FLASH_DECAY) : 0;
       HALOS.setPosition(halo, p.x, p.y, p.z);
       let pulse = 1;
+      let wave = 0;
       if (style.pulse > 0) {
-        // The white star breathes: core, glow size and glow strength together.
-        const wave = Math.sin(t * PULSE_RATE);
+        // The white star breathes: core, corona and glow together.
+        wave = Math.sin(t * PULSE_RATE);
         pulse = 1 + style.pulse * wave;
         mesh.scale.setScalar(radius * STATE_SCALE[state] * pulse);
-        HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state] * pulse);
-        HALOS.setAlpha(halo, Math.min(1, style.halo.alpha * STATE_HALO[state] * (1 + 0.3 * wave)));
-      } else {
-        HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state]);
+      }
+      HALOS.setSize(halo, radius * style.halo.size * STATE_SCALE[state] * pulse * (1 + 0.5 * flash));
+      HALOS.setAlpha(halo, Math.min(1, style.halo.alpha * STATE_HALO[state] * (1 + 0.25 * wave) + 0.5 * flash));
+      if (coronaMaterial && glow) {
+        coronaMaterial.uniforms.uPulse.value = wave;
+        coronaMaterial.uniforms.uOpacity.value = 1 + 0.6 * flash;
+        glow.scale.setScalar(radius * STATE_SCALE[state] * pulse);
+      }
+      if (lensMaterial && glow) {
+        lensMaterial.uniforms.uFlash.value = flash;
+        glow.scale.setScalar(radius * STATE_SCALE[state]);
       }
       PULL_RINGS.setPosition(pull, p.x, 0, p.z);
-      SHADOWS.setPosition(shadow, p.x, 0, p.z);
-      POSTS.setPosition(post, p.x, p.y, p.z);
-      POSTS.setPattern(post, p.y);
       OUTLINES.setPosition(outline, p.x, p.y, p.z);
       OUTLINES.setSize(outline, radius * style.extent * STATE_SCALE[state] * pulse * OUTLINE_OUTER);
     },
@@ -267,53 +296,9 @@ export function createBodyVisual(def: BodyDef): BodyVisual {
       HALOS.release(halo);
       PULL_RINGS.release(pull);
       OUTLINES.release(outline);
-      SHADOWS.release(shadow);
-      POSTS.release(post);
       surfaceMaterial.dispose();
+      lensMaterial?.dispose();
+      coronaMaterial?.dispose();
     },
   };
-}
-
-/**
- * Stellated octahedron: each of the 8 octahedron faces (base vertices at
- * `base`) gets a spike apex along its normal at `tip`. Non-indexed with
- * flat normals, 24 triangles.
- */
-function createStellatedOctahedron(base: number, tip: number): BufferGeometry {
-  const v = [
-    [base, 0, 0],
-    [-base, 0, 0],
-    [0, base, 0],
-    [0, -base, 0],
-    [0, 0, base],
-    [0, 0, -base],
-  ];
-  // Counter-clockwise from outside.
-  const faces = [
-    [0, 2, 4],
-    [4, 2, 1],
-    [1, 2, 5],
-    [5, 2, 0],
-    [4, 3, 0],
-    [1, 3, 4],
-    [5, 3, 1],
-    [0, 3, 5],
-  ];
-  const positions: number[] = [];
-  for (const [a, b, c] of faces) {
-    const n = [v[a][0] + v[b][0] + v[c][0], v[a][1] + v[b][1] + v[c][1], v[a][2] + v[b][2] + v[c][2]];
-    const len = Math.hypot(n[0], n[1], n[2]);
-    const apex = [(n[0] / len) * tip, (n[1] / len) * tip, (n[2] / len) * tip];
-    for (const [p, q] of [
-      [a, b],
-      [b, c],
-      [c, a],
-    ]) {
-      positions.push(...v[p], ...v[q], ...apex);
-    }
-  }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
-  geometry.computeVertexNormals();
-  return geometry;
 }

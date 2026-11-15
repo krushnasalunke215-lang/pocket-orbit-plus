@@ -35,7 +35,8 @@ async function screenPoint(page: Page, board: readonly number[]): Promise<Screen
 }
 
 async function waitUntilNotFlying(page: Page): Promise<void> {
-  await expect.poll(async () => (await snapshot(page)).phase, { timeout: 30_000 }).not.toBe('flying');
+  // A lost flight plays to its end: up to about 40 s at SwiftShader's frame rate with the realistic scene.
+  await expect.poll(async () => (await snapshot(page)).phase, { timeout: 60_000 }).not.toBe('flying');
 }
 
 /** Drags a body from where it is to a board point (or to a raw screen point). */
@@ -80,8 +81,8 @@ async function solveWith(page: Page, placements: Placements): Promise<GameSnapsh
 }
 
 test('solves all six levels with the mouse', async ({ page }) => {
-  // Eight drags and about 35 s of flights at SwiftShader's 6-8 fps.
-  test.setTimeout(300_000);
+  // Eight drags and about 35 s of flights; SwiftShader draws the realistic scene at a few fps, so flights play slower.
+  test.setTimeout(720_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {

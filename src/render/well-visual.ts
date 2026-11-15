@@ -30,8 +30,8 @@ const PULL_ALPHA = 0.3;
 const ringGeometry = new RingGeometry(RING_INNER, RING_OUTER, 48, 1).rotateX(-Math.PI / 2);
 const puckGeometry = new CylinderGeometry(PUCK_RADIUS, PUCK_RADIUS, PUCK_THICKNESS, 32, 1);
 const colliderGeometry = new SphereGeometry(1, 16, 12);
-const ringMaterial = createRingMaterial(ROLE_COLORS.well, RING_PATTERN.solid, RING_INNER, RING_OUTER, 0.9);
-const puckMaterial = createSurfaceMaterial({ color: ROLE_COLORS.well, band: 0xc8f5e8, rim: 0xffffff, seed: 0.37, bandScale: 2 });
+const ringMaterial = createRingMaterial(ROLE_COLORS.well, RING_PATTERN.glow, RING_INNER, RING_OUTER, 0.9);
+const puckMaterial = createSurfaceMaterial({ color: ROLE_COLORS.well, band: 0xc8f5e8, rim: 0xffffff, seed: 0.37, bandScale: 2, rimStrength: 0.4 });
 const colliderMaterial = new MeshBasicMaterial({ visible: false, side: DoubleSide });
 
 export function createWellVisual(puck: boolean): WellVisual {

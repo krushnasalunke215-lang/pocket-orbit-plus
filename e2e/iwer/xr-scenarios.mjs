@@ -87,7 +87,7 @@ export async function nearPinch() {
   const hand = [p[0] + toHead[0] * 0.03, p[1] + 0.02, p[2] + toHead[2] * 0.03];
   // Aim past the planet and 10 cm to its side, so the ray passes the center
   // about 2.9 cm away: outside the visible sphere (drawn VISUAL_BODY_SCALE
-  // larger, plus its ink outline), inside the collider.
+  // larger), inside the collider.
   const aim = [p[0] - toHead[0] * 0.05 + side[0] * 0.1, p[1], p[2] - toHead[2] * 0.05 + side[2] * 0.1];
   xr('set-transform', { device: DEVICE, position: vec(hand) });
   xr('look-at', { device: DEVICE, target: vec(aim) });
@@ -102,8 +102,8 @@ export async function nearPinch() {
   const geometry = {
     handToCenterM: round(dist(hand, p)),
     rayMissM: round(Math.hypot(...cross) / ul),
-    // Drawn radius (0.07 x VISUAL_BODY_SCALE 1.25) plus the ink outline (0.0045 rad of view).
-    visibleRadiusM: round(0.07 * 1.25 * r + 0.0045 * Math.hypot(head.x - p[0], head.y - p[1], head.z - p[2])),
+    // Drawn radius (0.07 x VISUAL_BODY_SCALE 1.25).
+    visibleRadiusM: round(0.07 * 1.25 * r),
     colliderRadiusM: round(Math.max(0.16, 0.035 / r) * r),
   };
 

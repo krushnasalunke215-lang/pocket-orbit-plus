@@ -15,7 +15,14 @@ export interface BodyVisual {
   readonly root: Object3D;
   /** Invisible, oversized grab target of a movable body. */
   readonly collider?: Mesh;
+  /** Signed pull on the spacetime grid (gridPull) and its influence radius (board units). */
+  readonly gridPull: number;
+  readonly influence: number;
+  /** Radius of the shadow the body casts on the plate (board units; 0: none). */
+  readonly shadowRadius: number;
   setState(state: InteractionState): void;
+  /** A brief brightening of the halo (and the black hole's lens) that decays over about 0.4 s. */
+  flash(strength: number): void;
   update(t: number): void;
   /** Frees per-instance GPU resources (shared ones stay). */
   dispose(): void;
@@ -25,9 +32,11 @@ export interface CometVisual {
   readonly root: Object3D;
   setVisible(visible: boolean): void;
   setPosition(board: XYZLike): void;
-  /** Head, tail and halo opacity 0..1 (uniforms only); at 0 the next move emits no tail. */
+  /** Nucleus, tails and halo opacity 0..1 (uniforms only); at 0 the next move emits no tail. */
   setOpacity(alpha: number): void;
   update(dt: number, t: number): void;
+  /** Writes the nucleus' board position [x, y, z] into `out`; returns its shadow radius (0 while hidden). */
+  headPose(out: number[]): number;
 }
 
 export interface TrailVisual {
@@ -89,14 +98,24 @@ export interface ReticleVisual {
 export interface TargetVisual {
   readonly root: Object3D;
   setSolved(solved: boolean): void;
-  /** High contrast: a white outline under an opaque star glyph, and a solid capture ring. */
+  /** High contrast: a thin white circle around the star, and a brighter capture ring. */
   setHighContrast(on: boolean): void;
   update(t: number): void;
+  /** Writes the floating star's board position [x, y, z] into `out`; returns its shadow radius (board units). */
+  starPose(out: number[]): number;
 }
 
 export interface BoardVisual {
   readonly root: Object3D;
   update(t: number): void;
+  /** Grid entry `i` (< GRID_MAX_BODIES): a body at board (x, z) bending the plate by `pull` out to `influence`. */
+  setGridBody(i: number, x: number, z: number, pull: number, influence: number): void;
+  /** Shadow entry `i`: a body of radius `r` at board (x, h, z) casting a soft shadow on the plate. */
+  setShadow(i: number, x: number, h: number, z: number, r: number): void;
+  /** How many grid and shadow entries are in use this frame. */
+  setCounts(grid: number, shadows: number): void;
+  /** Starts a ripple ring at board (x, z) at SHARED_TIME `t`; strength 1 is a flyby, < 0 runs inward. */
+  ripple(x: number, z: number, strength: number, t: number): void;
 }
 
 /** The chapter's constellation in the cosmos frame (meters): stars lit by solved levels, links between them. */

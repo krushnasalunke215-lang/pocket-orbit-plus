@@ -2,9 +2,10 @@ import { createSystem, Grabbed, Hovered } from '@iwsdk/core';
 import { VISUAL_LIFT } from '../config.js';
 import { colliderLocalRadius } from '../game/board-math.js';
 import type { GamePhase } from '../game/controller.js';
+import { GRID_MAX_BODIES, wellPull } from '../game/spacetime.js';
 import { OUTLINES } from '../render/halo-sprites.js';
 import { HIGH_CONTRAST } from '../render/shaders/common.js';
-import { INK_SCALE } from '../render/shaders/ink.js';
+import { WELL_INFLUENCE_RADIUS } from '../sim/wells.js';
 import type { InteractionState } from '../render/visual-types.js';
 import { BoardBody } from './components.js';
 import {
@@ -24,7 +25,9 @@ const EMPTY_SAMPLES = new Float32Array(0);
  * (held bodies belong to BoardConstraintSystem), the comet (or the visual-only
  * CometOverride of the attract and chapter-complete loops), the flight trail,
  * the preview arc while placing, the target's solved state, collider sizes
- * for the current board radius. Applies the visual accessibility settings: high
+ * for the current board radius, and the spacetime grid: every body and Your
+ * Table well bends the plate (grid entries) and every floating body, the
+ * target star and the comet head cast a soft shadow on it (shadow entries). Applies the visual accessibility settings: high
  * contrast (brighter board and body rims, body outlines, the target's star
  * outline) and reduced motion (the decorative clock motionTime() stands
  * still, flight trails stop fading).
@@ -34,6 +37,7 @@ export class RenderSyncSystem extends createSystem({
 }) {
   private readonly pos = [0, 0, 0];
   private readonly comet = [0, 0, 0];
+  private readonly pose = [0, 0, 0];
   private lastLevelRevision = -1;
   private lastBoardVersion = -1;
   private lastFlightId = -1;
@@ -56,8 +60,6 @@ export class RenderSyncSystem extends createSystem({
     if (settingsRevision !== this.lastSettingsRevision) {
       const settings = getSettings(this.world);
       HIGH_CONTRAST.value = settings.highContrast ? 1 : 0;
-      // High contrast also widens the comic ink outlines.
-      INK_SCALE.value = settings.highContrast ? 1.5 : 1;
       OUTLINES.mesh.visible = settings.highContrast;
       visuals.target.setHighContrast(settings.highContrast);
       visuals.trail.setStatic(settings.reducedMotion);
@@ -66,6 +68,9 @@ export class RenderSyncSystem extends createSystem({
     // Decorative animation (spins, pulses, flowing rings) runs on this clock.
     const motion = motionTime(this.world, time);
 
+    const plate = board.visual;
+    let grid = 0;
+    let shadows = 0;
     for (const entity of this.queries.bodies.entities) {
       const id = entity.getValue(BoardBody, 'bodyId') as string;
       const visual = visuals.bodies.get(id);
@@ -78,6 +83,15 @@ export class RenderSyncSystem extends createSystem({
       visual.setState(state);
       if (resizeColliders) visual.collider?.scale.setScalar(colliderRadius);
       visual.update(motion);
+      // The visual root's position, so a held body bends the grid where it is drawn.
+      const p = visual.root.position;
+      if (grid < GRID_MAX_BODIES) plate.setGridBody(grid++, p.x, p.z, visual.gridPull, visual.influence);
+      if (shadows < GRID_MAX_BODIES && visual.shadowRadius > 0) plate.setShadow(shadows++, p.x, p.y, p.z, visual.shadowRadius);
+    }
+    const wells = game.activeWells;
+    for (let i = 0; i < wells.length && grid < GRID_MAX_BODIES; i++) {
+      const w = wells[i];
+      plate.setGridBody(grid++, w.position[0], w.position[2], wellPull(w), WELL_INFLUENCE_RADIUS);
     }
 
     game.cometBoardPosition(this.comet);
@@ -130,6 +144,15 @@ export class RenderSyncSystem extends createSystem({
 
     visuals.target.setSolved(game.phase === 'solved');
     visuals.target.update(motion);
+    if (shadows < GRID_MAX_BODIES) {
+      const r = visuals.target.starPose(this.pose);
+      plate.setShadow(shadows++, this.pose[0], this.pose[1], this.pose[2], r);
+    }
+    if (shadows < GRID_MAX_BODIES) {
+      const r = visuals.comet.headPose(this.pose);
+      if (r > 0) plate.setShadow(shadows++, this.pose[0], this.pose[1], this.pose[2], r);
+    }
+    plate.setCounts(grid, shadows);
 
     this.lastPhase = game.phase;
     this.lastLevelRevision = game.levelRevision;
