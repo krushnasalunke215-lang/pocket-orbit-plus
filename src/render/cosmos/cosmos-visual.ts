@@ -5,6 +5,7 @@ import {
   LinearMipmapLinearFilter,
   Matrix4,
   Mesh,
+  Vector3,
   RepeatWrapping,
   SphereGeometry,
   SRGBColorSpace,
@@ -17,21 +18,25 @@ import { createAsteroidBelt } from './asteroids.js';
 import { createConstellation } from './constellation.js';
 import { createCosmosPlanets, PULSE_SCALE } from './planets.js';
 import { createShootingStars } from './shooting-stars.js';
-import { bakeSkyPixels } from './sky-pixels.js';
+import { bakeSkyPixels, GALAXY_CORE, GALAXY_NORMAL } from './sky-pixels.js';
 import { createStars } from './stars.js';
+import { createSun } from './sun.js';
 
 export { COSMOS_UNIFORMS } from '../shaders/sky.js';
 
 /*
  * The surrounding cosmos, in world meters under one root named 'Cosmos'
- * (CosmosSystem keeps it at the board center with the board's turn): the
- * baked nebula sky dome (12 m), the star layers, the giant ringed planet and
- * the orbiting planets, the asteroid belt, the shooting stars and the chapter
- * constellation (L4). Out of
- * reach (1.5-12 m), never raycast, never occluded by real surfaces.
+ * (CosmosSystem keeps it at the board center with the board's turn), in
+ * depth layers for stereo parallax: the sky dome (60 m: the Milky Way
+ * panorama over its procedural fallback, turned so the band crosses the sky
+ * diagonally away from the sun), the star field and glints (55 m), the sun
+ * (45 m), the chapter constellation (about 32 m, L4), the giant ringed
+ * planet and the orbiting planets, the asteroid belt and the shooting stars
+ * (off by default). Out of reach, never raycast, never occluded by real
+ * surfaces.
  */
 
-const SKY_RADIUS = 12;
+const SKY_RADIUS = 60;
 const SKY_SEED = 0x5eed;
 
 export function createCosmosVisual(): CosmosVisual {
@@ -51,13 +56,19 @@ export function createCosmosVisual(): CosmosVisual {
   dome.renderOrder = -10;
   dome.frustumCulled = false;
   dome.raycast = noRaycast;
+  // Dome local +Y (the bake's and the panorama's band normal) to GALAXY_NORMAL, local +X (their core) to GALAXY_CORE.
+  const core = new Vector3(...GALAXY_CORE);
+  const normal = new Vector3(...GALAXY_NORMAL);
+  dome.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(core, normal, new Vector3().crossVectors(core, normal)));
 
-  const stars = createStars(COSMOS_QUALITY.starLayers);
-  const planets = createCosmosPlanets(COSMOS_QUALITY.cosmosInk);
-  const belt = createAsteroidBelt(COSMOS_QUALITY.asteroids, COSMOS_QUALITY.cosmosInk);
+  const stars = createStars(COSMOS_QUALITY.starCount, COSMOS_QUALITY.glints);
+  const sun = createSun();
+  // Ink hulls stay off until the realistic planets replace them (R2).
+  const planets = createCosmosPlanets(false);
+  const belt = createAsteroidBelt(COSMOS_QUALITY.asteroids, false);
   const shooting = COSMOS_QUALITY.shootingStars ? createShootingStars() : null;
   const constellation = createConstellation();
-  root.add(dome, stars, planets.root, belt.root, constellation.root);
+  root.add(dome, stars, sun, planets.root, belt.root, constellation.root);
   if (shooting) root.add(shooting.mesh);
 
   const probe = new Matrix4();

@@ -18,20 +18,40 @@ export const RENDER_BUDGET = {
 } as const;
 
 /**
- * The surrounding cosmos, and its cheapest fallback toggles for a slow
- * headset: starLayers 3 to 1, skyTexture [1024, 512] to [512, 256],
- * asteroids 160 to 60, cosmosInk and shootingStars false.
+ * Direction toward the sun in the board/cosmos frame (normalized at use):
+ * to the right, about 27 degrees up and a little ahead, so board bodies seen
+ * from the player are half lit from the right.
+ */
+export const SUN_DIRECTION = [0.74, 0.45, -0.5] as const;
+
+/** Distance of the sun sprite from the cosmos center (meters; in front of the star shell). */
+export const SUN_DISTANCE = 45;
+
+/** Fixed foveation level requested for XR sessions (0 none .. 1 most). */
+export const XR_FOVEATION = 0.5;
+
+/**
+ * The surrounding cosmos, and its cheaper fallbacks for a slow headset:
+ * textureSize 1024, starCount 2500, glints false, dustMotes 0,
+ * gridSegments 48, asteroids 60. Shooting stars are atmospheric, not deep
+ * space: off by default (the code stays).
  */
 export const COSMOS_QUALITY = {
-  /** Instanced star layers (far dust, twinkling mid stars, near sparkles), 1-3. */
-  starLayers: 3,
-  /** Size of the sky texture baked once at init (equirect, width x height). */
-  skyTexture: [1024, 512],
+  /** Vendored texture size (2048: the -2k files, 1024: the -1k files). */
+  textureSize: 2048,
+  /** Fine stars in the one instanced star field (one draw call). */
+  starCount: 6000,
+  /** Diffraction-spike billboards on the brightest stars (one draw call). */
+  glints: true,
+  /** Size of the procedural fallback sky baked once at init (equirect, width x height). */
+  skyTexture: [512, 256],
   /** Rocks in the asteroid belt (one instanced draw call). */
   asteroids: 160,
-  shootingStars: true,
-  /** Ink outlines (inverted hulls) on the cosmos planets and rocks. */
-  cosmosInk: true,
+  /** Near dust motes around the player (one draw call; 0 turns them off). */
+  dustMotes: 300,
+  /** Segments per side of the spacetime grid plate. */
+  gridSegments: 96,
+  shootingStars: false,
 } as const;
 
 /**

@@ -14,6 +14,7 @@ import {
 import type { BoardPlacement } from '../game/placement.js';
 import type { CosmosMask } from '../game/cosmos-rules.js';
 import type { ComicWords } from '../render/comic-words.js';
+import type { SpaceTextureStatus } from '../render/space-textures.js';
 import type { BodyVisual, CometVisual, CosmosVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
 
 /*
@@ -284,6 +285,8 @@ export interface CosmosRuntime {
   holdFade(): void;
   /** A solved comet is rising into the sky (SkyStorySystem). */
   solveRise: boolean;
+  /** The vendored space textures: requested, loaded and failed ids (empty until loading starts). */
+  textures(): SpaceTextureStatus;
 }
 
 /** Phase 3 hook (the sky gallery): called when a chapter-complete moment starts. */

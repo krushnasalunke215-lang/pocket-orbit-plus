@@ -932,6 +932,16 @@ const GROUP_RUNNERS = {
       r.vr.session === 'immersive-vr' && r.vr.blendMode === 'opaque' && r.vr.visible && r.vr.opacity === 1 && r.vr.mask === 'none',
       r.vr,
     );
+    const textures = await waitFor('the space textures settled', () => {
+      const t = snapshot().textures;
+      return t && t.requested.length > 0 && t.loaded.length + t.failed.length === t.requested.length ? t : null;
+    }, 30_000, 500).catch(() => snapshot().textures);
+    summary.data.textures = textures;
+    check(
+      'cosmos: the vendored space textures: every requested id loaded (same origin), none failed',
+      textures.requested.length === 4 && textures.failed.length === 0 && textures.requested.every((id) => textures.loaded.includes(id)),
+      textures,
+    );
   },
 
   // 21. Render numbers of the busiest views with ?debug=1, in AR at the

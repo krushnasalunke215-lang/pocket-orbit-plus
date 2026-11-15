@@ -17,6 +17,7 @@ import { DesktopCameraSystem } from './xr/desktop-camera-system.js';
 import { DebugOverlaySystem, debugOverlayRequested } from './xr/debug-overlay-system.js';
 import { GameAudioSystem } from './xr/game-audio-system.js';
 import { GameSystem } from './xr/game-system.js';
+import { installDisplayQuality } from './xr/display-quality.js';
 import { installLocalHandVisuals } from './xr/hand-visuals.js';
 import { HudSystem } from './xr/hud-system.js';
 import { LevelSelectSystem } from './xr/level-select-system.js';
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
   );
   // Before any system and any XR session, so hand models never load from the CDN.
   installLocalHandVisuals(world);
+  installDisplayQuality(world);
 
   // Director mode (?demo=1, dev builds only; see VIDEO.md): plays the
   // trailer shots in IWER. It starts from a fresh game and saves nothing,

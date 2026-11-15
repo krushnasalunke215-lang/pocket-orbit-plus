@@ -69,3 +69,15 @@ workflow (`.github/workflows/pages.yml`) builds with the repository name as the
 Vite base path and deploys with `actions/deploy-pages`.
 
 - IWSDK testing guide: https://iwsdk.dev/guides/02-testing-experience.html
+
+## Credits
+
+- Planet, ring and Milky Way textures in `public/vendor/textures/`: by
+  [Solar System Scope](https://www.solarsystemscope.com/textures/), based on
+  NASA elevation and imagery data, licensed
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). They are resized,
+  re-encoded to WebP and packed into atlases by `scripts/vendor-textures.mjs`;
+  [CREDITS.md](public/vendor/textures/CREDITS.md) lists every file and change.
+- Generic-hand models in `public/vendor/webxr-input-profiles/`: from the
+  [WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles)
+  project (MIT, licence file in that folder).

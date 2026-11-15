@@ -5,6 +5,7 @@ import {
   ISLAND_SIN_BELOW_CLEAR,
   ISLAND_SIN_BELOW_FULL,
 } from '../../game/cosmos-rules.js';
+import { GRADE_GLSL, SPACE_MAPS, SPACE_READY } from './common.js';
 
 /*
  * The cosmos' shared uniforms and mask, and the sky dome material.
@@ -59,25 +60,55 @@ void main() {
 }
 `;
 
-/** One texture fetch per pixel: the sky was baked at init (sky-pixels.ts). */
+/**
+ * The procedural bake (sky-pixels.ts) cross-faded into the Milky Way
+ * panorama as it loads (u flipped: the dome is seen from inside), then
+ * darkened and desaturated so the band stays a quiet backdrop behind the
+ * planets, and the shared grade and dither.
+ */
 const fragmentShader = /* glsl */ `
 uniform sampler2D uSky;
+uniform sampler2D uMilkyWay;
+uniform float uSkyReady;
+uniform float uSkyGain;
+uniform float uSkyDesaturate;
 varying vec2 vUv;
 varying vec3 vWorldPos;
 ${COSMOS_MASK_GLSL}
+${GRADE_GLSL}
 void main() {
   float alpha = po_cosmosAlpha(vWorldPos);
   if (alpha <= 0.002) discard;
-  gl_FragColor = vec4(texture2D(uSky, vUv).rgb, alpha);
+  vec3 bake = texture2D(uSky, vUv).rgb;
+  vec3 photo = texture2D(uMilkyWay, vec2(1.0 - vUv.x, vUv.y)).rgb;
+  vec3 color = mix(bake, photo, uSkyReady) * uSkyGain;
+  color = mix(color, vec3(dot(color, vec3(0.2126, 0.7152, 0.0722))), uSkyDesaturate);
+  gl_FragColor = vec4(po_dither(po_grade(color)), alpha);
   #include <colorspace_fragment>
 }
 `;
+
+/**
+ * Sky brightness gain and desaturation, tuned on the IWER screenshots
+ * against the brief (near-black space, a subtle band): the Solar System
+ * Scope panorama is already dark and the grade's toe darkens it further,
+ * so the gain is 0.8 (0.45 hid the band entirely).
+ */
+export const SKY_LOOK = {
+  uSkyGain: { value: 0.8 } as IUniform<number>,
+  uSkyDesaturate: { value: 0.5 } as IUniform<number>,
+};
 
 /** The sky dome's material (the one large full-screen transparent layer). */
 export function createSkyMaterial(sky: Texture): ShaderMaterial {
   return new ShaderMaterial({
     name: 'CosmosSky',
-    uniforms: withCosmos({ uSky: { value: sky } }),
+    uniforms: withCosmos({
+      uSky: { value: sky },
+      uMilkyWay: SPACE_MAPS.uMilkyWay,
+      uSkyReady: SPACE_READY.uSkyReady,
+      ...SKY_LOOK,
+    }),
     vertexShader,
     fragmentShader,
     side: BackSide,

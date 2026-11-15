@@ -40,6 +40,7 @@ import {
   type RimButtonRuntime,
   type SandboxPanelRuntime,
 } from '../xr/runtime.js';
+import { displayState } from '../xr/display-quality.js';
 import { currentSessionMode, enterXR } from '../xr/session.js';
 import { createSpikeApi, type SpikeApi } from './spike.js';
 
@@ -131,6 +132,10 @@ export interface GameSnapshot {
   } | null;
   /** The chapter constellation: lit stars, links, links still drawing, and a solved comet rising into the sky. */
   sky: { litStars: number; links: number; drawing: boolean; solveRiseActive: boolean };
+  /** The vendored space textures: ids requested, loaded and failed (empty until the 3rd cosmos frame). */
+  textures: { requested: string[]; loaded: string[]; failed: string[] };
+  /** XR display quality: the foveation and target frame rate requested (null: not set). */
+  display: { foveation: number | null; targetFrameRate: number | null };
   /** Comic words showing now, and the last 16 popped (oldest first). */
   comicWords: { active: string[]; recent: string[] };
   /** HUD world position and size (meters, from the UIKit layout) and its status line. */
@@ -565,6 +570,8 @@ export function installDebugApi(world: World): GameDebugApi {
           drawing: getCosmos(world)?.visual.constellation.drawing() ?? false,
           solveRiseActive: getCosmos(world)?.solveRise ?? false,
         },
+        textures: getCosmos(world)?.textures() ?? { requested: [], loaded: [], failed: [] },
+        display: displayState(),
         comicWords: { active: getComicWords(world)?.active() ?? [], recent: getComicWords(world)?.recent() ?? [] },
         session: {
           mode: currentSessionMode(world),

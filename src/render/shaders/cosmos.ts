@@ -1,17 +1,15 @@
-import { AdditiveBlending, BackSide, Color, DoubleSide, ShaderMaterial, Vector3 } from '@iwsdk/core';
-import { INK_COLOR, MOTION_TIME, NOISE_GLSL, SHARED_TIME, TOON_GLSL } from './common.js';
+import { AdditiveBlending, BackSide, Color, DoubleSide, ShaderMaterial, type Vector3 } from '@iwsdk/core';
+import { GRADE_GLSL, INK_COLOR, MOTION_TIME, NOISE_GLSL, SHARED_TIME, SUN_DIR_W, TOON_GLSL } from './common.js';
 import { COSMOS_MASK_GLSL, withCosmos } from './sky.js';
 
 /*
  * Cosmos materials (world meters, all transparent so the AR fade and the
- * island mask apply). Few programs: one toon surface and one ink hull for
- * every planet, moon and rock (all InstancedMesh, so the giant planet is an
- * instanced mesh of one), plus the ring, the star points, the sparkles and
- * the shooting stars.
+ * island mask apply). Few programs: one surface and one ink hull for every
+ * planet, moon and rock (all InstancedMesh, so the giant planet is an
+ * instanced mesh of one; lit by the shared SUN_DIR_W), plus the ring, the
+ * star points, the star glints, the sun, the constellation and the
+ * shooting stars.
  */
-
-/** The cosmos key light (world, normalized): high and to the right. */
-export const COSMOS_LIGHT = new Vector3(0.55, 0.62, 0.56).normalize();
 
 /** Per-instance: aColor (base), aBand (band color), aPulse (0..1, L4 echo). */
 const surfaceVertex = /* glsl */ `
@@ -89,7 +87,7 @@ export function createCosmosSurfaceMaterial(options: CosmosSurfaceOptions): Shad
   return new ShaderMaterial({
     name: 'CosmosSurface',
     uniforms: withCosmos({
-      uLight: { value: COSMOS_LIGHT },
+      uLight: SUN_DIR_W,
       uInk: { value: new Color(INK_COLOR) },
       uBands: { value: options.bands },
       uDotRows: { value: options.dotRows },
@@ -201,43 +199,49 @@ export function createCosmosRingMaterial(colorA: number, colorB: number, inner: 
   });
 }
 
-/** Star points: per-vertex aColor, aSize (pixels at 1000 px tall) and aPhase (twinkle). */
+/**
+ * The star field: one Points draw of fine stars at infinity (the 55 m
+ * shell). Per vertex aColor (linear blackbody colour times brightness),
+ * aSize (pixels, 1.4-3.2: faintness goes into intensity, so nothing
+ * shimmers below a pixel) and aPhase (a gentle +-4% twinkle on MOTION_TIME,
+ * still under reduced motion). Gaussian falloff, additive.
+ */
 const starsVertex = /* glsl */ `
 attribute vec3 aColor;
 attribute float aSize;
 attribute float aPhase;
-uniform float uPixelScale;
-uniform float uTwinkle;
 uniform float uTime;
 varying vec3 vColor;
 varying float vAlpha;
 ${COSMOS_MASK_GLSL}
 void main() {
   vec4 world = modelMatrix * vec4(position, 1.0);
-  float tw = 1.0 - uTwinkle * 0.5 * (1.0 + sin(uTime * (1.3 + aPhase * 2.1) + aPhase * 40.0));
+  float tw = 1.0 + 0.04 * sin(uTime * (0.7 + aPhase * 1.9) + aPhase * 40.0);
   vColor = aColor * tw;
   vAlpha = po_cosmosAlpha(world.xyz);
   gl_Position = vAlpha > 0.002 ? projectionMatrix * viewMatrix * world : vec4(0.0, 0.0, 2.0, 1.0);
-  gl_PointSize = max(1.0, aSize * uPixelScale * (0.8 + 0.2 * tw));
+  gl_PointSize = aSize;
 }
 `;
 
 const starsFragment = /* glsl */ `
 varying vec3 vColor;
 varying float vAlpha;
+${GRADE_GLSL}
 void main() {
   vec2 c = gl_PointCoord - 0.5;
-  float d = length(c) * 2.0;
-  if (d > 1.0) discard;
-  gl_FragColor = vec4(vColor, vAlpha * (1.0 - smoothstep(0.55, 1.0, d)));
+  float d2 = dot(c, c) * 4.0;
+  if (d2 > 1.0) discard;
+  float falloff = exp(-d2 * 3.2);
+  gl_FragColor = vec4(po_grade(vColor * falloff), vAlpha);
   #include <colorspace_fragment>
 }
 `;
 
-export function createStarPointsMaterial(twinkle: number, pixelScale: { value: number }): ShaderMaterial {
+export function createStarPointsMaterial(): ShaderMaterial {
   return new ShaderMaterial({
     name: 'CosmosStars',
-    uniforms: withCosmos({ uPixelScale: pixelScale, uTwinkle: { value: twinkle }, uTime: MOTION_TIME }),
+    uniforms: withCosmos({ uTime: MOTION_TIME }),
     vertexShader: starsVertex,
     fragmentShader: starsFragment,
     transparent: true,
@@ -247,57 +251,146 @@ export function createStarPointsMaterial(twinkle: number, pixelScale: { value: n
   });
 }
 
-/** Four-point comic sparkles: instanced billboards (aOffset meters, aSize radius meters, aPhase). */
-const sparkleVertex = /* glsl */ `
+/**
+ * Glints on the brightest stars: instanced camera-facing billboards
+ * (aOffset meters, aColor linear, aSize half-size meters, aSpike 0..1 spike
+ * strength). A soft core plus four thin diffraction spikes; a spike never
+ * gets thinner than one pixel (it fades instead), so it cannot shimmer.
+ */
+const glintVertex = /* glsl */ `
 attribute vec3 aOffset;
+attribute vec3 aColor;
 attribute float aSize;
-attribute float aPhase;
-uniform float uTime;
+attribute float aSpike;
 varying vec2 vUv;
+varying vec3 vColor;
+varying float vSpike;
 varying float vAlpha;
 ${COSMOS_MASK_GLSL}
 void main() {
   vec4 world = modelMatrix * vec4(aOffset, 1.0);
-  float tw = 0.75 + 0.25 * sin(uTime * (0.9 + aPhase) + aPhase * 30.0);
   vec4 mv = viewMatrix * world;
-  mv.xy += position.xy * aSize * tw;
+  mv.xy += position.xy * aSize;
   vUv = position.xy;
+  vColor = aColor;
+  vSpike = aSpike;
   vAlpha = po_cosmosAlpha(world.xyz);
   gl_Position = vAlpha > 0.002 ? projectionMatrix * mv : vec4(0.0, 0.0, 2.0, 1.0);
 }
 `;
 
-const sparkleFragment = /* glsl */ `
+const glintFragment = /* glsl */ `
 varying vec2 vUv;
+varying vec3 vColor;
+varying float vSpike;
 varying float vAlpha;
+${GRADE_GLSL}
+float po_spike(float across, float along, float width) {
+  float fw = fwidth(across);
+  float w = max(width, fw);
+  float line = exp(-(across * across) / (w * w));
+  return line * (width / w) * pow(max(0.0, 1.0 - along), 2.2);
+}
 void main() {
   vec2 a = abs(vUv);
-  float star = sqrt(a.x) + sqrt(a.y);
-  if (star > 1.0) discard;
-  float core = 1.0 - smoothstep(0.0, 0.55, length(vUv));
-  vec3 color = mix(vec3(1.0, 0.86, 0.35), vec3(1.0), core);
-  gl_FragColor = vec4(color, vAlpha * (1.0 - smoothstep(0.85, 1.0, star)));
+  float r = length(vUv);
+  if (r > 1.0 && min(a.x, a.y) > 0.06) discard;
+  float core = exp(-r * r * 90.0) * 0.9 + exp(-r * 14.0) * 0.12;
+  float spikes = po_spike(vUv.y, a.x, 0.012) + po_spike(vUv.x, a.y, 0.012);
+  vec3 color = vColor * (core + spikes * 0.55 * vSpike);
+  gl_FragColor = vec4(po_grade(color), vAlpha);
   #include <colorspace_fragment>
 }
 `;
 
-export function createSparkleMaterial(): ShaderMaterial {
+export function createGlintMaterial(): ShaderMaterial {
   return new ShaderMaterial({
-    name: 'CosmosSparkles',
-    uniforms: withCosmos({ uTime: MOTION_TIME }),
-    vertexShader: sparkleVertex,
-    fragmentShader: sparkleFragment,
+    name: 'CosmosGlints',
+    vertexShader: glintVertex,
+    fragmentShader: glintFragment,
+    uniforms: withCosmos({}),
     transparent: true,
     depthWrite: false,
+    blending: AdditiveBlending,
+    toneMapped: false,
+  });
+}
+
+/**
+ * The sun: one camera-facing quad at uSunPos (cosmos frame). A white-hot
+ * core (the only pure white in the sky), a warm exponential glow, a faint
+ * six-spike starburst, and a glare whose radius (x (1 + 2.5 s)) and
+ * strength grow with s = smoothstep(cos 50 deg, 1, facing), where facing is
+ * the cosine between the view axis and the sun direction (from viewMatrix
+ * in the vertex shader). Additive; depth-tested so the planets hide it.
+ */
+const sunVertex = /* glsl */ `
+uniform vec3 uSunPos;
+uniform float uRadius;
+varying vec2 vUv;
+varying float vGlare;
+varying float vGrow;
+varying float vAlpha;
+${COSMOS_MASK_GLSL}
+void main() {
+  vec4 world = modelMatrix * vec4(uSunPos, 1.0);
+  vec3 toSun = normalize(world.xyz - cameraPosition);
+  vec3 forward = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+  float s = smoothstep(${Math.cos((50 * Math.PI) / 180).toFixed(6)}, 1.0, dot(toSun, forward));
+  float grow = 1.0 + 2.5 * s;
+  vec4 mv = viewMatrix * world;
+  mv.xy += position.xy * uRadius * grow;
+  vUv = position.xy * grow;
+  vGlare = s;
+  vGrow = grow;
+  vAlpha = po_cosmosAlpha(world.xyz);
+  gl_Position = vAlpha > 0.002 ? projectionMatrix * mv : vec4(0.0, 0.0, 2.0, 1.0);
+}
+`;
+
+/** vUv is in units of the base glow radius (1 = uRadius). */
+const sunFragment = /* glsl */ `
+varying vec2 vUv;
+varying float vGlare;
+varying float vGrow;
+varying float vAlpha;
+${GRADE_GLSL}
+void main() {
+  float r = length(vUv);
+  // A round window inside the quad, so no term ever reaches its square edge.
+  float window = 1.0 - smoothstep(0.55 * vGrow, 0.98 * vGrow, r);
+  if (window <= 0.0) discard;
+  float core = 1.0 - smoothstep(0.035, 0.05, r);
+  float glow = exp(-r / 0.06) * 1.6 + exp(-r / 0.2) * 0.35 + exp(-r / 0.55) * 0.06;
+  float a = atan(vUv.y, vUv.x);
+  float burst = pow(abs(cos(3.0 * a + 0.3)), 120.0) * exp(-r / 0.22) * 0.22;
+  float glare = vGlare * (exp(-r / 0.9) * 0.08 + exp(-r / 0.25) * 0.25);
+  vec3 warm = vec3(1.0, 0.78, 0.52);
+  vec3 color = (vec3(1.0, 0.97, 0.92) * core * 9.0 + warm * (glow + burst + glare)) * window;
+  // No dither on an additive sprite: noise would add up into a visible square.
+  gl_FragColor = vec4(po_grade(color), vAlpha);
+  #include <colorspace_fragment>
+}
+`;
+
+export function createSunMaterial(position: Vector3, radius: number): ShaderMaterial {
+  return new ShaderMaterial({
+    name: 'CosmosSun',
+    uniforms: withCosmos({ uSunPos: { value: position }, uRadius: { value: radius } }),
+    vertexShader: sunVertex,
+    fragmentShader: sunFragment,
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
     toneMapped: false,
   });
 }
 
 /**
  * Constellation stars: instanced billboards (aOffset meters, aSize radius
- * meters, aLit 0..1, aFlash 0..1). A comic five-point-ish star: bold yellow
- * with an ink edge when lit, a dim blue-grey dot when not; a flash swells it
- * and burns it white.
+ * meters, aLit 0..1, aFlash 0..1). Real stars: lit, a warm-white soft core
+ * with a short four-point glint; unlit, a faint cool point. A flash swells
+ * the glow, not the shape.
  */
 const constellationStarVertex = /* glsl */ `
 attribute vec3 aOffset;
@@ -312,8 +405,7 @@ ${COSMOS_MASK_GLSL}
 void main() {
   vec4 world = modelMatrix * vec4(aOffset, 1.0);
   vec4 mv = viewMatrix * world;
-  float size = aSize * (0.45 + 0.55 * aLit) * (1.0 + 0.8 * aFlash);
-  mv.xy += position.xy * size;
+  mv.xy += position.xy * aSize;
   vUv = position.xy;
   vLit = aLit;
   vFlash = aFlash;
@@ -323,21 +415,27 @@ void main() {
 `;
 
 const constellationStarFragment = /* glsl */ `
-uniform vec3 uInk;
 varying vec2 vUv;
 varying float vLit;
 varying float vFlash;
 varying float vAlpha;
+${GRADE_GLSL}
+float po_ray(float across, float along) {
+  float fw = fwidth(across);
+  float w = max(0.02, fw);
+  return exp(-(across * across) / (w * w)) * (0.02 / w) * pow(max(0.0, 1.0 - along), 3.0);
+}
 void main() {
   vec2 a = abs(vUv);
-  float star = pow(a.x, 0.6) + pow(a.y, 0.6);
-  float shape = mix(length(vUv) * 1.25, star, vLit);
-  if (shape > 1.0) discard;
-  vec3 fill = mix(vec3(0.42, 0.48, 0.62), vec3(1.0, 0.86, 0.24), vLit);
-  fill = mix(fill, vec3(1.0, 0.98, 0.9), max(1.0 - smoothstep(0.0, 0.45, length(vUv)), vFlash) * vLit);
-  float ink = smoothstep(0.74, 0.8, shape) * vLit;
-  vec3 color = mix(fill, uInk, ink);
-  gl_FragColor = vec4(color, vAlpha * mix(0.55, 1.0, vLit));
+  float r = length(vUv);
+  // Unlit: a faint cool point; lit: a bright core, a soft glow and a short glint.
+  float point = exp(-r * r * 160.0);
+  float glow = exp(-r * (9.0 - 5.0 * vFlash)) * (0.25 + 0.9 * vFlash);
+  float glint = po_ray(vUv.y, a.x) + po_ray(vUv.x, a.y);
+  vec3 cool = vec3(0.55, 0.62, 0.8) * point * 0.35;
+  vec3 warm = vec3(1.0, 0.93, 0.8) * (point * 2.2 + glow + glint * 0.5);
+  vec3 color = mix(cool, warm, vLit);
+  gl_FragColor = vec4(po_grade(color), vAlpha);
   #include <colorspace_fragment>
 }
 `;
@@ -345,19 +443,20 @@ void main() {
 export function createConstellationStarMaterial(): ShaderMaterial {
   return new ShaderMaterial({
     name: 'ConstellationStars',
-    uniforms: withCosmos({ uInk: { value: new Color(INK_COLOR) } }),
+    uniforms: withCosmos({}),
     vertexShader: constellationStarVertex,
     fragmentShader: constellationStarFragment,
     transparent: true,
     depthWrite: false,
+    blending: AdditiveBlending,
     toneMapped: false,
   });
 }
 
 /**
  * Constellation links: instanced camera-facing strips from aStart to aEnd
- * (meters), drawn to aProgress (0..1) of their length: a bright core with
- * ink edges, like a printed line.
+ * (meters), drawn to aProgress (0..1) of their length: a thin, faint
+ * blue-white line, never under a pixel wide (it fades instead).
  */
 const linkVertex = /* glsl */ `
 attribute vec3 aStart;
@@ -385,13 +484,16 @@ void main() {
 `;
 
 const linkFragment = /* glsl */ `
-uniform vec3 uInk;
 varying float vSide;
 varying float vAlpha;
+${GRADE_GLSL}
 void main() {
   float s = abs(vSide);
-  vec3 color = mix(vec3(1.0, 0.95, 0.7), uInk, smoothstep(0.42, 0.55, s));
-  gl_FragColor = vec4(color, vAlpha * (1.0 - smoothstep(0.9, 1.0, s)));
+  // The strip is 2 units across: 2 / fwidth pixels. Below 1.5 px it fades instead of breaking up.
+  float pixels = 2.0 / max(fwidth(vSide), 1e-4);
+  float line = (1.0 - smoothstep(0.3, 1.0, s)) * clamp(pixels / 1.5, 0.0, 1.0);
+  vec3 color = vec3(0.62, 0.72, 0.95) * 0.45 * line;
+  gl_FragColor = vec4(po_grade(color), vAlpha);
   #include <colorspace_fragment>
 }
 `;
@@ -399,11 +501,12 @@ void main() {
 export function createConstellationLinkMaterial(width: number): ShaderMaterial {
   return new ShaderMaterial({
     name: 'ConstellationLinks',
-    uniforms: withCosmos({ uInk: { value: new Color(INK_COLOR) }, uWidth: { value: width } }),
+    uniforms: withCosmos({ uWidth: { value: width } }),
     vertexShader: linkVertex,
     fragmentShader: linkFragment,
     transparent: true,
     depthWrite: false,
+    blending: AdditiveBlending,
     side: DoubleSide,
     toneMapped: false,
   });

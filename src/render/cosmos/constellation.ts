@@ -12,7 +12,7 @@ import { createConstellationLinkMaterial, createConstellationStarMaterial } from
 import type { ConstellationVisual } from '../visual-types.js';
 
 /*
- * The chapter's constellation in the cosmos frame (meters): one instanced
+ * The chapter's constellation in the cosmos frame (meters, scaled by\n * CONSTELLATION_SCALE at render time): real stars and thin faint links; one instanced
  * star pool and one instanced pool of link strips, two draw calls. Stars
  * are lit by the saved solved levels; a solve flashes its star; links join
  * consecutive solved levels and can be drawn in order (the chapter-complete
@@ -21,8 +21,16 @@ import type { ConstellationVisual } from '../visual-types.js';
 
 const MAX_STARS = 8;
 const MAX_LINKS = MAX_STARS - 1;
-const STAR_SIZE = 0.38;
-const LINK_WIDTH = 0.085;
+/**
+ * sky-story.ts places the stars about 8 m out; they are drawn this much
+ * farther (about 32 m: behind the planets, in front of the star field),
+ * so they sit among the real stars instead of in front of the planets.
+ */
+export const CONSTELLATION_SCALE = 4;
+/** Billboard half-size (meters at about 32 m): the core is a small fraction of it, the rest is glow and glint. */
+const STAR_SIZE = 1.5;
+/** Link strip width (meters at about 32 m: about 2 px on a Quest). */
+const LINK_WIDTH = 0.06;
 const FLASH_DECAY = 1.6;
 const FADE_IN = 0.8;
 
@@ -99,11 +107,11 @@ export function createConstellation(): ConstellationVisual {
       for (let i = 0; i < MAX_STARS; i++) {
         const p = points[i];
         if (i < count && p) {
-          o[i * 3] = p[0];
-          o[i * 3 + 1] = p[1];
-          o[i * 3 + 2] = p[2];
+          o[i * 3] = p[0] * CONSTELLATION_SCALE;
+          o[i * 3 + 1] = p[1] * CONSTELLATION_SCALE;
+          o[i * 3 + 2] = p[2] * CONSTELLATION_SCALE;
           s[i] = STAR_SIZE;
-          positions.push([p[0], p[1], p[2]]);
+          positions.push([o[i * 3], o[i * 3 + 1], o[i * 3 + 2]]);
         } else s[i] = 0;
       }
       markRange(offset, 0, MAX_STARS);

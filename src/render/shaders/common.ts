@@ -1,4 +1,15 @@
-import { Vector2, type BufferAttribute, type IUniform, type Material, type ShaderMaterial, type Texture } from '@iwsdk/core';
+import {
+  DataTexture,
+  SRGBColorSpace,
+  Vector2,
+  Vector3,
+  type BufferAttribute,
+  type IUniform,
+  type Material,
+  type ShaderMaterial,
+  type Texture,
+} from '@iwsdk/core';
+import { SUN_DIRECTION } from '../../config.js';
 
 /*
  * Shared shader pieces. Every animated material references SHARED_TIME (the
@@ -157,6 +168,82 @@ export function setMotionTime(t: number): void {
 
 /** High contrast, 0 or 1, shared by the board and body surface shaders (one write switches all). */
 export const HIGH_CONTRAST: IUniform<number> = { value: 0 };
+
+/**
+ * World direction toward the sun (normalized, shared object): the board
+ * quaternion applied to SUN_DIRECTION, written by CosmosSystem when the
+ * board moves. Every sun-lit shader reads it.
+ */
+export const SUN_DIR_W: IUniform<Vector3> = {
+  value: new Vector3(SUN_DIRECTION[0], SUN_DIRECTION[1], SUN_DIRECTION[2]).normalize(),
+};
+
+function placeholder(r: number, g: number, b: number, a: number): DataTexture {
+  const texture = new DataTexture(new Uint8Array([r, g, b, a]), 1, 1);
+  texture.colorSpace = SRGBColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/**
+ * The vendored space textures (src/render/space-textures.ts swaps the values
+ * once loaded; shared objects, link them into a material's uniforms). Until
+ * then each is a 1x1 neutral placeholder and its ready uniform is 0, so the
+ * shaders show their procedural fallback.
+ *   uMilkyWay: equirect Milky Way panorama; uSaturn: equirect giant map;
+ *   uRing: the ring strip (u = radius inner to outer, alpha kept);
+ *   uAtlas: the 2 x 4 planet atlas (0 earth, 1 uranus, 2 moon, 3 mercury,
+ *   4 jupiter, 5 neptune, 6 mars, 7 ice; row 0 at the top).
+ */
+export const SPACE_MAPS = {
+  uMilkyWay: { value: placeholder(0, 0, 0, 255) } as IUniform<Texture>,
+  uSaturn: { value: placeholder(128, 128, 128, 255) } as IUniform<Texture>,
+  uRing: { value: placeholder(128, 128, 128, 0) } as IUniform<Texture>,
+  uAtlas: { value: placeholder(128, 128, 128, 255) } as IUniform<Texture>,
+};
+
+/** 0..1 per map: eases to 1 over 0.6 s once the map has loaded (mix(fallback, map, ready)). */
+export const SPACE_READY = {
+  uSkyReady: { value: 0 } as IUniform<number>,
+  uSaturnReady: { value: 0 } as IUniform<number>,
+  uRingReady: { value: 0 } as IUniform<number>,
+  uAtlasReady: { value: 0 } as IUniform<number>,
+};
+
+/**
+ * GLSL: the one shared look of every custom shader.
+ *   po_grade(c): a fixed exposure, the Narkowicz ACES filmic fit, then a
+ *     light split tone (cool low-saturation shadows, warm highlights). Input
+ *     and output are linear; only the sun core and the comet head should be
+ *     driven hard enough to reach white.
+ *   po_dither(c): adds +-0.5/255 of screen-space hash noise in the display
+ *     (gamma) domain, against banding in near-black gradients. Linear in,
+ *     linear out, so it works whether the shader or the framebuffer encodes.
+ * Use: gl_FragColor.rgb = po_dither(po_grade(color)); before
+ * #include <colorspace_fragment>.
+ */
+export const GRADE_GLSL = /* glsl */ `
+#define PO_EXPOSURE 1.35
+vec3 po_aces(vec3 x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+vec3 po_grade(vec3 c) {
+  vec3 t = po_aces(max(c, vec3(0.0)) * PO_EXPOSURE);
+  float l = dot(t, vec3(0.2126, 0.7152, 0.0722));
+  vec3 grey = vec3(l);
+  // Shadows: slightly desaturated and cool; highlights: slightly warm.
+  float shadow = 1.0 - smoothstep(0.0, 0.35, l);
+  t = mix(t, grey, 0.18 * shadow);
+  t *= mix(vec3(1.0), vec3(0.95, 0.99, 1.07), shadow);
+  t *= mix(vec3(1.0), vec3(1.04, 1.0, 0.94), smoothstep(0.45, 1.0, l));
+  return clamp(t, 0.0, 1.0);
+}
+vec3 po_dither(vec3 c) {
+  float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+  vec3 g = pow(max(c, vec3(0.0)), vec3(1.0 / 2.2)) + n / 255.0;
+  return pow(max(g, vec3(0.0)), vec3(2.2));
+}
+`;
 
 /**
  * GLSL: cheap hash-based value noise in 1D and 3D (smoothstep interpolation

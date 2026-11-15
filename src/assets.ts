@@ -36,4 +36,48 @@ export default defineAssets({
     type: AssetType.UIKitML,
     name: 'Debug Overlay',
   },
+  // Solar System Scope textures (CC BY 4.0, public/vendor/textures/CREDITS.md).
+  // Lazy: not preloaded; src/render/space-textures.ts loads them after the first frames.
+  'tex-milky-way-2k': {
+    url: publicAssetUrl('vendor/textures/milky-way-2k.webp'),
+    type: AssetType.Texture,
+    priority: 'lazy',
+    name: 'Milky Way 2k',
+  },
+  'tex-milky-way-1k': {
+    url: publicAssetUrl('vendor/textures/milky-way-1k.webp'),
+    type: AssetType.Texture,
+    priority: 'lazy',
+    name: 'Milky Way 1k',
+  },
+  'tex-saturn-2k': {
+    url: publicAssetUrl('vendor/textures/saturn-2k.webp'),
+    type: AssetType.Texture,
+    priority: 'lazy',
+    name: 'Saturn 2k',
+  },
+  'tex-saturn-1k': {
+    url: publicAssetUrl('vendor/textures/saturn-1k.webp'),
+    type: AssetType.Texture,
+    priority: 'lazy',
+    name: 'Saturn 1k',
+  },
+  'tex-saturn-ring': {
+    url: publicAssetUrl('vendor/textures/saturn-ring.webp'),
+    type: AssetType.Texture,
+    priority: 'lazy',
+    name: 'Saturn Ring',
+  },
+  'tex-planets-2k': {
+    url: publicAssetUrl('vendor/textures/planets-2k.webp'),
+    type: AssetType.Texture,
+    priority: 'lazy',
+    name: 'Planet Atlas 2k',
+  },
+  'tex-planets-1k': {
+    url: publicAssetUrl('vendor/textures/planets-1k.webp'),
+    type: AssetType.Texture,
+    priority: 'lazy',
+    name: 'Planet Atlas 1k',
+  },
 });
