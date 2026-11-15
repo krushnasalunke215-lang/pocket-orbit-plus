@@ -129,7 +129,7 @@ export interface CosmosVisual {
   update(motionT: number, realT: number, dt: number, reducedMotion: boolean): void;
   /** Eye height above the cosmos center (meters); the asteroid belt sits just below it. */
   setEyeHeight(height: number): void;
-  /** Brightens and swells cosmos planet `index` (0 giant, 1 sky blue, 2 green, 3 moon); it decays. */
+  /** Brightens and swells cosmos planet `index` (0 giant, 1 Neptune, 2 Uranus, 3 the Moon); it decays. */
   pulse(index: number, strength: number): void;
   pulseLevel(index: number): number;
   /** Shooting stars alive at real time `realT`. */

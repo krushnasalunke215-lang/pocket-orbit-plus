@@ -16,6 +16,7 @@ import { createSkyMaterial } from '../shaders/sky.js';
 import type { CosmosVisual } from '../visual-types.js';
 import { createAsteroidBelt } from './asteroids.js';
 import { createConstellation } from './constellation.js';
+import { createDust } from './dust.js';
 import { createCosmosPlanets, PULSE_SCALE } from './planets.js';
 import { createShootingStars } from './shooting-stars.js';
 import { bakeSkyPixels, GALAXY_CORE, GALAXY_NORMAL } from './sky-pixels.js';
@@ -31,8 +32,9 @@ export { COSMOS_UNIFORMS } from '../shaders/sky.js';
  * panorama over its procedural fallback, turned so the band crosses the sky
  * diagonally away from the sun), the star field and glints (55 m), the sun
  * (45 m), the chapter constellation (about 32 m, L4), the giant ringed
- * planet and the orbiting planets, the asteroid belt and the shooting stars
- * (off by default). Out of reach, never raycast, never occluded by real
+ * planet (12.4 m) and the orbiting planets (3.2-14 m), the asteroid belt
+ * (2.5-4 m), the near dust motes (0.3-1.5 m around the eyes) and the
+ * shooting stars (off by default). Out of reach, never raycast, never occluded by real
  * surfaces.
  */
 
@@ -63,13 +65,14 @@ export function createCosmosVisual(): CosmosVisual {
 
   const stars = createStars(COSMOS_QUALITY.starCount, COSMOS_QUALITY.glints);
   const sun = createSun();
-  // Ink hulls stay off until the realistic planets replace them (R2).
-  const planets = createCosmosPlanets(false);
-  const belt = createAsteroidBelt(COSMOS_QUALITY.asteroids, false);
+  const planets = createCosmosPlanets();
+  const belt = createAsteroidBelt(COSMOS_QUALITY.asteroids);
+  const dust = COSMOS_QUALITY.dustMotes > 0 ? createDust(COSMOS_QUALITY.dustMotes) : null;
   const shooting = COSMOS_QUALITY.shootingStars ? createShootingStars() : null;
   const constellation = createConstellation();
   root.add(dome, stars, sun, planets.root, belt.root, constellation.root);
   if (shooting) root.add(shooting.mesh);
+  if (dust) root.add(dust);
 
   const probe = new Matrix4();
   return {

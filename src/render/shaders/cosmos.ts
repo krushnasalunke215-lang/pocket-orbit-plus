@@ -1,194 +1,313 @@
-import { AdditiveBlending, BackSide, Color, DoubleSide, ShaderMaterial, type Vector3 } from '@iwsdk/core';
-import { GRADE_GLSL, INK_COLOR, MOTION_TIME, NOISE_GLSL, SHARED_TIME, SUN_DIR_W, TOON_GLSL } from './common.js';
+import { AdditiveBlending, DoubleSide, ShaderMaterial, type IUniform, type Vector3 } from '@iwsdk/core';
+import { GRADE_GLSL, MOTION_TIME, NOISE_GLSL, SHARED_TIME, SPACE_MAPS, SPACE_READY, SUN_DIR_W } from './common.js';
 import { COSMOS_MASK_GLSL, withCosmos } from './sky.js';
 
 /*
  * Cosmos materials (world meters, all transparent so the AR fade and the
- * island mask apply). Few programs: one surface and one ink hull for every
- * planet, moon and rock (all InstancedMesh, so the giant planet is an
- * instanced mesh of one; lit by the shared SUN_DIR_W), plus the ring, the
- * star points, the star glints, the sun, the constellation and the
- * shooting stars.
+ * island mask apply). Few programs: one realistic planet program for every
+ * small planet, moon and rock (InstancedMesh; atlas tiles) plus its
+ * own-map variant for the giant (an instanced mesh of one), lit by the
+ * shared SUN_DIR_W; then the ring, the star points, the star glints, the
+ * sun, the constellation and the shooting stars.
  */
 
-/** Per-instance: aColor (base), aBand (band color), aPulse (0..1, L4 echo). */
-const surfaceVertex = /* glsl */ `
-attribute vec3 aColor;
-attribute vec3 aBand;
+/** Sun light on the cosmos bodies (linear, before the shared grade). */
+const SUN_GAIN = 2.1;
+
+/**
+ * GLSL (after NOISE_GLSL): the ring's density (alpha) and colour by radius.
+ * t = 0..1 from the inner to the outer edge; the fallback follows Saturn's
+ * rings in radii 1.24-2.27: a faint C ring, the dense B ring, the Cassini
+ * division, the A ring with the Encke gap. po_ringDensity(r, ...) takes r in
+ * body radii and a fixed mip level (for lookups in divergent branches).
+ */
+const RING_DENSITY_GLSL = /* glsl */ `
+vec3 po_ringFallbackColor(float t) {
+  float b = po_noise1(t * 40.0);
+  return mix(vec3(0.42, 0.36, 0.28), vec3(0.74, 0.66, 0.54), b) * mix(0.65, 1.0, smoothstep(0.2, 0.4, t));
+}
+float po_ringFallbackDensity(float t) {
+  float c = 0.22 * smoothstep(0.0, 0.04, t);
+  float bRing = 0.92 * smoothstep(0.27, 0.3, t) * (1.0 - smoothstep(0.68, 0.7, t));
+  float aRing = 0.7 * smoothstep(0.75, 0.77, t) * (1.0 - smoothstep(0.97, 1.0, t)) * (1.0 - 0.8 * (1.0 - smoothstep(0.0, 0.008, abs(t - 0.93))));
+  float d = t < 0.29 ? c : max(bRing, aRing);
+  return d * (0.82 + 0.18 * po_noise1(t * 90.0));
+}
+float po_ringDensity(float r, float inner, float outer, sampler2D ring, float ready, float lod) {
+  float t = (r - inner) / (outer - inner);
+  if (t < 0.0 || t > 1.0) return 0.0;
+  return mix(po_ringFallbackDensity(t), textureLod(ring, vec2(t, 0.5), lod).a, ready);
+}
+`;
+
+/**
+ * Per instance:
+ *   aTile    atlas uv rect (u0, v0, du, dv) the geometry uv maps into (own map: unused);
+ *   aAtmo    atmosphere rim colour (rgb) and strength (a, 0: none);
+ *   aSurface bump strength (x, in body radii), specular glint (y), night
+ *            ambient (z, 0-0.02), ring-shadow flag (w, giant only);
+ *   aFallback procedural albedo until the map has loaded (linear rgb);
+ *   aPulse   the L4 echo (0..1).
+ */
+const planetVertex = /* glsl */ `
+attribute vec4 aTile;
+attribute vec4 aAtmo;
+attribute vec4 aSurface;
+attribute vec3 aFallback;
 attribute float aPulse;
 uniform float uPulseScale;
+uniform vec3 uSunDir;
 varying vec3 vNormalW;
 varying vec3 vWorldPos;
 varying vec3 vLocal;
-varying vec3 vColor;
-varying vec3 vBand;
+varying vec3 vLightL;
+varying vec2 vUv;
+varying vec4 vTile;
+varying vec4 vAtmo;
+varying vec4 vSurface;
+varying vec3 vFallback;
 varying float vPulse;
+varying float vRadius;
 void main() {
-  vLocal = position;
   mat4 m = modelMatrix * instanceMatrix;
+  mat3 m3 = mat3(m);
   vec4 world = m * vec4(position * (1.0 + uPulseScale * aPulse), 1.0);
   vWorldPos = world.xyz;
-  vNormalW = normalize(mat3(m) * normal);
-  vColor = aColor;
-  vBand = aBand;
+  vNormalW = normalize(transpose(inverse(m3)) * normal);
+  vLightL = normalize(transpose(m3) * uSunDir);
+  vRadius = pow(abs(determinant(m3)), 1.0 / 3.0);
+  vLocal = position;
+  vUv = uv;
+  vTile = aTile;
+  vAtmo = aAtmo;
+  vSurface = aSurface;
+  vFallback = aFallback;
   vPulse = aPulse;
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
 
 /**
- * Toon bands, halftone dots in the shadow, gas-giant bands (uBands > 0),
- * a dark ink rim at grazing angles and a bright pulse rim.
+ * Albedo = mix(procedural fallback, the map, ready). A hard terminator with
+ * a near-black night side, bump from the albedo luminance (screen
+ * derivatives: craters and ridges catch the light at the terminator), a
+ * Blinn-Phong glint (strongest where the albedo is ocean or ice blue), the
+ * atmosphere rim brighter on the day-side limb, the echo pulse rim, and on
+ * the giant the ring's shadow (a ray from the surface toward the sun
+ * through the ring plane). The shared grade; alpha po_cosmosAlpha.
  */
-const surfaceFragment = /* glsl */ `
-uniform vec3 uLight;
-uniform vec3 uInk;
-uniform float uBands;
-uniform float uDotRows;
-uniform float uTime;
+const planetFragment = /* glsl */ `
+uniform sampler2D uMap;
+uniform float uMapReady;
+uniform float uAlbedo;
+uniform sampler2D uRing;
+uniform float uRingReady;
+uniform float uRingInner;
+uniform float uRingOuter;
+uniform vec3 uSunDir;
 varying vec3 vNormalW;
 varying vec3 vWorldPos;
 varying vec3 vLocal;
-varying vec3 vColor;
-varying vec3 vBand;
+varying vec3 vLightL;
+varying vec2 vUv;
+varying vec4 vTile;
+varying vec4 vAtmo;
+varying vec4 vSurface;
+varying vec3 vFallback;
 varying float vPulse;
+varying float vRadius;
 ${COSMOS_MASK_GLSL}
 ${NOISE_GLSL}
-${TOON_GLSL}
+${GRADE_GLSL}
+${RING_DENSITY_GLSL}
+vec3 po_fallbackAlbedo(vec3 dir) {
+#ifdef OWN_MAP
+  float b = po_noise1(dir.y * 11.0 + po_noise1(dir.x * 2.0 + dir.z * 2.0) * 0.7);
+  return vFallback * (0.78 + 0.34 * b);
+#else
+  float n = po_noise3(dir * 4.0) * 0.6 + po_noise3(dir * 11.0) * 0.4;
+  return vFallback * (0.6 + 0.7 * n);
+#endif
+}
+vec3 po_bump(vec3 pos, vec3 n, float h, float scale) {
+  vec3 dpx = dFdx(pos);
+  vec3 dpy = dFdy(pos);
+  float dhx = dFdx(h) * scale;
+  float dhy = dFdy(h) * scale;
+  vec3 r1 = cross(dpy, n);
+  vec3 r2 = cross(n, dpx);
+  float det = dot(dpx, r1);
+  vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
+  return normalize(abs(det) * n - grad);
+}
 void main() {
   float alpha = po_cosmosAlpha(vWorldPos);
   if (alpha <= 0.002) discard;
-  vec3 N = normalize(vNormalW);
+  vec3 Ng = normalize(vNormalW);
   vec3 V = normalize(cameraPosition - vWorldPos);
+  vec3 L = uSunDir;
   vec3 dir = normalize(vLocal);
-  float bands = uBands > 0.0 ? step(0.5, po_noise1(dir.y * uBands + po_noise1(dir.x * 3.0 + uTime * 0.02) * 1.2)) : 0.0;
-  vec3 surface = mix(vColor, vBand, bands);
-  float ndl = dot(N, uLight);
-  vec3 color = surface * po_toon(ndl);
-  color *= 1.0 - 0.5 * po_dots(dir, uDotRows, po_shade(ndl));
-  float ndv = max(dot(N, V), 0.0);
-  color += vec3(1.0, 0.95, 0.8) * vPulse * pow(1.0 - ndv, 2.0) * 1.6;
-  color = mix(color, uInk, 1.0 - smoothstep(0.12, 0.2, ndv));
-  gl_FragColor = vec4(color, alpha);
+#ifdef OWN_MAP
+  vec2 uv = vUv;
+#else
+  // Inset half a coarse-mip texel so no neighbour tile bleeds in.
+  vec2 uv = vTile.xy + clamp(vUv, vec2(0.004, 0.008), vec2(0.996, 0.992)) * vTile.zw;
+#endif
+  vec3 albedo = mix(po_fallbackAlbedo(dir), texture2D(uMap, uv).rgb * uAlbedo, uMapReady);
+  vec3 N = Ng;
+  if (vSurface.x > 0.0) {
+    float h = dot(albedo, vec3(0.299, 0.587, 0.114));
+    N = po_bump(vWorldPos, Ng, h, vSurface.x * vRadius);
+  }
+  float ndlGeo = dot(Ng, L);
+  float ndl = dot(N, L);
+  // Hard terminator; bumped peaks may catch light just past it, no further.
+  float lit = clamp(ndl * 1.1 + 0.02, 0.0, 1.0) * smoothstep(-0.12, 0.02, ndlGeo);
+#ifdef OWN_MAP
+  if (vSurface.w > 0.5 && abs(vLightL.y) > 1e-4) {
+    float t = -dir.y / vLightL.y;
+    if (t > 0.0) {
+      float r = length((dir + vLightL * t).xz);
+      lit *= 1.0 - 0.88 * po_ringDensity(r, uRingInner, uRingOuter, uRing, uRingReady, 3.0);
+    }
+  }
+#endif
+  float ndv = max(dot(Ng, V), 0.0);
+  vec3 sun = vec3(1.0, 0.95, 0.88) * ${SUN_GAIN.toFixed(3)};
+  vec3 color = albedo * sun * lit;
+  // Night side: a faint cool fill so the dark limb still reads as a sphere.
+  color += vec3(0.6, 0.7, 1.0) * (albedo + 0.04) * vSurface.z * (0.4 + 0.6 * ndv) * 3.0;
+  if (vSurface.y > 0.0) {
+    vec3 H = normalize(L + V);
+    float blue = smoothstep(0.01, 0.12, albedo.b - max(albedo.r, albedo.g) * 0.85);
+    float spec = pow(max(dot(N, H), 0.0), 70.0) * vSurface.y * mix(0.35, 1.0, blue);
+    color += sun * spec * step(0.0, ndlGeo);
+  }
+  float rim = pow(1.0 - ndv, 2.5) * smoothstep(-0.25, 0.35, ndlGeo) * vAtmo.a;
+  color += vAtmo.rgb * rim * 1.6;
+  // Backlit by the sun, the atmosphere's limb lights up (forward scattering).
+  color += vAtmo.rgb * vAtmo.a * pow(1.0 - ndv, 5.0) * pow(max(dot(-V, L), 0.0), 3.0) * 2.5;
+  color += vec3(1.0, 0.92, 0.75) * vPulse * pow(1.0 - ndv, 2.0) * 1.6;
+  gl_FragColor = vec4(po_dither(po_grade(color)), alpha);
   #include <colorspace_fragment>
 }
 `;
 
-export interface CosmosSurfaceOptions {
-  /** Gas-giant band frequency (0: none). */
-  bands: number;
-  /** Halftone rows pole to pole. */
-  dotRows: number;
+export interface CosmosPlanetOptions {
+  /** 'saturn': the giant's own equirect map with the ring shadow; else the planet atlas. */
+  ownMap?: 'saturn';
   /** Size swell per unit pulse (0 under reduced motion; CosmosVisual writes it). */
-  pulseScale: { value: number };
+  pulseScale: IUniform<number>;
+  /** Ring radii in body radii (own map only, for the ring shadow). */
+  ring?: readonly [number, number];
+  /** Map albedo scale (default 1; the asteroids are darker than the moon map). */
+  albedo?: number;
 }
 
-export function createCosmosSurfaceMaterial(options: CosmosSurfaceOptions): ShaderMaterial {
+/**
+ * The realistic cosmos planet material. The geometry needs per-instance
+ * aTile (vec4), aAtmo (vec4), aSurface (vec4), aFallback (vec3) and aPulse.
+ */
+export function createCosmosPlanetMaterial(options: CosmosPlanetOptions): ShaderMaterial {
+  const own = options.ownMap === 'saturn';
   return new ShaderMaterial({
-    name: 'CosmosSurface',
+    name: own ? 'CosmosGiant' : 'CosmosPlanet',
+    defines: own ? { OWN_MAP: 1 } : {},
     uniforms: withCosmos({
-      uLight: SUN_DIR_W,
-      uInk: { value: new Color(INK_COLOR) },
-      uBands: { value: options.bands },
-      uDotRows: { value: options.dotRows },
-      uTime: MOTION_TIME,
+      uMap: own ? SPACE_MAPS.uSaturn : SPACE_MAPS.uAtlas,
+      uMapReady: own ? SPACE_READY.uSaturnReady : SPACE_READY.uAtlasReady,
+      uAlbedo: { value: options.albedo ?? 1 },
+      uRing: SPACE_MAPS.uRing,
+      uRingReady: SPACE_READY.uRingReady,
+      uRingInner: { value: options.ring?.[0] ?? 0 },
+      uRingOuter: { value: options.ring?.[1] ?? 0 },
+      uSunDir: SUN_DIR_W,
       uPulseScale: options.pulseScale,
     }),
-    vertexShader: surfaceVertex,
-    fragmentShader: surfaceFragment,
-    transparent: true,
-    toneMapped: false,
-  });
-}
-
-const inkVertex = /* glsl */ `
-attribute float aPulse;
-uniform float uInkWidth;
-uniform float uPulseScale;
-varying vec3 vWorldPos;
-void main() {
-  vec4 world = modelMatrix * instanceMatrix * vec4(position * (1.0 + uInkWidth) * (1.0 + uPulseScale * aPulse), 1.0);
-  vWorldPos = world.xyz;
-  gl_Position = projectionMatrix * viewMatrix * world;
-}
-`;
-
-const inkFragment = /* glsl */ `
-uniform vec3 uInk;
-varying vec3 vWorldPos;
-${COSMOS_MASK_GLSL}
-void main() {
-  float alpha = po_cosmosAlpha(vWorldPos);
-  if (alpha <= 0.002) discard;
-  gl_FragColor = vec4(uInk, alpha);
-  #include <colorspace_fragment>
-}
-`;
-
-/** Inverted-hull ink outline for an instanced cosmos mesh (shares its instance matrices). */
-export function createCosmosInkMaterial(width: number, pulseScale: { value: number }): ShaderMaterial {
-  return new ShaderMaterial({
-    name: 'CosmosInk',
-    uniforms: withCosmos({
-      uInk: { value: new Color(INK_COLOR) },
-      uInkWidth: { value: width },
-      uPulseScale: pulseScale,
-    }),
-    vertexShader: inkVertex,
-    fragmentShader: inkFragment,
-    side: BackSide,
+    vertexShader: planetVertex,
+    fragmentShader: planetFragment,
     transparent: true,
     toneMapped: false,
   });
 }
 
 const ringVertex = /* glsl */ `
-varying vec2 vLocal;
+uniform vec3 uSunDir;
+varying vec3 vLocal;
+varying vec3 vLightL;
+varying vec3 vNormalW;
 varying vec3 vWorldPos;
 void main() {
-  vLocal = position.xz;
+  vLocal = position;
+  mat3 m3 = mat3(modelMatrix);
+  vLightL = normalize(transpose(m3) * uSunDir);
+  vNormalW = normalize(m3 * vec3(0.0, 1.0, 0.0));
   vec4 world = modelMatrix * vec4(position, 1.0);
   vWorldPos = world.xyz;
   gl_Position = projectionMatrix * viewMatrix * world;
 }
 `;
 
-/** Printed ring: cream and orange bands split by ink stripes, inked edges. */
+/**
+ * The ring: colour and density by radius from uRing (procedural bands until
+ * it loads), lit by the sun on its sunward face; seen from the unlit face
+ * only the light diffusing through the thinner parts shows, brighter when
+ * the sun is behind it (forward scattering). The planet's shadow falls on
+ * it (a ray toward the sun hits the giant sphere). Local units: giant radii.
+ */
 const ringFragment = /* glsl */ `
-uniform vec3 uColorA;
-uniform vec3 uColorB;
-uniform vec3 uInk;
+uniform sampler2D uRing;
+uniform float uRingReady;
 uniform float uInner;
 uniform float uOuter;
-varying vec2 vLocal;
+uniform vec3 uSunDir;
+varying vec3 vLocal;
+varying vec3 vLightL;
+varying vec3 vNormalW;
 varying vec3 vWorldPos;
 ${COSMOS_MASK_GLSL}
+${NOISE_GLSL}
+${GRADE_GLSL}
+${RING_DENSITY_GLSL}
 void main() {
-  float r = length(vLocal);
+  float r = length(vLocal.xz);
   float t = (r - uInner) / (uOuter - uInner);
   if (t < 0.0 || t > 1.0) discard;
   float alpha = po_cosmosAlpha(vWorldPos);
   if (alpha <= 0.002) discard;
-  float w = fwidth(t) * 1.5;
-  vec3 color = mix(uColorA, uColorB, step(0.5, fract(t * 2.5)));
-  float stripes = 1.0 - smoothstep(0.03, 0.03 + w, abs(fract(t * 2.5 + 0.5) - 0.5));
-  float edge = 1.0 - smoothstep(0.045, 0.045 + w, min(t, 1.0 - t));
-  color = mix(color, uInk, max(stripes, edge));
-  float gap = 1.0 - 0.7 * (1.0 - smoothstep(0.0, w * 2.0, abs(t - 0.62) - 0.04));
-  gl_FragColor = vec4(color, alpha * 0.95 * gap);
+  vec4 tex = texture2D(uRing, vec2(t, 0.5));
+  float a = mix(po_ringFallbackDensity(t), tex.a, uRingReady);
+  // The map is near grey: a warm tan tint, a little under the planet's brightness.
+  vec3 col = mix(po_ringFallbackColor(t), tex.rgb * vec3(0.86, 0.77, 0.64), uRingReady);
+  vec3 N = normalize(vNormalW);
+  vec3 V = normalize(cameraPosition - vWorldPos);
+  float nl = dot(N, uSunDir);
+  float nv = dot(N, V);
+  float forward = pow(max(dot(-V, uSunDir), 0.0), 6.0);
+  float front = 0.3 + 0.7 * sqrt(abs(nl));
+  float back = a * (1.0 - a) * (0.9 + 2.5 * forward) + (1.0 - a) * forward * 0.4;
+  float light = nl * nv >= 0.0 ? front : back / max(a, 0.05);
+  // The planet's shadow: does the ray toward the sun hit the unit sphere?
+  vec3 Ll = vLightL;
+  float b = dot(vLocal, Ll);
+  float disc = b * b - (dot(vLocal, vLocal) - 1.0);
+  float shadow = b < 0.0 ? smoothstep(-0.02, 0.06, disc) : 0.0;
+  light *= 1.0 - 0.94 * shadow;
+  vec3 color = col * light * ${(SUN_GAIN * 0.9).toFixed(3)};
+  gl_FragColor = vec4(po_grade(color), alpha * a);
   #include <colorspace_fragment>
 }
 `;
 
-export function createCosmosRingMaterial(colorA: number, colorB: number, inner: number, outer: number): ShaderMaterial {
+export function createCosmosRingMaterial(inner: number, outer: number): ShaderMaterial {
   return new ShaderMaterial({
     name: 'CosmosRing',
     uniforms: withCosmos({
-      uColorA: { value: new Color(colorA) },
-      uColorB: { value: new Color(colorB) },
-      uInk: { value: new Color(INK_COLOR) },
+      uRing: SPACE_MAPS.uRing,
+      uRingReady: SPACE_READY.uRingReady,
       uInner: { value: inner },
       uOuter: { value: outer },
+      uSunDir: SUN_DIR_W,
     }),
     vertexShader: ringVertex,
     fragmentShader: ringFragment,
