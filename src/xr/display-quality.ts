@@ -1,11 +1,13 @@
 import type { World } from '@iwsdk/core';
 import { XR_FOVEATION } from '../config.js';
+import { targetFrameRate } from '../game/quality-rules.js';
 
 /*
  * XR display quality that IWSDK 1.1.0-rc.2 leaves at the browser defaults:
  * a moderate fixed foveation (three applies it to the XR layer at session
- * start) and the highest of 90 or 72 Hz the session lists. MSAA stays on
- * (IWSDK creates the renderer with antialias: true).
+ * start) and 72 Hz (13.9 ms a frame; Quest frame time is unmeasured, so
+ * no 90 Hz by default), or 90 Hz with ?hz=90, if the session lists it.
+ * MSAA stays on (IWSDK creates the renderer with antialias: true).
  */
 
 export interface DisplayState {
@@ -45,8 +47,7 @@ export function installDisplayQuality(world: World): void {
     }
     const rates = session.supportedFrameRates;
     if (!rates || typeof session.updateTargetFrameRate !== 'function') return;
-    const list = Array.from(rates);
-    const rate = list.includes(90) ? 90 : list.includes(72) ? 72 : null;
+    const rate = targetFrameRate(new URLSearchParams(window.location.search).get('hz'), Array.from(rates));
     if (rate === null) return;
     session.updateTargetFrameRate(rate).then(
       () => {

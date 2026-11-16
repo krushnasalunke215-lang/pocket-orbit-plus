@@ -27,6 +27,7 @@ import {
 } from '../game/placement.js';
 import { ROLE_COLORS } from '../render/palette.js';
 import { createBoardVisual } from '../render/board-visual.js';
+import { cosmosQuality } from './graphics-quality.js';
 import { setRayGrabbable } from './ray-grab.js';
 import type { BoardSize } from '../game/state.js';
 import { getSettings, setBoard, type BoardRuntime } from './runtime.js';
@@ -76,7 +77,7 @@ export class BoardPlacementSystem extends createSystem({
   init(): void {
     const boardEntity = this.world.createTransformEntity(new Group());
     boardEntity.object3D!.name = 'BoardRoot';
-    const boardVisual = createBoardVisual();
+    const boardVisual = createBoardVisual(cosmosQuality().gridSegments);
     boardEntity.object3D!.add(boardVisual.root);
     // The board root's materials share the occlusion uniforms (src/render/shaders/common.ts).
     boardEntity.addComponent(DepthOccludable, { mode: OcclusionShadersMode.HardOcclusion });

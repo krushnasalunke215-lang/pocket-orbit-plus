@@ -1757,6 +1757,9 @@ export async function glassesFit({ tableHead, fallbackHead, takeShot }) {
       enabledFeatures: status.enabledFeatures,
       gazeConnected: deviceState.gaze?.connected === true,
       restartMs,
+      // The glasses load in the Low graphics profile (the emulator device is read at load).
+      graphics: (({ tier, source }) => ({ tier, source }))(snapshot().graphics),
+      textures: snapshot().textures.requested,
     };
 
     // 2. The fallback pose: level gaze, the board 0.45 m ahead.
@@ -2123,9 +2126,9 @@ export async function cosmosModes({ tableHead, takeShot }) {
  * pose, then in immersive-vr. Each view: the most draw calls and triangles
  * over 2.5 s and the IWER frame rate (frames / seconds), occlusion on.
  */
-export async function budgetViews({ tableHead, takeShot }) {
+export async function budgetViews({ tableHead, takeShot, search = '?debug=1', shotPrefix = '' }) {
   if (xr('status').sessionActive) await exitXR();
-  const nav = game('page.search').value === '?debug=1' ? null : await navigateSearch('?debug=1');
+  const nav = game('page.search').value === search ? null : await navigateSearch(search);
   const SAMPLE_MS = 2500;
   const levels = game('levels').value;
   const last = levels.length - 1;
@@ -2174,13 +2177,42 @@ export async function budgetViews({ tableHead, takeShot }) {
     };
     const tag = session === 'immersive-ar' ? 'ar' : 'vr';
 
-    // 1. Level 6 mid-flight (the most bodies, comet and trail).
+    // 1. Level 6 mid-flight (the most bodies, comet and trail): page timers
+    // sample the stats only while phase === 'flying' (from 5% of the
+    // flight, at most SAMPLE_MS), then a held replay at half the flight
+    // gives the screenshot.
     await game('loadLevel', last);
     await sleep(500);
     game('setPlacements', levels[last].solution);
+    game('flightStats.start', 0.05, SAMPLE_MS);
     game('launch');
-    await sleep(800);
-    await sample('level 6 mid-flight', `budget-${tag}-l6-midflight.png`);
+    const flight = await waitFor('the level 6 in-flight sample', () => {
+      const w = game('flightStats.read').value;
+      return w?.done ? w : null;
+    }, 60_000, 300);
+    await waitFor('level 6 solved', () => snapshot().solved, 90_000, 500).catch(() => null);
+    game('hold.atFraction', 0.5);
+    game('launch');
+    const held = await waitFor('the mid-flight hold', () => game('hold.read').value?.held, 60_000, 200).catch(() => false);
+    const midShot = held ? takeShot(`${shotPrefix}budget-${tag}-l6-midflight.png`) : null;
+    game('hold.release');
+    const sf = snapshot();
+    views.push({
+      view: 'level 6 mid-flight',
+      level: sf.level.id,
+      mode: sf.mode,
+      phase: flight.phase,
+      flightFraction: flight.flightDuration ? round(flight.flightTime / flight.flightDuration, 3) : null,
+      chapter: sf.chapterComplete.shown,
+      levelSelectOpen: sf.levelSelect.open,
+      wells: sf.sandbox.wells.length,
+      max: flight.stats?.max ?? { calls: 0, triangles: 0 },
+      frames: flight.stats?.frames ?? 0,
+      seconds: round(flight.seconds, 2),
+      fps: flight.seconds > 0 ? round((flight.stats?.frames ?? 0) / flight.seconds, 1) : 0,
+      programs: flight.stats?.programs ?? null,
+      shot: midShot,
+    });
 
     // 2. The chapter-complete moment (solve level 6, then Next).
     await waitFor('level 6 solved', () => snapshot().solved, 90_000, 500).catch(() => null);
@@ -2188,7 +2220,7 @@ export async function budgetViews({ tableHead, takeShot }) {
     await rayClick('next-button');
     await waitFor('the chapter moment', () => snapshot().chapterComplete.shown, 10_000, 300).catch(() => null);
     await sleep(1500);
-    await sample('chapter complete', `budget-${tag}-chapter.png`);
+    await sample('chapter complete', `${shotPrefix}budget-${tag}-chapter.png`);
 
     // 3. Your Table with three wells (pucks).
     game('sandbox.enter', 0);
@@ -2196,7 +2228,7 @@ export async function budgetViews({ tableHead, takeShot }) {
     for (let i = 0; i < 3; i++) game('sandbox.addPuck');
     await sleep(500);
     await seatLook();
-    await sample('Your Table, 3 wells', `budget-${tag}-your-table.png`);
+    await sample('Your Table, 3 wells', `${shotPrefix}budget-${tag}-your-table.png`);
     game('sandbox.clear');
     game('sandbox.exit');
     await sleep(500);
@@ -2208,14 +2240,15 @@ export async function budgetViews({ tableHead, takeShot }) {
     if (!snapshot().levelSelect.open) await rayClick('levels-button');
     await waitFor('the level select open', () => snapshot().levelSelect.open, 10_000, 300).catch(() => null);
     await sleep(800);
-    await sample('level select open', `budget-${tag}-level-select.png`);
+    await sample('level select open', `${shotPrefix}budget-${tag}-level-select.png`);
     if (snapshot().levelSelect.open) await rayClick('close-levels');
     await sleep(400);
-    passes.push({ session, appMode: snapshot().session.mode, views });
+    const end = snapshot();
+    passes.push({ session, appMode: end.session.mode, graphics: { tier: end.graphics.tier, source: end.graphics.source }, textures: end.textures, display: end.display, views });
   }
   if (xr('status').sessionActive) await exitXR();
   const back = await navigateSearch('');
-  return { search: nav?.search ?? '?debug=1', searchAfter: back.search, passes };
+  return { search: nav?.search ?? search, searchAfter: back.search, passes };
 }
 
 /** Most XR render counts over `ms` of the current view with depth occlusion on or off. */

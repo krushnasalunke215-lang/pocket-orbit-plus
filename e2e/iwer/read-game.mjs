@@ -53,6 +53,8 @@ const METHODS = new Set([
   'page.debugOverlayText',
   'cosmos.traceStart',
   'cosmos.traceRead',
+  'flightStats.start',
+  'flightStats.read',
 ]);
 
 export default async function run({ frame, page, workspaceRoot }) {
@@ -108,6 +110,48 @@ export default async function run({ frame, page, workspaceRoot }) {
       }
       if (method === 'cosmos.traceRead') {
         return { value: window.__iwerCosmosTrace ?? null, perfNow: performance.now() };
+      }
+      // Render stats of a flight in progress: page timers reset the stats
+      // once the next flight passes args[0] of its duration, then keep the
+      // stats of the last tick that still saw phase 'flying', for at most
+      // args[1] ms (the driver's CLI round trips are far too slow for this).
+      if (method === 'flightStats.start') {
+        const [fraction, ms] = args;
+        const watch = { fraction, ms, started: null, at: null, stats: null, phase: null, flightTime: null, flightDuration: null, done: false };
+        window.__iwerFlightStats = watch;
+        const id = setInterval(() => {
+          const s = game.snapshot();
+          if (watch.started === null) {
+            if (s.phase === 'flying' && s.flightTime >= fraction * s.flightDuration) {
+              game.resetRenderStats();
+              watch.started = performance.now();
+            }
+            return;
+          }
+          const now = performance.now();
+          if (s.phase !== 'flying' || now - watch.started > ms) {
+            watch.done = true;
+            clearInterval(id);
+            return;
+          }
+          watch.stats = game.renderStats();
+          watch.at = now;
+          watch.phase = s.phase;
+          watch.flightTime = s.flightTime;
+          watch.flightDuration = s.flightDuration;
+        }, 50);
+        setTimeout(() => {
+          watch.done = true;
+          clearInterval(id);
+        }, 120_000);
+        return { value: { fraction, ms }, perfNow: performance.now() };
+      }
+      if (method === 'flightStats.read') {
+        const w = window.__iwerFlightStats ?? null;
+        return {
+          value: w && { ...w, seconds: w.at === null || w.started === null ? 0 : (w.at - w.started) / 1000 },
+          perfNow: performance.now(),
+        };
       }
       if (method === 'watchLaunch.read') {
         return { value: window.__iwerLaunchWatch ?? null, perfNow: performance.now() };

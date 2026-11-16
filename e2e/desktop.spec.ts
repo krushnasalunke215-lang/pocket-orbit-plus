@@ -762,6 +762,71 @@ test('render budget', async ({ page }) => {
   expect(stats.max.triangles).toBeLessThanOrEqual(RENDER_BUDGET.maxTriangles);
 });
 
+test('graphics: Low from the level panel applies on reload with the 1k textures; ?quality=low', async ({ page }) => {
+  test.setTimeout(240_000);
+  /** Render counts over 1.5 s of the current view. */
+  const counts = async () => {
+    await page.evaluate(() => window.__game!.resetRenderStats());
+    await page.waitForTimeout(1500);
+    const s = await page.evaluate(() => window.__game!.renderStats());
+    return { calls: s.max.calls, triangles: s.max.triangles };
+  };
+  const texturesLoaded = async () => {
+    await expect.poll(async () => (await snapshot(page)).textures.loaded.length, { timeout: 30_000 }).toBe(4);
+    return (await snapshot(page)).textures;
+  };
+  await openGame(page);
+  const high = await snapshot(page);
+  expect(high.graphics).toMatchObject({ tier: 'high', source: 'default', saved: 'high' });
+  expect(high.graphics.profile).toMatchObject({ textureSize: 2048, starCount: 6000, glints: true, dustMotes: 300, gridSegments: 96, asteroids: 160 });
+  const highTextures = await texturesLoaded();
+  expect([...highTextures.requested].sort()).toEqual(['tex-milky-way-2k', 'tex-planets-2k', 'tex-saturn-2k', 'tex-saturn-ring']);
+  const highCounts = await counts();
+
+  // The Graphics button beside Settings saves Low; the running page stays High until a reload.
+  await clickUi(page, 'levels-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(true);
+  await page.waitForTimeout(400);
+  await clickUi(page, 'graphics-button');
+  await expect.poll(async () => (await snapshot(page)).graphics.saved, { timeout: 5_000 }).toBe('low');
+  expect(await page.evaluate(() => localStorage.getItem('orbit-puzzle.graphics'))).toBe('low');
+  expect((await snapshot(page)).graphics.tier).toBe('high');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: screenshotPath('desktop-graphics-button.png') });
+
+  await page.reload();
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 60_000 });
+  const low = await snapshot(page);
+  expect(low.save.problem).toBeNull();
+  expect(low.graphics).toMatchObject({ tier: 'low', source: 'setting', saved: 'low' });
+  expect(low.graphics.profile).toMatchObject({ textureSize: 1024, starCount: 2500, glints: false, dustMotes: 0, gridSegments: 48, asteroids: 60 });
+  // The vendored -1k maps are the ones requested and loaded (same origin), no -2k.
+  const lowTextures = await texturesLoaded();
+  expect([...lowTextures.requested].sort()).toEqual(['tex-milky-way-1k', 'tex-planets-1k', 'tex-saturn-1k', 'tex-saturn-ring']);
+  expect(lowTextures.failed).toEqual([]);
+  const urls = await page.evaluate(() => window.__game!.resourceUrls());
+  expect(urls.filter((u) => u.endsWith('-1k.webp')).length).toBe(3);
+  expect(urls.filter((u) => u.endsWith('-2k.webp'))).toEqual([]);
+  const lowCounts = await counts();
+  console.log('graphics desktop counts', JSON.stringify({ high: highCounts, low: lowCounts }));
+  expect(lowCounts.triangles).toBeLessThan(highCounts.triangles);
+  expect(lowCounts.calls).toBeLessThan(highCounts.calls);
+  await page.screenshot({ path: screenshotPath('desktop-graphics-low.png') });
+
+  // Back to High (saved), then ?quality=low overrides the saved High for one load.
+  await clickUi(page, 'levels-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(true);
+  await page.waitForTimeout(400);
+  await clickUi(page, 'graphics-button');
+  await expect.poll(async () => (await snapshot(page)).graphics.saved, { timeout: 5_000 }).toBe('high');
+  await page.goto('/?quality=low');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 60_000 });
+  expect((await snapshot(page)).graphics).toMatchObject({ tier: 'low', source: 'url', saved: 'high' });
+  await page.goto('/');
+  await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 60_000 });
+  expect((await snapshot(page)).graphics).toMatchObject({ tier: 'high', source: 'setting', saved: 'high' });
+});
+
 test('release off the board snaps back without launching', async ({ page }) => {
   await openGame(page);
   await page.evaluate(() => window.__game!.loadLevel(0));

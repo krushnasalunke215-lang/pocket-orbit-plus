@@ -38,7 +38,13 @@ For each item, write down what happened. Short notes are fine.
 1. **Frame rate.** At the start of level 1, read the overlay's first line
    (`fps .. avg | 1% low ..`). Read it again while the comet is flying.
    Report both pairs of numbers. The open level select covers the overlay,
-   so close it (**Close**) before you read.
+   so close it (**Close**) before you read. The game asks the headset for
+   72 Hz. If the numbers sit well below 72, reload with
+   `?debug=1&quality=low` (the Low graphics profile: smaller textures,
+   fewer stars and rocks, no dust or star glints) and report the same two
+   pairs. **Levels**, then **Graphics** (beside Settings) saves High or Low
+   for the next load. If 72 Hz holds easily, try `?debug=1&hz=90` once and
+   report whether 90 holds.
 2. **Pinch-grab reliability.** Grab and move planet 1 five times. How many
    pinches grabbed on the first try? Then pinch right next to a planet
    (about 2 cm beside it, not on it): did it grab the planet, nothing, or

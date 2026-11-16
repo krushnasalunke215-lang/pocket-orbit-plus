@@ -1,16 +1,18 @@
 import {
   DataTexture,
   Group,
+  type InstancedMesh,
   LinearFilter,
   LinearMipmapLinearFilter,
   Matrix4,
   Mesh,
+  type Points,
   Vector3,
   RepeatWrapping,
   SphereGeometry,
   SRGBColorSpace,
 } from '@iwsdk/core';
-import { COSMOS_QUALITY } from '../../config.js';
+import type { CosmosQuality } from '../../config.js';
 import { noRaycast, setMotionTime } from '../shaders/common.js';
 import { createSkyMaterial } from '../shaders/sky.js';
 import type { CosmosVisual } from '../visual-types.js';
@@ -41,11 +43,11 @@ export { COSMOS_UNIFORMS } from '../shaders/sky.js';
 const SKY_RADIUS = 60;
 const SKY_SEED = 0x5eed;
 
-export function createCosmosVisual(): CosmosVisual {
+export function createCosmosVisual(quality: CosmosQuality): CosmosVisual {
   const root = new Group();
   root.name = 'Cosmos';
 
-  const [w, h] = COSMOS_QUALITY.skyTexture;
+  const [w, h] = quality.skyTexture;
   const sky = new DataTexture(bakeSkyPixels(w, h, SKY_SEED), w, h);
   sky.colorSpace = SRGBColorSpace;
   sky.wrapS = RepeatWrapping;
@@ -63,12 +65,12 @@ export function createCosmosVisual(): CosmosVisual {
   const normal = new Vector3(...GALAXY_NORMAL);
   dome.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(core, normal, new Vector3().crossVectors(core, normal)));
 
-  const stars = createStars(COSMOS_QUALITY.starCount, COSMOS_QUALITY.glints);
+  const stars = createStars(quality.starCount, quality.glints);
   const sun = createSun();
   const planets = createCosmosPlanets();
-  const belt = createAsteroidBelt(COSMOS_QUALITY.asteroids);
-  const dust = COSMOS_QUALITY.dustMotes > 0 ? createDust(COSMOS_QUALITY.dustMotes) : null;
-  const shooting = COSMOS_QUALITY.shootingStars ? createShootingStars() : null;
+  const belt = createAsteroidBelt(quality.asteroids);
+  const dust = quality.dustMotes > 0 ? createDust(quality.dustMotes) : null;
+  const shooting = quality.shootingStars ? createShootingStars() : null;
   const constellation = createConstellation();
   root.add(dome, stars, sun, planets.root, belt.root, constellation.root);
   if (shooting) root.add(shooting.mesh);
@@ -102,6 +104,15 @@ export function createCosmosVisual(): CosmosVisual {
     },
     activeShootingStars(realT) {
       return shooting ? shooting.active(realT) : 0;
+    },
+    applyQuality(q) {
+      const glints = stars.getObjectByName('CosmosGlints');
+      if (glints && !q.glints) glints.visible = false;
+      if (dust && q.dustMotes === 0) dust.visible = false;
+      const field = stars.getObjectByName('CosmosStarField') as Points | undefined;
+      if (field) field.geometry.setDrawRange(0, Math.min(q.starCount, field.geometry.getAttribute('position').count));
+      const rocks = belt.root.getObjectByName('AsteroidRocks') as InstancedMesh | undefined;
+      if (rocks) rocks.count = Math.min(q.asteroids, rocks.count);
     },
   };
 }

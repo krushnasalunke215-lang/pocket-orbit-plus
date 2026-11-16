@@ -119,6 +119,10 @@ const GROUPS = [
 ];
 const ALWAYS = new Set(['placement']);
 
+/** --quality=low runs budget-views in the Low graphics profile. */
+const QUALITY = process.argv.find((a) => a.startsWith('--quality='))?.slice('--quality='.length) ?? null;
+if (QUALITY !== null && QUALITY !== 'low') throw new Error(`--quality takes only low, got ${QUALITY}`);
+
 function selectedGroups(argv) {
   const only = argv.find((a) => a.startsWith('--only='));
   if (!only) return new Set(GROUPS);
@@ -966,22 +970,37 @@ const GROUP_RUNNERS = {
   // 21. Render numbers of the busiest views with ?debug=1, in AR at the
   // table pose and in VR (the before/after budget table in the notes).
   async 'budget-views'() {
-    const r = await budgetViews({ tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name) });
+    // --quality=low: the same views in the Low graphics profile (?quality=low).
+    const low = QUALITY === 'low';
+    const search = low ? '?debug=1&quality=low' : '?debug=1';
+    const r = await budgetViews({ tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name), search, shotPrefix: low ? 'low-' : '' });
     summary.data.budgetViews = r;
-    writeFileSync(path.join(RESULTS, 'render-stats-cosmos.json'), JSON.stringify({ room: 'sunlit_living_room', head: TABLE_HEAD, budget: BUDGET, ...r }, null, 2));
+    writeFileSync(
+      path.join(RESULTS, low ? 'render-stats-cosmos-low.json' : 'render-stats-cosmos.json'),
+      JSON.stringify({ room: 'sunlit_living_room', head: TABLE_HEAD, budget: BUDGET, ...r }, null, 2),
+    );
     const views = r.passes.flatMap((p) => p.views.map((v) => ({ session: p.session, ...v })));
     const brief = views.map((v) => ({ session: v.session, view: v.view, max: { calls: v.max.calls, triangles: v.max.triangles }, fps: v.fps, frames: v.frames }));
+    const tier = low ? 'low' : 'high';
+    const size = low ? '1k' : '2k';
+    check(
+      `budget-views: the ${tier} graphics profile ran, its ${size} textures loaded, and XR asked for 72 Hz`,
+      r.passes.every((p) => p.graphics.tier === tier && p.textures.failed.length === 0 && p.textures.loaded.length === 4 &&
+        p.textures.requested.every((id) => id === 'tex-saturn-ring' || id.endsWith(`-${size}`)) && p.display.targetFrameRate === 72),
+      r.passes.map((p) => ({ session: p.session, graphics: p.graphics, textures: p.textures, display: p.display })),
+    );
     const intended = {
-      'level 6 mid-flight': (v) => v.level === 'c1-l6' && v.mode === 'story',
+      // Sampled only while the comet flies (page timers); a solved board fails.
+      'level 6 mid-flight': (v) => v.level === 'c1-l6' && v.mode === 'story' && v.phase === 'flying' && v.frames > 0,
       'chapter complete': (v) => v.chapter,
       'Your Table, 3 wells': (v) => v.mode === 'sandbox' && v.wells === 3,
       'level select open': (v) => v.levelSelectOpen,
     };
     check(
       'budget-views: with ?debug=1, level 6 mid-flight, the chapter moment, Your Table with 3 wells and the level select open, in immersive-ar then immersive-vr',
-      r.search === '?debug=1' && r.passes.length === 2 && r.passes[0].appMode === 'immersive-ar' && r.passes[1].appMode === 'immersive-vr' &&
+      r.search === search && r.passes.length === 2 && r.passes[0].appMode === 'immersive-ar' && r.passes[1].appMode === 'immersive-vr' &&
         views.length === 8 && views.every((v) => intended[v.view]?.(v)),
-      views.map((v) => ({ session: v.session, view: v.view, level: v.level, mode: v.mode, phase: v.phase, chapter: v.chapter, open: v.levelSelectOpen, wells: v.wells })),
+      views.map((v) => ({ session: v.session, view: v.view, level: v.level, mode: v.mode, phase: v.phase, flightFraction: v.flightFraction, chapter: v.chapter, open: v.levelSelectOpen, wells: v.wells })),
     );
     check(
       `budget-views: XR calls <= ${BUDGET.calls} and triangles <= ${BUDGET.triangles} in each of those views`,
@@ -1003,6 +1022,11 @@ const GROUP_RUNNERS = {
       "glasses: the emulator runs 'Meta VR Glasses' with an immersive-ar session, 'gaze-tracking' granted and a connected gaze source",
       d.deviceName === 'Meta VR Glasses' && d.sessionActive && d.sessionMode === 'immersive-ar' && d.gazeGranted && d.gazeConnected,
       { deviceName: d.deviceName, before: d.before, sessionMode: d.sessionMode, gazeGranted: d.gazeGranted, gazeConnected: d.gazeConnected, restartMs: d.restartMs },
+    );
+    check(
+      'glasses: the page loads in the Low graphics profile on the metaVRGlasses device (the 1k textures)',
+      d.graphics?.tier === 'low' && d.graphics?.source === 'glasses' && d.textures.length === 4 && d.textures.every((id) => id === 'tex-saturn-ring' || id.endsWith('-1k')),
+      { graphics: d.graphics, textures: d.textures },
     );
     const fit = (label) => r.fits.find((f) => f.label === label);
     const brief = (f) => f && { boardSource: f.boardSource, head: f.head, ...Object.fromEntries(Object.entries(f.surfaces).map(([k, s]) => [k, { h: s.h, v: s.v, marginDeg: s.marginDeg }])) };

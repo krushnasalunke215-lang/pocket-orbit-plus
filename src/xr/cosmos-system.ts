@@ -1,9 +1,11 @@
 import { createSystem, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
-import { BOARD, COSMOS_FADE_SECONDS, COSMOS_QUALITY, SUN_DIRECTION } from '../config.js';
+import { BOARD, COSMOS_FADE_SECONDS, COSMOS_QUALITY_PROFILES, SUN_DIRECTION } from '../config.js';
 import { cosmosOpacity, islandWindow } from '../game/cosmos-rules.js';
+import { isGlassesView } from '../game/quality-rules.js';
 import { COSMOS_UNIFORMS, createCosmosVisual } from '../render/cosmos/cosmos-visual.js';
 import { SUN_DIR_W } from '../render/shaders/common.js';
 import { loadSpaceTextures, type SpaceTextureLoader } from '../render/space-textures.js';
+import { cosmosQuality, graphicsState, markLiveGlassesLow } from './graphics-quality.js';
 import { getBoard, getGame, getSettings, motionTime, setCosmos, type CosmosRuntime } from './runtime.js';
 import { currentSessionMode } from './session.js';
 
@@ -37,13 +39,15 @@ export class CosmosSystem extends createSystem({}) {
   private frames = 0;
   private windowRadius = -1;
   private windowSandbox = false;
+  /** The XR view was checked for the glasses' form factor in this session. */
+  private viewChecked = false;
   private textures: SpaceTextureLoader | null = null;
   private readonly head = new Vector3();
   private readonly boardTurn = new Quaternion();
   private readonly sunBoard = new Vector3();
 
   init(): void {
-    const visual = createCosmosVisual();
+    const visual = createCosmosVisual(cosmosQuality());
     this.world.createTransformEntity(visual.root, { persistent: true });
     this.sunBoard.set(SUN_DIRECTION[0], SUN_DIRECTION[1], SUN_DIRECTION[2]).normalize();
     this.runtime = {
@@ -69,7 +73,7 @@ export class CosmosSystem extends createSystem({}) {
 
   update(delta: number, time: number): void {
     this.frames++;
-    if (this.frames === TEXTURE_START_FRAME) this.textures = loadSpaceTextures(this.world.renderer, COSMOS_QUALITY.textureSize);
+    if (this.frames === TEXTURE_START_FRAME) this.textures = loadSpaceTextures(this.world.renderer, cosmosQuality().textureSize);
     this.textures?.tick(delta);
 
     const board = getBoard(this.world);
@@ -95,6 +99,8 @@ export class CosmosSystem extends createSystem({}) {
       this.fadeSeconds = COSMOS_FADE_SECONDS;
     }
     this.lastVisibility = visibility;
+    if (visibility === VisibilityState.NonImmersive) this.viewChecked = false;
+    else if (!this.viewChecked) this.checkGlassesView(board.visual);
     if (this.replay) {
       this.fadeStart = time;
       this.replay = false;
@@ -123,5 +129,27 @@ export class CosmosSystem extends createSystem({}) {
     this.runtime.mask = state.mask;
 
     visual.update(motionTime(this.world, time), time, delta, settings.reducedMotion);
+  }
+
+  /**
+   * The Meta VR Glasses form factor, recognised by its narrow XR view (37°
+   * left and right, 25° up, 43° down): a High page switches to the Low
+   * profile in place (glints, dust, star and rock counts, the grid plate; the
+   * loaded textures stay). ?quality=high keeps High. Once per session, on the
+   * first frame with XR eye cameras.
+   */
+  private checkGlassesView(board: { setGridSegments(n: number): void }): void {
+    const eye = this.world.renderer.xr.getCamera().cameras[0] as { projectionMatrix: { elements: ArrayLike<number> } } | undefined;
+    if (!eye) return;
+    this.viewChecked = true;
+    const e = eye.projectionMatrix.elements;
+    if (e[0] <= 0 || e[5] <= 0) return;
+    const glasses = isGlassesView((1 - e[8]) / e[0], (1 + e[8]) / e[0], (1 + e[9]) / e[5], (1 - e[9]) / e[5]);
+    const state = graphicsState();
+    if (!glasses || state.tier === 'low' || state.source === 'url') return;
+    const low = COSMOS_QUALITY_PROFILES.low;
+    this.runtime.visual.applyQuality(low);
+    board.setGridSegments(low.gridSegments);
+    markLiveGlassesLow();
   }
 }

@@ -28,6 +28,14 @@ overlay: average fps and the 1% low, draw calls and triangles, and in Your
 Table the hit-test height above the board and its jitter. It also logs one
 JSON line every 5 s with `console.info`.
 
+XR sessions ask for 72 Hz (`?hz=90` asks for 90 Hz). Graphics has two
+profiles: High (the default) and Low (1k textures, 2,500 stars, no star
+glints, no dust, a 48-segment grid plate and 60 asteroids). Pick one with
+**Levels > Graphics** (saved, applies on the next load) or for one load with
+`?quality=low` / `?quality=high`. Meta VR Glasses always start in Low (the
+metaVRGlasses emulator device at load, the real glasses by their narrow view
+when the session starts).
+
 ## Layout
 
 - `src/sim/`: pure-TypeScript physics, levels (chapter 1, Your Table targets) and solver (no Three.js).

@@ -9,7 +9,9 @@ import {
   type UIKitMLAsset,
 } from '@iwsdk/core';
 import { levelSelectPose } from '../game/hud-layout.js';
+import { graphicsLabel, nextGraphicsTier } from '../game/quality-rules.js';
 import { BOARD_SIZES, ROOM_VIEWS } from '../game/state.js';
+import { graphicsState, saveGraphicsTier } from './graphics-quality.js';
 import {
   getBoard,
   getGame,
@@ -39,6 +41,7 @@ const LABEL_IDS = [
   'sandbox-label',
   'close-levels-label',
   'settings-label',
+  'graphics-label',
   'settings-back-label',
   'room-view-label',
   'left-handed-label',
@@ -64,7 +67,8 @@ interface SlotElements {
 /**
  * The level-select panel: a 3 x 2 grid of the chapter's levels with each
  * solved level's best stars (unsolved levels show none; nothing is
- * locked), the Your Table button (opens the sandbox) and Settings, which
+ * locked), the Your Table button (opens the sandbox), Graphics (the saved
+ * High / Low profile, applied on the next reload) and Settings, which
  * switches the panel to its settings page: left-handed, high contrast,
  * reduced motion, board size, Room view (how much of the real room the
  * cosmos covers in mixed reality), and the audio settings (mute, volume, quiet).
@@ -89,6 +93,7 @@ export class LevelSelectSystem extends createSystem({}) {
   private motionLabel: UIKit.Text | null = null;
   private boardSizeLabel: UIKit.Text | null = null;
   private roomViewLabel: UIKit.Text | null = null;
+  private graphicsLabel: UIKit.Text | null = null;
   private levelsPage: UIKit.Text | null = null;
   private settingsPage: UIKit.Text | null = null;
   private lastStarsRevision = -1;
@@ -157,6 +162,10 @@ export class LevelSelectSystem extends createSystem({}) {
       this.hide();
     });
     onClick('settings-button', () => this.setPage('settings'));
+    onClick('graphics-button', () => {
+      saveGraphicsTier(nextGraphicsTier(graphicsState().saved));
+      this.refreshGraphicsLabel();
+    });
     onClick('settings-back', () => this.setPage('levels'));
     onClick('left-handed-button', () => setSettings(this.world, { leftHanded: !getSettings(this.world).leftHanded }));
     onClick('contrast-button', () => setSettings(this.world, { highContrast: !getSettings(this.world).highContrast }));
@@ -177,6 +186,8 @@ export class LevelSelectSystem extends createSystem({}) {
     this.motionLabel = element('motion-label');
     this.boardSizeLabel = element('board-size-label');
     this.roomViewLabel = element('room-view-label');
+    this.graphicsLabel = element('graphics-label');
+    this.refreshGraphicsLabel();
     this.levelsPage = element('levels-page');
     this.settingsPage = element('settings-page');
 
@@ -235,6 +246,12 @@ export class LevelSelectSystem extends createSystem({}) {
     this.lastSettingsRevision = -1;
   }
 
+  /** Graphics: the saved choice, and whether a reload or an override still stands between it and the running profile. */
+  private refreshGraphicsLabel(): void {
+    const state = graphicsState();
+    this.graphicsLabel?.setProperties({ text: graphicsLabel(state.saved, state) });
+  }
+
   private cycleBoardSize(): void {
     const i = BOARD_SIZES.indexOf(getSettings(this.world).boardSize);
     setSettings(this.world, { boardSize: BOARD_SIZES[(i + 1) % BOARD_SIZES.length] });
@@ -280,6 +297,7 @@ export class LevelSelectSystem extends createSystem({}) {
       this.motionLabel?.setProperties({ text: s.reducedMotion ? 'Reduced motion: on' : 'Reduced motion: off' });
       this.boardSizeLabel?.setProperties({ text: BOARD_SIZE_LABELS[s.boardSize] });
       this.roomViewLabel?.setProperties({ text: ROOM_VIEW_LABELS[s.roomView] });
+      this.refreshGraphicsLabel();
       this.lastSettingsRevision = settingsRevision;
     }
 

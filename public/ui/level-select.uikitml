@@ -10,8 +10,10 @@
   solved and lit by its best stars. The pips are plain panels, which UIKit
   draws in one instanced batch; Star icons cost one draw call each (18 per
   eye, over the XR draw-call budget with the chapter moment). The Your Table
-  button (header) opens the sandbox (GameController.loadSandbox(0)), and
-  Settings opens the settings page.
+  button (header) opens the sandbox (GameController.loadSandbox(0)),
+  Settings opens the settings page, and Graphics (beside it, because the
+  settings page is at its full height) toggles the saved High / Low
+  profile, which applies on the next reload.
 
   settings-page: the accessibility settings (left-handed, high contrast,
   reduced motion, board size) and the audio settings (mute, volume, quiet).
@@ -137,6 +139,17 @@
     color: #eaf2ff;
   }
 
+  .graphics-button {
+    height: 44;
+    flex-grow: 2;
+    flex-basis: 0;
+    justify-content: center;
+    background-color: #162238d9;
+    border-width: 2;
+    border-color: #8fb3e6;
+    color: #eaf2ff;
+  }
+
   .toggle-button {
     height: 52;
     flex-grow: 1;
@@ -233,6 +246,9 @@
     <div class="settings-row">
       <Button id="settings-button" class="wide-button">
         <ButtonLabel id="settings-label" class="small-label">Settings</ButtonLabel>
+      </Button>
+      <Button id="graphics-button" class="graphics-button">
+        <ButtonLabel id="graphics-label" class="small-label">Graphics: High</ButtonLabel>
       </Button>
     </div>
   </div>

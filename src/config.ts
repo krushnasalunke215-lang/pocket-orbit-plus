@@ -30,29 +30,55 @@ export const SUN_DISTANCE = 45;
 /** Fixed foveation level requested for XR sessions (0 none .. 1 most). */
 export const XR_FOVEATION = 0.5;
 
-/**
- * The surrounding cosmos, and its cheaper fallbacks for a slow headset:
- * textureSize 1024, starCount 2500, glints false, dustMotes 0,
- * gridSegments 48, asteroids 60. Shooting stars are atmospheric, not deep
- * space: off by default (the code stays).
- */
-export const COSMOS_QUALITY = {
+/** One graphics profile of the surrounding cosmos and the board plate. */
+export interface CosmosQuality {
   /** Vendored texture size (2048: the -2k files, 1024: the -1k files). */
-  textureSize: 2048,
+  readonly textureSize: 2048 | 1024;
   /** Fine stars in the one instanced star field (one draw call). */
-  starCount: 6000,
+  readonly starCount: number;
   /** Diffraction-spike billboards on the brightest stars (one draw call). */
-  glints: true,
+  readonly glints: boolean;
   /** Size of the procedural fallback sky baked once at init (equirect, width x height). */
-  skyTexture: [512, 256],
+  readonly skyTexture: readonly [number, number];
   /** Rocks in the asteroid belt (one instanced draw call). */
-  asteroids: 160,
+  readonly asteroids: number;
   /** Near dust motes around the player (one draw call; 0 turns them off). */
-  dustMotes: 300,
+  readonly dustMotes: number;
   /** Segments per side of the spacetime grid plate. */
-  gridSegments: 96,
-  shootingStars: false,
-} as const;
+  readonly gridSegments: number;
+  /** Shooting stars are atmospheric, not deep space: off in both profiles (the code stays). */
+  readonly shootingStars: boolean;
+}
+
+/**
+ * The two graphics profiles (src/xr/graphics-quality.ts picks one per page
+ * load: Settings "Graphics", ?quality=low|high, Low on the Meta VR
+ * Glasses). High is the full look; Low is the cheap fallback for a slow
+ * headset: the 1k textures, fewer stars, no glints, no dust, a coarser
+ * grid plate and fewer rocks.
+ */
+export const COSMOS_QUALITY_PROFILES: { readonly high: CosmosQuality; readonly low: CosmosQuality } = {
+  high: {
+    textureSize: 2048,
+    starCount: 6000,
+    glints: true,
+    skyTexture: [512, 256],
+    asteroids: 160,
+    dustMotes: 300,
+    gridSegments: 96,
+    shootingStars: false,
+  },
+  low: {
+    textureSize: 1024,
+    starCount: 2500,
+    glints: false,
+    skyTexture: [512, 256],
+    asteroids: 60,
+    dustMotes: 0,
+    gridSegments: 48,
+    shootingStars: false,
+  },
+};
 
 /**
  * Visual height of the play layer above the glass (board units, so it

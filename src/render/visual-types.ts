@@ -1,4 +1,5 @@
 import type { Mesh, Object3D } from '@iwsdk/core';
+import type { CosmosQuality } from '../config.js';
 
 /*
  * Render interfaces shared by the systems. Everything is in board-normalized
@@ -116,6 +117,8 @@ export interface BoardVisual {
   setCounts(grid: number, shadows: number): void;
   /** Starts a ripple ring at board (x, z) at SHARED_TIME `t`; strength 1 is a flyby, < 0 runs inward. */
   ripple(x: number, z: number, strength: number, t: number): void;
+  /** Rebuilds the plate with `n` grid segments per side (the live switch to the Low profile). */
+  setGridSegments(n: number): void;
 }
 
 /** The chapter's constellation in the cosmos frame (meters): stars lit by solved levels, links between them. */
@@ -155,4 +158,10 @@ export interface CosmosVisual {
   activeShootingStars(realT: number): number;
   /** Debug: the first orbiting planet's position (cosmos frame) and the belt's turn, [x, y, z, yaw]. */
   motionProbe(): number[];
+  /**
+   * Switches to a cheaper profile in place (the Low switch when an XR
+   * session shows the Meta VR Glasses' view): glints and dust hidden when it
+   * has none, at most its star and rock counts drawn. Textures stay loaded.
+   */
+  applyQuality(quality: CosmosQuality): void;
 }
