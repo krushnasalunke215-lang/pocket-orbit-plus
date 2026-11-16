@@ -945,7 +945,7 @@ const GROUP_RUNNERS = {
   },
 
   // 21. Render numbers of the busiest views with ?debug=1, in AR at the
-  // table pose and in VR (the Cosmos + Comic before/after table).
+  // table pose and in VR (the before/after budget table in the notes).
   async 'budget-views'() {
     const r = await budgetViews({ tableHead: TABLE_HEAD, takeShot: (name) => screenshot(name) });
     summary.data.budgetViews = r;

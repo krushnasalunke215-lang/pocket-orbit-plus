@@ -4,35 +4,34 @@
   26 x 33 cm (SANDBOX_PANEL_SIZE in src/game/hud-layout.ts). Shown only in
   sandbox mode, beside the HUD beyond the far rim. Button labels ignore
   pointers (set in code) so a fingertip press and release land on the
-  same button. The "-" placeholders are written at runtime. Comic style:
-  ink border, a yellow title on an ink badge, bold inked buttons.
+  same button. The "-" placeholders are written at runtime. Dark glass style:
+  a dark semi-transparent panel with a thin light border, a plain light title,
+  dark glass buttons with light borders and labels. The panel border is 2 and
+  its padding 1 more than before, so the size holds.
 -->
 <style>
   .sandbox-root {
     flex-direction: column;
     width: 260;
-    padding-top: 12;
-    padding-bottom: 12;
-    padding-left: 14;
-    padding-right: 14;
+    padding-top: 13;
+    padding-bottom: 13;
+    padding-left: 15;
+    padding-right: 15;
     gap: 7;
-    border-width: 3;
-    border-color: #101018;
-    border-radius: 14;
+    background-color: #0b1220c7;
+    border-width: 2;
+    border-color: #8fb3e6;
+    border-radius: 12;
   }
 
   .title {
-    color: #ffd23f;
+    color: #eaf2ff;
     font-size: 22;
     font-weight: 700;
-    background-color: #101018;
-    border-width: 3;
-    border-color: #ff5a1f;
-    border-radius: 8;
-    padding-left: 8;
-    padding-right: 8;
-    padding-top: 1;
-    padding-bottom: 1;
+    padding-left: 2;
+    padding-right: 2;
+    padding-top: 4;
+    padding-bottom: 4;
     align-self: flex-start;
   }
 
@@ -53,19 +52,19 @@
     flex-grow: 1;
     flex-basis: 0;
     justify-content: center;
-    background-color: #ffd23f;
-    border-width: 3;
-    border-color: #101018;
-    color: #101018;
+    background-color: #1e2e4ad9;
+    border-width: 2;
+    border-color: #8fb3e6;
+    color: #eaf2ff;
   }
 
   .small-button {
     height: 44;
     justify-content: center;
-    background-color: #7fd8ff;
-    border-width: 3;
-    border-color: #101018;
-    color: #101018;
+    background-color: #162238d9;
+    border-width: 2;
+    border-color: #8fb3e6;
+    color: #eaf2ff;
   }
 
   .label {

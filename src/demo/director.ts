@@ -488,7 +488,7 @@ const SHOTS: readonly Shot[] = [
       // The hands rest relative to the new pose, as after seat() in the other shots.
       await d.handsDown();
       await sleep(500);
-      // The first pinch and launch: WHOOSH, the flight, KA-POW, the comet rises.
+      // The first pinch and launch: the flight, the solve burst, the comet rises.
       const before = await d.placeBody('p1', d.goal(0, 'solution', 'p1'));
       d.key();
       d.expectSolved(await d.flightEnd(before));

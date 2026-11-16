@@ -286,46 +286,6 @@ float po_noise3(vec3 x) {
 }
 `;
 
-/** Comic ink: the outline and line color of the art direction. */
-export const INK_COLOR = 0x101018;
-
-/**
- * GLSL comic shading.
- *   po_toon(ndl): three crisp bands, 1.0 lit, 0.72 mid, 0.45 shadow.
- *   po_halftone(dir, rows): distance (cell units, 0 at a dot center) to the
- *     nearest dot of a lat/long dot grid with `rows` rows pole to pole and
- *     evenly spaced dots in each row. `dir` is an object-space direction,
- *     so both eyes see the same dots on the surface.
- *   po_dots(dir, rows, shade): dot coverage 0..1; the dots grow with `shade`.
- *   po_shade(ndl): how deep a point is in shadow (0 lit, 1 deep shadow).
- */
-export const TOON_GLSL = /* glsl */ `
-float po_toon(float ndl) {
-  float lit = smoothstep(0.40, 0.44, ndl);
-  float mid = smoothstep(-0.06, -0.02, ndl);
-  return mix(0.45, mix(0.72, 1.0, lit), mid);
-}
-float po_halftone(vec3 dir, float rows) {
-  vec3 d = normalize(dir);
-  float lat = asin(clamp(d.y, -1.0, 1.0));
-  float r = lat * rows / 3.14159265;
-  float row = floor(r + 0.5);
-  float latC = row * 3.14159265 / rows;
-  float n = max(1.0, floor(cos(latC) * rows * 2.0 + 0.5));
-  float lon = (atan(d.z, d.x) / 6.2831853 + 0.5) * n;
-  float col = floor(lon + 0.5);
-  float dx = (lon - col) * 2.0 * rows * cos(lat) / n;
-  return length(vec2(dx, r - row));
-}
-float po_shade(float ndl) {
-  return clamp((0.12 - ndl) / 0.7, 0.0, 1.0);
-}
-float po_dots(vec3 dir, float rows, float shade) {
-  float radius = 0.6 * sqrt(shade);
-  return (1.0 - smoothstep(radius - 0.07, radius + 0.07, po_halftone(dir, rows))) * step(0.001, shade);
-}
-`;
-
 /** Marks `count` items starting at item `first` of an attribute for upload. */
 export function markRange(attribute: BufferAttribute, first: number, count: number): void {
   attribute.addUpdateRange(first * attribute.itemSize, count * attribute.itemSize);

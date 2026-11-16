@@ -32,7 +32,7 @@ const HEAD_MOVE_EPS = 0.25;
 /** Above every board visual's renderOrder (the ghost planet copy uses 5). */
 const PANEL_RENDER_ORDER = 10;
 const STAR_LIT = '#f0e442';
-const STAR_DIM = '#5b6170';
+const STAR_DIM = '#3a4458';
 const FORWARD: readonly [number, number, number] = [0, 0, -1];
 /** Button labels inside the header and Settings buttons (they ignore pointers). */
 const LABEL_IDS = [

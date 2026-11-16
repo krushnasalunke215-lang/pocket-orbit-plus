@@ -14,7 +14,6 @@ import {
   getAudio,
   getBoard,
   getChapter,
-  getComicWords,
   getCosmos,
   getGame,
   getHud,
@@ -29,6 +28,7 @@ import {
   getSandboxPanel,
   getSave,
   getSettings,
+  getSpaceFx,
   getVisuals,
   setOnboarding,
   setSettings,
@@ -136,8 +136,8 @@ export interface GameSnapshot {
   textures: { requested: string[]; loaded: string[]; failed: string[] };
   /** XR display quality: the foveation and target frame rate requested (null: not set). */
   display: { foveation: number | null; targetFrameRate: number | null };
-  /** Comic words showing now, and the last 16 popped (oldest first). */
-  comicWords: { active: string[]; recent: string[] };
+  /** Board light-feedback events (flyby, push, capture, solve) of the last 1.2 s, and the last 16 (oldest first). */
+  spaceFx: { active: string[]; recent: string[] };
   /** HUD world position and size (meters, from the UIKit layout) and its status line. */
   hud: { ready: boolean; position: Triple | null; size: [number, number] | null; status: string | null };
   /** The attract loop drives the comet visual (before the first interaction). */
@@ -572,7 +572,7 @@ export function installDebugApi(world: World): GameDebugApi {
         },
         textures: getCosmos(world)?.textures() ?? { requested: [], loaded: [], failed: [] },
         display: displayState(),
-        comicWords: { active: getComicWords(world)?.active() ?? [], recent: getComicWords(world)?.recent() ?? [] },
+        spaceFx: { active: getSpaceFx(world)?.active() ?? [], recent: getSpaceFx(world)?.recent() ?? [] },
         session: {
           mode: currentSessionMode(world),
           blendMode: session?.environmentBlendMode ?? null,

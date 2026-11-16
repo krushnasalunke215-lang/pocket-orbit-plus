@@ -13,7 +13,7 @@ import {
 } from '../game/state.js';
 import type { BoardPlacement } from '../game/placement.js';
 import type { CosmosMask } from '../game/cosmos-rules.js';
-import type { ComicWords } from '../render/comic-words.js';
+import type { SpaceFx } from '../render/space-fx.js';
 import type { SpaceTextureStatus } from '../render/space-textures.js';
 import type { BoardVisual, BodyVisual, CometVisual, CosmosVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
 
@@ -328,14 +328,15 @@ const KEYS = {
   hitLog: 'hitLog',
   motionClock: 'motionClock',
   cosmos: 'cosmos',
-  comicWords: 'comicWords',
+  spaceFx: 'spaceFx',
 } as const;
 
-export function setComicWords(world: World, words: ComicWords): void {
-  world.globals[KEYS.comicWords] = words;
+/** The board's light effects (SpaceFxSystem). */
+export function setSpaceFx(world: World, fx: SpaceFx): void {
+  world.globals[KEYS.spaceFx] = fx;
 }
-export function getComicWords(world: World): ComicWords | undefined {
-  return world.globals[KEYS.comicWords] as ComicWords | undefined;
+export function getSpaceFx(world: World): SpaceFx | undefined {
+  return world.globals[KEYS.spaceFx] as SpaceFx | undefined;
 }
 
 export function setCosmos(world: World, cosmos: CosmosRuntime): void {

@@ -5,7 +5,8 @@
   RimButtonSystem scales the entity by 0.1, so 10 units = 1 cm and the button
   is 6 x 3.5 cm (RIM_BUTTON_SIZE in src/game/hud-layout.ts; keep them equal).
   The kit's 44 high, 80 wide button defaults are overridden to that size.
-  Comic style: a yellow button with an ink border and a dark bold label.
+  Dark glass style: a brighter blue glass button with a thin light border
+  and a white bold label.
 -->
 <style>
   .rim-root {
@@ -24,10 +25,11 @@
     padding-bottom: 0;
     justify-content: center;
     align-items: center;
-    background-color: #ffd23f;
-    border-width: 3;
-    border-color: #101018;
-    color: #101018;
+    background-color: #3068bae0;
+    border-width: 2;
+    border-color: #b9d3f5;
+    border-radius: 8;
+    color: #ffffff;
   }
 
   .rim-label {
