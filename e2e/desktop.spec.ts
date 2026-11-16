@@ -531,11 +531,19 @@ test('settings page: every accessibility and audio button by mouse, saved over a
   await clickUi(page, 'board-size-button');
   await expect.poll(async () => (await snapshot(page)).board.radius, { timeout: 5_000 }).toBeCloseTo(radius * 1.25, 6);
 
-  // Back to the levels page; Close closes the panel (in the three-quarter
-  // desktop view the open panel covers the HUD's Levels button).
+  // Back to the levels page; the HUD's Levels button (left uncovered by the
+  // open panel in the three-quarter desktop view) closes it, then reopens
+  // it, and Close closes it.
   await clickUi(page, 'settings-back');
   await expect.poll(async () => (await snapshot(page)).levelSelect.page, { timeout: 5_000 }).toBe('levels');
   await page.waitForTimeout(300);
+  await page.screenshot({ path: screenshotPath('desktop-levels-open.png') });
+  await clickUi(page, 'levels-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(false);
+  await page.waitForTimeout(300);
+  await clickUi(page, 'levels-button');
+  await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(true);
+  await page.waitForTimeout(400);
   await clickUi(page, 'close-levels');
   await expect.poll(async () => (await snapshot(page)).levelSelect.open, { timeout: 5_000 }).toBe(false);
 

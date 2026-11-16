@@ -30,6 +30,8 @@ const UNIT_SCALE = 0.1;
 /** Level buttons in the panel (level-1 .. level-6). */
 const SLOTS = 6;
 const VOLUME_STEP = 0.1;
+/** On the desktop the open panel moves this far left (meters, its own right axis) to uncover the HUD Levels button. */
+const DESKTOP_SHIFT_LEFT = 0.15;
 /** Re-place the open panel only when the head moved this far (a poke must not chase it). */
 const HEAD_MOVE_EPS = 0.25;
 /** Above every board visual's renderOrder (the ghost planet copy uses 5). */
@@ -321,6 +323,10 @@ export class LevelSelectSystem extends createSystem({}) {
       const object = entity.object3D!;
       object.position.set(pose.position[0], pose.position[1], pose.position[2]);
       object.quaternion.set(pose.quaternion[0], pose.quaternion[1], pose.quaternion[2], pose.quaternion[3]);
+      // Desktop three-quarter view: the panel would cover the HUD's Levels
+      // button behind it; shifted left it leaves that button clickable, so
+      // a second click on Levels closes the panel as in XR.
+      if (!immersive) object.translateX(-DESKTOP_SHIFT_LEFT);
       this.placedFrom.copy(this.head);
       this.lastBoardVersion = board.version;
       this.needsPose = false;
