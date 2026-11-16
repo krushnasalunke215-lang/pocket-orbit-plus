@@ -926,6 +926,11 @@ const GROUP_RUNNERS = {
     );
     check('cosmos: Space: no mask (the room fills with space)', r.space.roomView === 'space' && r.space.visible && r.space.mask === 'none' && r.space.opacity === 1, r.space);
     check(
+      'cosmos: screenshots mid-dissolve (Space, fade between 0 and 1) and of the sun in Your Table, for the additive-sprite check over passthrough',
+      r.dissolve.fadeBefore > 0 && r.dissolve.fadeAfter < 1 && Boolean(r.dissolve.shot && r.yourTable.sunShot),
+      { dissolve: r.dissolve, sunShot: r.yourTable.sunShot },
+    );
+    check(
       'cosmos: Room: the cosmos is not drawn and costs no draw calls',
       r.room.roomView === 'room' && !r.room.visible && r.room.maxCalls < m.maxCalls,
       { room: r.room.maxCalls, mixed: m.maxCalls, visible: r.room.visible },

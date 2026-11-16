@@ -251,7 +251,11 @@ vec3 po_dither(vec3 c) {
  * (rgb / m, alpha m, m the brightest channel) so the added colour is
  * unchanged but the framebuffer alpha, which blends the frame over the
  * passthrough in mixed reality, follows the light: a glow quad written
- * with alpha 1 covers the real room with a black square.
+ * with alpha 1 covers the real room with a black square. The shader must
+ * write alpha 1 and fold any coverage or fade (vAlpha, the cosmos mask)
+ * into rgb after the colorspace include (gl_FragColor.rgb *= a), so the
+ * added light is the same as with SRC_ALPHA scaling and alpha never
+ * exceeds the light: an additive sprite can only brighten the room.
  */
 export const ADDITIVE_ALPHA_FRAGMENT = /* glsl */ `
 {

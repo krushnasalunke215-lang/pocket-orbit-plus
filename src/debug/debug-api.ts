@@ -269,6 +269,8 @@ export interface GameDebugApi {
   /** Commits placements for movable bodies (as a release would, without launching). */
   setPlacements(placements: Placements): void;
   placeBoard(): void;
+  /** Restarts the AR fade-in from the room over `seconds` (default 2.5), for mid-dissolve screenshots. */
+  replayCosmosFade(seconds?: number): void;
   /** Requests the immersive-vr (starfield) fallback session, as enterXR does without AR. */
   enterVR(): void;
   /** Viewport CSS pixels of a board point ([x, z] or [x, y, z]); null if off screen. */
@@ -725,6 +727,10 @@ export function installDebugApi(world: World): GameDebugApi {
 
     placeBoard() {
       core().board.placeBoard();
+    },
+
+    replayCosmosFade(seconds) {
+      getCosmos(world)?.replayFade(seconds);
     },
 
     enterVR() {

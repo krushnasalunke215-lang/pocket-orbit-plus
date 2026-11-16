@@ -11,7 +11,7 @@ import {
 import { VISUAL_BODY_SCALE } from '../config.js';
 import { KIND_DEFAULTS } from '../sim/bodies.js';
 import { ROLE_COLORS } from './palette.js';
-import { noRaycast } from './shaders/common.js';
+import { ADDITIVE_ALPHA_FRAGMENT, noRaycast } from './shaders/common.js';
 import type { GhostHandVisual, XYZLike } from './visual-types.js';
 
 /*
@@ -75,8 +75,10 @@ varying vec3 vView;
 void main() {
   float f = pow(1.0 - abs(dot(normalize(vNormal), normalize(vView))), 2.0);
   float alpha = (uBody + (1.0 - uBody) * f) * uOpacity;
-  gl_FragColor = vec4(uColor * (0.55 + 0.9 * f), alpha);
+  gl_FragColor = vec4(uColor * (0.55 + 0.9 * f), 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= alpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 

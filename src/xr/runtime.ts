@@ -283,8 +283,12 @@ export interface CosmosRuntime {
   mask: CosmosMask;
   /** The Mixed island window this frame (islandWindow of the board radius; wider in Your Table). */
   island: IslandWindow;
-  /** Restarts the AR fade-in from the room now ("the room dissolves into space"). */
-  replayFade(): void;
+  /**
+   * Restarts the AR fade-in from the room now ("the room dissolves into
+   * space"), over `seconds` (default COSMOS_FADE_SECONDS; tests slow it to
+   * screenshot the dissolve half-way).
+   */
+  replayFade(seconds?: number): void;
   /** Holds the AR fade at 0 (the room only) until replayFade (the director's hook shot). */
   holdFade(): void;
   /** A solved comet is rising into the sky (SkyStorySystem). */

@@ -21,6 +21,7 @@ const METHODS = new Set([
   'occlusion',
   'setOcclusion',
   'placeBoard',
+  'replayCosmosFade',
   'enterVR',
   'renderStats',
   'resetRenderStats',

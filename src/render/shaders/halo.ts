@@ -1,5 +1,6 @@
 import { AdditiveBlending, ShaderMaterial } from '@iwsdk/core';
 import {
+  ADDITIVE_ALPHA_FRAGMENT,
   OCCLUSION_FRAGMENT,
   OCCLUSION_FRAGMENT_PARS,
   OCCLUSION_VERTEX,
@@ -45,8 +46,10 @@ void main() {
   // A soft, mostly gaussian glow that reaches zero at the quad edge (subtle: it lifts, it does not bloom).
   float glow = (exp(-d * d * 5.0) - 0.0067) * 0.8 + 0.2 * pow(1.0 - d, 6.0);
   float alpha = glow * vAlpha;
-  gl_FragColor = vec4(vColor, alpha);
+  gl_FragColor = vec4(vColor, 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= alpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 

@@ -10,6 +10,7 @@ import {
   ShaderMaterial,
 } from '@iwsdk/core';
 import {
+  ADDITIVE_ALPHA_FRAGMENT,
   linkOcclusion,
   noRaycast,
   OCCLUSION_FRAGMENT,
@@ -75,8 +76,10 @@ void main() {
   float core = 1.0 - abs(vSide);
   float alpha = pow(core, 1.6) * vAlpha;
   vec3 color = mix(uColor, vec3(1.0, 0.97, 0.9), pow(core, 6.0) * 0.35);
-  gl_FragColor = vec4(color, alpha);
+  gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= alpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 

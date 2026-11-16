@@ -1,5 +1,5 @@
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Points, ShaderMaterial, Vector4 } from '@iwsdk/core';
-import { MOTION_TIME, noRaycast } from '../shaders/common.js';
+import { ADDITIVE_ALPHA_FRAGMENT, MOTION_TIME, noRaycast } from '../shaders/common.js';
 import { COSMOS_MASK_GLSL, withCosmos } from '../shaders/sky.js';
 import { mulberry32 } from './random.js';
 
@@ -46,6 +46,7 @@ void main() {
   vec3 color = vec3(0.62, 0.57, 0.5) * 0.32 * vAlpha * (1.0 - d2 * 0.6);
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 

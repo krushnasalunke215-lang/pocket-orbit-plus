@@ -33,6 +33,22 @@ import {
 
 const DEVICE = 'hand-right';
 const samePlacements = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+/** SUN_DIRECTION in src/config.ts (board frame), normalized. */
+const SUN_DIRECTION_BOARD = (() => {
+  const d = [0.74, 0.45, -0.5];
+  const l = Math.hypot(...d);
+  return d.map((x) => x / l);
+})();
+/** v rotated by the unit quaternion q ([x, y, z, w]). */
+function rotateByQuat(v, q) {
+  const [x, y, z] = v;
+  const [qx, qy, qz, qw] = q;
+  const ix = qw * x + qy * z - qz * y;
+  const iy = qw * y + qz * x - qx * z;
+  const iz = qw * z + qx * y - qy * x;
+  const iw = -qx * x - qy * y - qz * z;
+  return [ix * qw + iw * -qx + iy * -qz - iz * -qy, iy * qw + iw * -qy + iz * -qx - ix * -qz, iz * qw + iw * -qz + ix * -qy - iy * -qx];
+}
 
 async function freshLevel(index) {
   await game('loadLevel', index);
@@ -2028,6 +2044,24 @@ export async function cosmosModes({ tableHead, takeShot }) {
   await seatLook();
   s = snapshot();
   const space = { ...view(s), shot: takeShot('l1-ar-space.png') };
+  // Mid-dissolve (the video's opening): the cosmos part-way faded in over
+  // the whole room, looking up past the giant (stars, glints, belt).
+  await seatLook([c[0] - 1.5, tableHead.y + 0.9, c[2] - 3]);
+  // A slowed 10 s replay of the dissolve, so the CLI round trips land mid-way.
+  game('cosmos.traceStart', 12000);
+  game('replayCosmosFade', 10);
+  await sleep(1500);
+  // The page clock just before and just after the screenshot call brackets the captured frame.
+  const shotFrom = game('page.search').perfNow;
+  const dissolveShot = takeShot('l1-ar-space-dissolve.png');
+  const shotTo = game('page.search').perfNow;
+  const fadeTrace = game('cosmos.traceRead').value?.samples ?? [];
+  const fadeAt = (t) => {
+    const best = fadeTrace.reduce((b, x) => (b === null || Math.abs(x.t - t) < Math.abs(b.t - t) ? x : b), null);
+    return best ? round(best.fade, 3) : null;
+  };
+  const dissolve = { fadeBefore: fadeAt(shotFrom), fadeAfter: fadeAt(shotTo), shot: dissolveShot };
+  await waitFor('the dissolve replay done', () => snapshot().cosmos.fade === 1, 15_000, 500);
 
   // 4. Room: no cosmos at all.
   setRoomView('room');
@@ -2042,6 +2076,10 @@ export async function cosmosModes({ tableHead, takeShot }) {
   await seatLook();
   s = snapshot();
   const yourTable = { ...view(s), mode: s.mode, shot: takeShot('l1-ar-your-table.png') };
+  // Your Table facing the sun (its glare window is the largest additive sprite).
+  const sunDir = rotateByQuat(SUN_DIRECTION_BOARD, s.board.quaternion);
+  await seatLook([c[0] + sunDir[0] * 45, c[1] + sunDir[1] * 45, c[2] + sunDir[2] * 45]);
+  yourTable.sunShot = takeShot('l1-ar-your-table-sun.png');
   game('sandbox.exit');
   await sleep(500);
 
@@ -2075,7 +2113,7 @@ export async function cosmosModes({ tableHead, takeShot }) {
   s = snapshot();
   const vr = { ...view(s), session: s.session.mode, blendMode: s.session.blendMode, shot: takeShot('l1-vr.png') };
   await exitXR();
-  return { fade, mixed, mixedAhead, space, room, yourTable, reduced, vr };
+  return { fade, mixed, mixedAhead, space, dissolve, room, yourTable, reduced, vr };
 }
 
 /**

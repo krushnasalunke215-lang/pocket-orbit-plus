@@ -31,6 +31,7 @@ export class CosmosSystem extends createSystem({}) {
   private lastVisibility: VisibilityState = VisibilityState.NonImmersive;
   /** Real time the AR fade started (-1: none, the cosmos is fully faded in). */
   private fadeStart = -1;
+  private fadeSeconds = COSMOS_FADE_SECONDS;
   private held = false;
   private replay = false;
   private frames = 0;
@@ -53,9 +54,10 @@ export class CosmosSystem extends createSystem({}) {
       mask: 'none',
       island: islandWindow(BOARD.fallbackRadius, false),
       solveRise: false,
-      replayFade: () => {
+      replayFade: (seconds?: number) => {
         this.held = false;
         this.replay = true;
+        this.fadeSeconds = seconds !== undefined && seconds > 0 ? seconds : COSMOS_FADE_SECONDS;
       },
       holdFade: () => {
         this.held = true;
@@ -90,6 +92,7 @@ export class CosmosSystem extends createSystem({}) {
     const visibility = this.visibilityState.peek();
     if (this.lastVisibility === VisibilityState.NonImmersive && visibility !== VisibilityState.NonImmersive) {
       this.fadeStart = time;
+      this.fadeSeconds = COSMOS_FADE_SECONDS;
     }
     this.lastVisibility = visibility;
     if (this.replay) {
@@ -98,7 +101,7 @@ export class CosmosSystem extends createSystem({}) {
     }
     // Desktop whenever the page is not immersive (world.session can outlive an ended session for a frame).
     const session = visibility === VisibilityState.NonImmersive ? 'none' : currentSessionMode(this.world);
-    const fade = session !== 'immersive-ar' ? 1 : this.held ? 0 : this.fadeStart < 0 ? 1 : Math.min(1, (time - this.fadeStart) / COSMOS_FADE_SECONDS);
+    const fade = session !== 'immersive-ar' ? 1 : this.held ? 0 : this.fadeStart < 0 ? 1 : Math.min(1, (time - this.fadeStart) / this.fadeSeconds);
     const settings = getSettings(this.world);
     const state = cosmosOpacity({ session, roomView: settings.roomView, sandbox: game.mode === 'sandbox', fade01: fade });
     COSMOS_UNIFORMS.uCosmosOpacity.value = state.opacity;

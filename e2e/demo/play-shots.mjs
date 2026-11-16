@@ -3,7 +3,7 @@
 // fails on a director error or a console error. Shot 6 switches the
 // emulator to metaVRGlasses (iwsdk.config.json; Vite restarts in place) and
 // back. A frame of each shot (at its key moment) goes to
-// .agents/tasks/screenshots/cosmos-real/demo-shot-N.png; the summary to
+// .agents/tasks/screenshots/final-fix/demo-shot-N.png; the summary to
 // test-results/demo-shots-summary.json. The runtime is always stopped.
 // Usage: npm run demo:shots
 //        node e2e/demo/play-shots.mjs --only=1,6

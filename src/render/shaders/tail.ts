@@ -65,8 +65,10 @@ void main() {
   float alpha = exp(-d * d * 3.5) * pow(1.0 - vLife, 1.6) * 0.55 * uOpacity * vFade;
   vec3 color = mix(uHot, uGold, smoothstep(0.0, 0.25, vLife));
   color = mix(color, uDust, smoothstep(0.25, 0.9, vLife));
-  gl_FragColor = vec4(po_grade(color), alpha);
+  gl_FragColor = vec4(po_grade(color), 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= alpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 

@@ -1,5 +1,5 @@
 import { AdditiveBlending, DoubleSide, ShaderMaterial, type IUniform, type Vector3 } from '@iwsdk/core';
-import { GRADE_GLSL, MOTION_TIME, NOISE_GLSL, SHARED_TIME, SPACE_MAPS, SPACE_READY, SUN_DIR_W } from './common.js';
+import { ADDITIVE_ALPHA_FRAGMENT, GRADE_GLSL, MOTION_TIME, NOISE_GLSL, SHARED_TIME, SPACE_MAPS, SPACE_READY, SUN_DIR_W } from './common.js';
 import { COSMOS_MASK_GLSL, withCosmos } from './sky.js';
 
 /*
@@ -352,8 +352,10 @@ void main() {
   float d2 = dot(c, c) * 4.0;
   if (d2 > 1.0) discard;
   float falloff = exp(-d2 * 3.2);
-  gl_FragColor = vec4(po_grade(vColor * falloff), vAlpha);
+  gl_FragColor = vec4(po_grade(vColor * falloff), 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= vAlpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 
@@ -417,8 +419,10 @@ void main() {
   float core = exp(-r * r * 90.0) * 0.9 + exp(-r * 14.0) * 0.12;
   float spikes = po_spike(vUv.y, a.x, 0.012) + po_spike(vUv.x, a.y, 0.012);
   vec3 color = vColor * (core + spikes * 0.55 * vSpike);
-  gl_FragColor = vec4(po_grade(color), vAlpha);
+  gl_FragColor = vec4(po_grade(color), 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= vAlpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 
@@ -487,8 +491,10 @@ void main() {
   vec3 warm = vec3(1.0, 0.78, 0.52);
   vec3 color = (vec3(1.0, 0.97, 0.92) * core * 9.0 + warm * (glow + burst + glare)) * window;
   // No dither on an additive sprite: noise would add up into a visible square.
-  gl_FragColor = vec4(po_grade(color), vAlpha);
+  gl_FragColor = vec4(po_grade(color), 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= vAlpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 
@@ -554,8 +560,10 @@ void main() {
   vec3 cool = vec3(0.55, 0.62, 0.8) * point * 0.35;
   vec3 warm = vec3(1.0, 0.93, 0.8) * (point * 2.2 + glow + glint * 0.5);
   vec3 color = mix(cool, warm, vLit);
-  gl_FragColor = vec4(po_grade(color), vAlpha);
+  gl_FragColor = vec4(po_grade(color), 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= vAlpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 
@@ -612,8 +620,10 @@ void main() {
   float pixels = 2.0 / max(fwidth(vSide), 1e-4);
   float line = (1.0 - smoothstep(0.3, 1.0, s)) * clamp(pixels / 1.5, 0.0, 1.0);
   vec3 color = vec3(0.62, 0.72, 0.95) * 0.45 * line;
-  gl_FragColor = vec4(po_grade(color), vAlpha);
+  gl_FragColor = vec4(po_grade(color), 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= vAlpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 
@@ -670,8 +680,10 @@ varying float vAlpha;
 void main() {
   float core = 1.0 - abs(vSide);
   vec3 color = mix(vec3(1.0, 0.8, 0.35), vec3(1.0), pow(core, 3.0));
-  gl_FragColor = vec4(color, vAlpha * core * vAlong);
+  gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= vAlpha * core * vAlong;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 

@@ -1,5 +1,6 @@
 import { AdditiveBlending, ShaderMaterial } from '@iwsdk/core';
 import {
+  ADDITIVE_ALPHA_FRAGMENT,
   OCCLUSION_FRAGMENT,
   OCCLUSION_FRAGMENT_PARS,
   OCCLUSION_VERTEX,
@@ -89,8 +90,10 @@ void main() {
     line *= step(0.6, fract(a * 40.0));
   }
   float alpha = (line + well + ripples) * vAlpha * (1.0 - smoothstep(0.96, 1.0, vBoardR));
-  gl_FragColor = vec4(vColor, alpha);
+  gl_FragColor = vec4(vColor, 1.0);
   #include <colorspace_fragment>
+  gl_FragColor.rgb *= alpha;
+  ${ADDITIVE_ALPHA_FRAGMENT}
 }
 `;
 
