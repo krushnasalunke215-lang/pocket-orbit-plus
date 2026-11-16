@@ -234,6 +234,15 @@ const GROUP_RUNNERS = {
     await sleep(300);
     const targets = xr('list-targets').targets.map((t) => t.name);
     check("'launch-button' is a run-sequence target", targets.includes('launch-button'), targets);
+    // Bring the fingertip 3 cm in front of the button first, as a finger
+    // does. A press straight from the resting hand made contact but no click
+    // since the cosmos layers (IWER warns "the hand passes through
+    // hud-panel"); reached from the front, the same press clicks.
+    xr('run-sequence', {
+      device: 'hand-right',
+      steps: [{ label: 'reach launch', target: 'launch-button', anchor: 'index-tip', approach: { distance: 0.03 } }],
+    }, { timeoutMs: 60_000 });
+    await sleep(300);
     game('resetRenderStats');
     const attempts = game('watchLaunch.start').value.base;
     const press = xr('run-sequence', {
