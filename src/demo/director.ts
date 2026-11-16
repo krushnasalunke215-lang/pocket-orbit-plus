@@ -68,8 +68,8 @@ declare global {
 const TABLE_HEAD: Triple = [0, 1.15, -1.2];
 /** The top of the cup on that coffee table (see e2e/iwer/verify-iwer.mjs). */
 const CUP_TOP: Triple = [0.08, 0.587, -1.78];
-/** The camera of the Quest shots, from the board center: 0.69 m away, 44 degrees down. */
-const CLOSE_HEAD: Triple = [0, 0.48, 0.5];
+/** The camera of the Quest shots, from the board center: 0.57 m away, 45 degrees down (the bodies read larger on video). */
+const CLOSE_HEAD: Triple = [0, 0.4, 0.4];
 /** It looks a little beyond the center, so the HUD above the far rim stays in frame. */
 const CLOSE_LOOK: Triple = [0, 0.04, -0.08];
 /** Shot 5 leans right and down during the flight, so the cup occludes the comet. */
@@ -477,14 +477,21 @@ const SHOTS: readonly Shot[] = [
       getCosmos(d.world)?.holdFade();
     },
     async run(d) {
+      // A moment on the real room.
+      d.beat('the room');
+      await sleep(800);
+      // The head holds still while the room dissolves into space (2.5 s):
+      // the stars appear around the table.
       d.beat('the room dissolves into space');
       getCosmos(d.world)?.replayFade();
-      // The head turns slowly toward the giant planet while the room
-      // dissolves (2.5 s), then back down to the table.
+      await sleep(2600);
+      // Then it rises slowly (IWER's minimum-jerk easing) until the giant
+      // planet fills the view, holds, and eases back down over the board.
+      d.beat('the giant planet rises into view');
       const giant = d.cosmosPoint(GIANT_POSITION);
       await d.remote.move('headset', d.head, lookRotation(d.head, giant), 2.8);
-      await sleep(900);
-      await d.seatSmoothly(1.8);
+      await sleep(1000);
+      await d.seatSmoothly(2);
       // The hands rest relative to the new pose, as after seat() in the other shots.
       await d.handsDown();
       await sleep(500);
