@@ -88,6 +88,11 @@ function isChapterEnd(game: GameController): boolean {
  * chapter's first level) replaces Launch and Next. Every click counts as
  * the first interaction (it ends the attract loop).
  */
+/** The HUD's buttons: the only elements that take pointers (the panel root takes none). */
+const HUD_BUTTON_IDS = ['levels-button', 'launch-button', 'next-button', 'play-again-button', 'xr-button'] as const;
+/** Their labels, which ignore pointers so a press lands on the button itself. */
+const HUD_LABEL_IDS = ['levels-label', 'launch-label', 'next-label', 'play-again-label', 'xr-label'] as const;
+
 export class HudSystem extends createSystem({}) {
   private entity: Entity | null = null;
   private elements: HudElements | null = null;
@@ -122,6 +127,16 @@ export class HudSystem extends createSystem({}) {
     panel.requireElementById<UIKit.Text>('title-text').setProperties({ text: APP_NAME });
 
     const element = (id: string) => panel.requireElementById<UIKit.Text>(id);
+    // Only the buttons take pointers: the panel root (the dark glass), the
+    // texts and the button labels take none (pointerEvents is inherited, so
+    // the buttons turn it back on and their labels off again, as in the
+    // level select), so a fingertip press can only go down and up on a
+    // button itself, never on the glass beside it. (The IWER direct poke
+    // that made contact without a click was the touch pointer's 800 ms
+    // click window, see poke-input.ts; the glass was not the cause.)
+    element('hud-root').setProperties({ pointerEvents: 'none' });
+    for (const id of HUD_BUTTON_IDS) element(id).setProperties({ pointerEvents: 'auto' });
+    for (const id of HUD_LABEL_IDS) element(id).setProperties({ pointerEvents: 'none' });
     const onClick = (id: string, action: () => void) => {
       const target = element(id);
       // Clicks are ignored while paused (XR blurred or hidden, page hidden),

@@ -14,6 +14,10 @@
   panel border is 2 and its padding 1 more than before, so the size holds.
   Translucent colours are 8-digit hex (#rrggbbaa) in every panel: UIKit
   converts hex from sRGB, but takes rgba() channels as linear (too light).
+  HudSystem makes only the buttons take pointers (hud-root, the texts and
+  the button labels take none, as in the level select), so a fingertip
+  press goes down and up on the button itself: down on a label and up on
+  its button (a press that slides off the label) is no click.
 -->
 <style>
   .hud-root {
@@ -109,13 +113,13 @@
     line-height: 1.2;
   }
 </style>
-<Panel class="hud-root">
+<Panel id="hud-root" class="hud-root">
   <div class="title-row">
     <div class="title-badge">
       <div id="title-text" class="title">-</div>
     </div>
     <Button id="levels-button" class="levels-button">
-      <ButtonLabel class="levels-label">Levels</ButtonLabel>
+      <ButtonLabel id="levels-label" class="levels-label">Levels</ButtonLabel>
     </Button>
   </div>
   <div id="level-text" class="info">-</div>
@@ -125,10 +129,10 @@
       <ButtonLabel id="launch-label" class="button-label">Launch</ButtonLabel>
     </Button>
     <Button id="next-button" class="button" style="display: none">
-      <ButtonLabel class="button-label">Next</ButtonLabel>
+      <ButtonLabel id="next-label" class="button-label">Next</ButtonLabel>
     </Button>
     <Button id="play-again-button" class="button" style="display: none">
-      <ButtonLabel class="button-label">Play again</ButtonLabel>
+      <ButtonLabel id="play-again-label" class="button-label">Play again</ButtonLabel>
     </Button>
     <Button id="xr-button" class="xr-button" style="display: none">
       <ButtonLabel id="xr-label" class="button-label">Enter AR</ButtonLabel>

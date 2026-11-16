@@ -274,6 +274,12 @@ export interface GameDebugApi {
   placeBoard(): void;
   /** Restarts the AR fade-in from the room over `seconds` (default 2.5), for mid-dissolve screenshots. */
   replayCosmosFade(seconds?: number): void;
+  /** Starts logging pointer events (enter, leave, down, up, click, cancel) on these UI element ids (clears the log). */
+  uiEventsStart(ids: string[]): void;
+  /** The UI pointer events logged since uiEventsStart (ms since the start, at most 200). */
+  uiEventsRead(): { id: string; type: string; pointer: string | null; t: number }[];
+  /** IWSDK's per-hand pointer arbitration: the active pointer kind and each kind's state (disabled, normal, hover, select). */
+  xrPointers(): Record<'left' | 'right', { active: string | null; states: Record<string, string> } | null>;
   /** Requests the immersive-vr (starfield) fallback session, as enterXR does without AR. */
   enterVR(): void;
   /** Viewport CSS pixels of a board point ([x, z] or [x, y, z]); null if off screen. */
@@ -395,6 +401,8 @@ export function installDebugApi(world: World): GameDebugApi {
     };
   };
 
+  const uiEventLog: { id: string; type: string; pointer: string | null; t: number }[] = [];
+  const uiEventOffs: (() => void)[] = [];
   /** A HUD, near-rim button or level-select element by id. */
   const uiElement = (elementId: string) =>
     getHud(world)?.panel.getElementById(elementId) ??
@@ -735,6 +743,39 @@ export function installDebugApi(world: World): GameDebugApi {
 
     replayCosmosFade(seconds) {
       getCosmos(world)?.replayFade(seconds);
+    },
+
+    uiEventsStart(ids) {
+      uiEventLog.length = 0;
+      for (const off of uiEventOffs) off();
+      uiEventOffs.length = 0;
+      const started = performance.now();
+      for (const id of ids) {
+        const el = uiElement(id) as unknown as {
+          addEventListener(type: string, fn: (e: { pointerType?: string; object?: { name?: string }; timeStamp?: number }) => void): void;
+          removeEventListener(type: string, fn: (e: unknown) => void): void;
+        } | undefined;
+        if (!el) continue;
+        for (const type of ['pointerenter', 'pointerleave', 'pointerdown', 'pointerup', 'click', 'pointercancel']) {
+          const fn = (e: { pointerType?: string; object?: { name?: string } }) => {
+            if (uiEventLog.length < 200) uiEventLog.push({ id, type, pointer: e.pointerType ?? null, t: Math.round(performance.now() - started) });
+          };
+          el.addEventListener(type, fn);
+          uiEventOffs.push(() => el.removeEventListener(type, fn as (e: unknown) => void));
+        }
+      }
+    },
+
+    uiEventsRead() {
+      return uiEventLog.slice();
+    },
+
+    xrPointers() {
+      type Arbiter = { getActiveKind(): string | null; pointerStates?: Map<string, string> };
+      const pointers = (world.input as unknown as { multiPointers?: Record<'left' | 'right', Arbiter> }).multiPointers;
+      const read = (mp: Arbiter | undefined) =>
+        mp ? { active: mp.getActiveKind(), states: Object.fromEntries(mp.pointerStates ?? new Map<string, string>()) } : null;
+      return { left: read(pointers?.left), right: read(pointers?.right) };
     },
 
     enterVR() {

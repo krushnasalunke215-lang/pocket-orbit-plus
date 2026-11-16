@@ -238,16 +238,49 @@ const GROUP_RUNNERS = {
     await sleep(300);
     const targets = xr('list-targets').targets.map((t) => t.name);
     check("'launch-button' is a run-sequence target", targets.includes('launch-button'), targets);
-    // Bring the fingertip 3 cm in front of the button first, as a finger
-    // does. A press straight from the resting hand made contact but no click
-    // since the cosmos layers (IWER warns "the hand passes through
-    // hud-panel"); reached from the front, the same press clicks.
+
+    // A. A press straight from wherever the hand is (after hand-solve: where
+    // the ray drag left it), with no front approach, so the fingertip may
+    // cross the panel plane beside the button first. The HUD root takes no
+    // pointer, so the press can only land on Launch.
+    const pointersBefore = game('xrPointers').value;
+    const handBefore = xr('get-transform', { device: 'hand-right' });
+    game('uiEventsStart', ['launch-button', 'next-button', 'levels-button', 'rim-launch-button']);
+    const directBase = game('watchLaunch.start').value.base;
+    const directPress = xr('run-sequence', {
+      device: 'hand-right',
+      steps: [{ label: 'poke launch from rest', target: 'launch-button', press: { hold: 0.05, retract: 0.05 } }],
+    }, { timeoutMs: 60_000 });
+    const direct = snapshot();
+    const directWatch = game('watchLaunch.read').value;
+    const pointersAfter = game('xrPointers').value;
+    const uiEvents = game('uiEventsRead').value;
+    summary.data.pokeDirect = {
+      uiEvents,
+      phase: direct.phase,
+      attempts: direct.attempts,
+      launched: directWatch?.launchedAt != null,
+      pointersBefore,
+      pointersAfter,
+      handBefore,
+      events: directPress.events,
+      presses: directPress.presses,
+    };
+    check(
+      'poke on Launch straight from the resting hand (no front approach) starts a flight',
+      direct.attempts === directBase + 1 && ['flying', 'solved', 'failed'].includes(direct.phase) && directWatch?.launchedAt != null,
+      { phase: direct.phase, attempts: direct.attempts, base: directBase, contactMs: directPress.presses?.[0]?.contactMs ?? null, events: directPress.events },
+    );
+    await waitFor('the direct-poke flight to end', () => snapshot().phase !== 'flying', 60_000, 300).catch(() => null);
+
+    // B. The same press reached from 3 cm in front of the button, as a finger usually comes.
     xr('run-sequence', {
       device: 'hand-right',
       steps: [{ label: 'reach launch', target: 'launch-button', anchor: 'index-tip', approach: { distance: 0.03 } }],
     }, { timeoutMs: 60_000 });
     await sleep(300);
     game('resetRenderStats');
+    game('uiEventsStart', ['launch-button', 'next-button', 'levels-button', 'rim-launch-button']);
     const attempts = game('watchLaunch.start').value.base;
     const press = xr('run-sequence', {
       device: 'hand-right',
@@ -263,6 +296,7 @@ const GROUP_RUNNERS = {
     const launchAfterContactMs = watch?.launchedAt != null ? Math.round(watch.launchedAt - contactPerf) : null;
     const launchAfterPressEndMs = watch?.launchedAt != null ? Math.round(watch.launchedAt - press.steps[0].endPerf) : null;
     summary.data.poke = {
+      uiEvents: game('uiEventsRead').value,
       phase: poked.phase,
       attempts: poked.attempts,
       flightTime: round(poked.flightTime, 3),

@@ -19,6 +19,7 @@ import { GameAudioSystem } from './xr/game-audio-system.js';
 import { GameSystem } from './xr/game-system.js';
 import { installDisplayQuality } from './xr/display-quality.js';
 import { installLocalHandVisuals } from './xr/hand-visuals.js';
+import { installPokeClickWindow } from './xr/poke-input.js';
 import { HudSystem } from './xr/hud-system.js';
 import { LevelSelectSystem } from './xr/level-select-system.js';
 import { LifecycleSystem } from './xr/lifecycle-system.js';
@@ -38,6 +39,8 @@ async function main(): Promise<void> {
   // Before any system and any XR session, so hand models never load from the CDN.
   installLocalHandVisuals(world);
   installDisplayQuality(world);
+  // Slow fingertip presses (down and up on the same button within 2 s) still click.
+  installPokeClickWindow(world);
 
   // Director mode (?demo=1, dev builds only; see VIDEO.md): plays the
   // trailer shots in IWER. It starts from a fresh game and saves nothing,
