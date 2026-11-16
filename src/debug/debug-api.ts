@@ -165,6 +165,8 @@ export interface GameSnapshot {
     size: [number, number] | null;
     /** The page shown: 'levels' or 'settings'. */
     page: string;
+    /** The Settings page shows the Room view button (immersive-ar only). */
+    roomViewShown: boolean;
   };
   /** The chapter-complete moment; the constellation's height (board units) and ring turn (rad) this frame. */
   chapterComplete: { shown: boolean; chapter: number; stars: number; maxStars: number; starHeight: number; starSpin: number };
@@ -630,6 +632,7 @@ export function installDebugApi(world: World): GameDebugApi {
           position: levelSelect ? triple(levelSelect.entity.object3D!.getWorldPosition(v)) : null,
           size: panelSize(levelSelect),
           page: levelSelect?.page ?? 'levels',
+          roomViewShown: levelSelect?.roomViewShown ?? false,
         },
         chapterComplete: {
           shown: chapter?.shown ?? false,

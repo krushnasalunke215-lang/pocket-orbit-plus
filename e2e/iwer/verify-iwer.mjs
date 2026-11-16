@@ -872,6 +872,7 @@ const GROUP_RUNNERS = {
       Array.isArray(r.panel.size) && r.panel.size[0] <= 0.461 && r.panel.size[1] <= 0.28,
       { size: r.panel.size && round(r.panel.size), position: r.panel.position && round(r.panel.position) },
     );
+    check('accessibility: the Room view button shows in the mixed-reality (immersive-ar) session', c.roomViewShown === true, { roomViewShown: c.roomViewShown });
     check(
       "accessibility: a fingertip poke on 'left-handed-button' turns left-handed on and mirrors the ghost hand",
       c.settings.leftHanded === true && c.ghostHandLeft === true,
@@ -972,6 +973,11 @@ const GROUP_RUNNERS = {
       'cosmos: Room: the cosmos is not drawn and costs no draw calls',
       r.room.roomView === 'room' && !r.room.visible && r.room.maxCalls < m.maxCalls,
       { room: r.room.maxCalls, mixed: m.maxCalls, visible: r.room.visible },
+    );
+    check(
+      'cosmos: Room view solve: no comet rise into the hidden sky; a board flash at the target instead (spaceFx star)',
+      r.room.solve.solved && !r.room.solve.riseSeen && r.room.solve.recent.includes('star'),
+      r.room.solve,
     );
     check(
       'cosmos: Your Table over passthrough: opacity at most 0.45 with the island mask and a wider window than Mixed',

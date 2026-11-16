@@ -19,7 +19,8 @@
   reduced motion, board size) and the audio settings (mute, volume, quiet).
   Each toggle's label shows its state ("...: on" / "...: off"); Board
   cycles small, medium and large. Room view (header, beside Back, so the
-  page keeps its size) cycles Mixed, Space and Room. Back returns to the
+  page keeps its size) cycles Mixed, Space and Room; the system shows it
+  only in a mixed-reality (immersive-ar) session. Back returns to the
   levels page. The last row credits the planet and Milky Way maps (their
   CC BY 4.0 licence asks for it); the page stays inside LEVEL_SELECT_SIZE.
 

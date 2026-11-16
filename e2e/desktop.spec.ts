@@ -493,8 +493,10 @@ test('settings page: every accessibility and audio button by mouse, saved over a
   await clickUi(page, 'volume-up');
   await clickUi(page, 'quiet-button');
   await expect.poll(async () => (await audioState(page)).volume, { timeout: 5_000 }).toBeCloseTo(0.9, 6);
-  // Room view cycles Mixed (the default), Space, Room; the desktop cosmos stays fully shown.
-  await clickUi(page, 'room-view-button');
+  // Room view only applies in mixed reality: no button on the desktop. Set
+  // through the settings API, it still saves; the desktop cosmos stays fully shown.
+  expect((await snapshot(page)).levelSelect.roomViewShown).toBe(false);
+  await page.evaluate(() => window.__game!.audio.setSettings({ roomView: 'space' }));
   await expect.poll(async () => (await a11y()).settings.roomView, { timeout: 5_000 }).toBe('space');
   expect((await snapshot(page)).cosmos).toMatchObject({ visible: true, opacity: 1, mask: 'none', roomView: 'space' });
   const on = await snapshot(page);

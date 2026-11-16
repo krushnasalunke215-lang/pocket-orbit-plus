@@ -33,7 +33,7 @@ import {
  * board plane (the Meta VR Glasses fit).
  */
 
-export type SpaceFxEvent = 'flyby' | 'push' | 'capture' | 'solve';
+export type SpaceFxEvent = 'flyby' | 'push' | 'capture' | 'solve' | 'star';
 
 export const SPACE_FX_PATTERN = { flash: 0, shell: 1, rays: 2 } as const;
 
@@ -163,7 +163,7 @@ export function createSpaceFx(): SpaceFx {
   const sizes = new Float32Array(SLOTS);
   const history: SpaceFxEvent[] = [];
   /** Seconds since each event last happened. */
-  const since: Record<SpaceFxEvent, number> = { flyby: Infinity, push: Infinity, capture: Infinity, solve: Infinity };
+  const since: Record<SpaceFxEvent, number> = { flyby: Infinity, push: Infinity, capture: Infinity, solve: Infinity, star: Infinity };
   let reduced = false;
   let next = 0;
 

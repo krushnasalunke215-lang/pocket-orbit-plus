@@ -250,6 +250,8 @@ export interface LevelSelectRuntime {
   readonly buttonIds: readonly string[];
   /** Stars each level button shows (0 = no stars line), in level order. */
   readonly shownStars: number[];
+  /** The Settings page shows Room view (only in a mixed-reality session, the only place it applies). */
+  roomViewShown: boolean;
   show(): void;
   hide(): void;
 }

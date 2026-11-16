@@ -11,6 +11,8 @@ import {
   getGame,
   getPause,
   getSettings,
+  getSpaceFx,
+  getVisuals,
   onChapterComplete,
   type CosmosRuntime,
 } from './runtime.js';
@@ -21,6 +23,14 @@ const RISE_SECONDS = 1.4;
 const RISE_HEIGHT = 5;
 /** The chapter whose constellation hangs in the sky. */
 const CHAPTER = 1;
+/**
+ * Room view Room (the sky is not drawn): no rise; this long after the solve
+ * a soft flash at the target star stands in for the star lighting in the sky.
+ */
+const ROOM_FLASH_DELAY = 0.9;
+/** Its size (board units) and colour (a cool star white). */
+const ROOM_FLASH_SIZE = 0.3;
+const ROOM_FLASH_COLOR = 0xd6e4ff;
 /** Which big planet answers each arpeggio note (the chord pulses them all). */
 const CHIME_ORDER = [COSMOS_PLANET.giant, COSMOS_PLANET.green, COSMOS_PLANET.skyBlue, COSMOS_PLANET.moon];
 
@@ -35,7 +45,10 @@ const smoothstep = (a: number, b: number, x: number): number => {
  *   visual-only CometOverride, 1.4 s, ease-in, fading out at the top), then
  *   that level's star in the chapter constellation lights with a flash; any
  *   phase change, level load or the chapter moment ends it at once. With
- *   reduced motion there is no flight: the star fades in.
+ *   reduced motion there is no flight: the star fades in. When the cosmos
+ *   is not drawn (Room view Room in mixed reality) there is no rise into
+ *   it either: the star lights unseen and, 0.9 s after the solve, a soft
+ *   flash at the target star on the board takes its place.
  *   The lit stars and their links (consecutive solved levels) are rebuilt
  *   from the saved solved levels, so a reload shows the same constellation.
  *   At chapter complete the links draw in order over 1.2 s (all at once
@@ -62,6 +75,9 @@ export class SkyStorySystem extends createSystem({}) {
   private chimes: number[] = [];
   private chimeClock = 0;
   private chimeNext = 0;
+  /** Seconds until the Room view board flash (-1: none pending). */
+  private roomFlashIn = -1;
+  private readonly flashAt = [0, 0, 0];
 
   init(): void {
     this.cosmos = getCosmos(this.world);
@@ -125,6 +141,10 @@ export class SkyStorySystem extends createSystem({}) {
       override.alpha = 0;
     }
     cosmos.solveRise = this.riseStar >= 0;
+    if (this.roomFlashIn >= 0) {
+      this.roomFlashIn -= dt;
+      if (this.roomFlashIn < 0) this.roomFlash();
+    }
 
     if (this.chimeNext < this.chimes.length) {
       this.chimeClock += dt;
@@ -154,6 +174,12 @@ export class SkyStorySystem extends createSystem({}) {
   private startRise(game: GameController, reduced: boolean): void {
     const index = this.starIndex(game);
     if (index < 0) return;
+    if (this.cosmos && !this.cosmos.visible) {
+      // No sky to rise into: the star lights unseen, the board flashes instead.
+      this.cosmos.visual.constellation.setLit(index, true, true);
+      this.roomFlashIn = ROOM_FLASH_DELAY;
+      return;
+    }
     if (reduced) {
       // No flight: the star fades in.
       this.cosmos?.visual.constellation.setLit(index, true, false);
@@ -172,7 +198,18 @@ export class SkyStorySystem extends createSystem({}) {
       this.dirty = true;
     }
     this.riseDone = false;
+    this.roomFlashIn = -1;
     if (this.cosmos) this.cosmos.solveRise = false;
+  }
+
+  /** The Room view stand-in for the star lighting in the sky: a soft flash at the target star. */
+  private roomFlash(): void {
+    const fx = getSpaceFx(this.world);
+    const target = getVisuals(this.world)?.target;
+    if (!fx || !target) return;
+    target.starPose(this.flashAt);
+    fx.note('star');
+    fx.flash(this.flashAt[0], this.flashAt[1], this.flashAt[2], ROOM_FLASH_SIZE, ROOM_FLASH_COLOR);
   }
 
   /** Lights the solved levels' stars (instantly on the first build) and links consecutive ones (event-time only). */

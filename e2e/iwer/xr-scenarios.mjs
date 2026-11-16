@@ -1490,6 +1490,8 @@ export async function accessibilitySettings({ tableHead, takeShot }) {
   let s = snapshot();
   const clicked = {
     page,
+    // Room view applies in mixed reality: its button shows in this AR session.
+    roomViewShown: s.levelSelect.roomViewShown,
     openHovered: openClick.hovered,
     settingsContactMs: settingsPress.contactMs,
     leftContactMs: leftPress.contactMs,
@@ -2071,6 +2073,26 @@ export async function cosmosModes({ tableHead, takeShot }) {
   await seatLook();
   s = snapshot();
   const room = { ...view(s), maxCalls: await sampleCalls(), shot: takeShot('l1-ar-room.png') };
+  // A solve with the sky hidden: no comet rise, a board flash at the target instead.
+  const solution = game('levels').value[0].solution;
+  game('setPlacements', solution);
+  game('launch');
+  const riseSeen = [];
+  const solvedRoom = await waitFor('level 1 solved in Room view', () => {
+    const x = snapshot();
+    riseSeen.push(x.sky.solveRiseActive);
+    return x.solved ? x : null;
+  }, 60_000, 200).catch(() => null);
+  await sleep(1600);
+  const afterRoom = snapshot();
+  room.solve = {
+    solved: Boolean(solvedRoom),
+    riseSeen: riseSeen.some(Boolean) || afterRoom.sky.solveRiseActive,
+    recent: afterRoom.spaceFx.recent,
+    litStars: afterRoom.sky.litStars,
+  };
+  await game('loadLevel', 0);
+  await sleep(400);
 
   // 5. Your Table (Mixed): capped opacity, island mask.
   setRoomView('mixed');

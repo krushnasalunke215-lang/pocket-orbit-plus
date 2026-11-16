@@ -159,10 +159,13 @@ and let the bells play on their own where the script says so.
 | 1:26-1:47 | 5 | "Your Table mode turns real things into gravity. Aim at a cup and pinch: now it pulls the comet. Depth sensing keeps the cup in front of the comet when it passes behind." | "Depth occlusion" during the replay |
 | 1:47-2:03 | 6 | "Built for Meta VR Glasses too: look at a planet, pinch anywhere, and move it. Every button works by gaze." | "Meta VR Glasses view (emulated)" |
 | 2:03-2:25 | 7 | "Left-handed, high contrast, reduced motion, three board sizes, and how much of your room turns to space, all from the Settings page." | |
-| 2:25-2:34 | end card | "Built with the Immersive Web SDK. Play it in your Quest browser." | "Built with IWSDK", "N automated tests, solver-verified levels" (take N from `npm test` and `npm run verify:iwer`), then the URL: https://krushnasalunke215-lang.github.io/pocket-orbit-plus/ |
+| 2:25-2:34 | end card | "Built with the Immersive Web SDK. Play it in your Quest browser." | "Built with IWSDK", "N automated tests, solver-verified levels" (take N from `npm test` and `npm run verify:iwer`), then the URL: https://krushnasalunke215-lang.github.io/pocket-orbit-plus/, and in small type at the bottom the credit "Planet and Milky Way textures: Solar System Scope, CC BY 4.0, solarsystemscope.com/textures" |
 
 For the end card, freeze the last frame of shot 4 (the constellation) or
-shot 7 and put the text over it. Keep each caption on screen while its line
+shot 7 and put the text over it. The texture credit is required: the CC BY
+4.0 licence asks for attribution wherever the textures appear, and they
+are in every shot (director mode renders no end card of its own, so the
+credit goes on in the editor). Keep each caption on screen while its line
 is spoken; split lines longer than about 40 characters into two.
 
 Then export at 1080p, 30 or 60 fps, check that it is under 3:00, and upload

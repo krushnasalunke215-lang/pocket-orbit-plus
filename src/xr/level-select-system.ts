@@ -12,6 +12,7 @@ import { levelSelectPose } from '../game/hud-layout.js';
 import { graphicsLabel, nextGraphicsTier } from '../game/quality-rules.js';
 import { BOARD_SIZES, ROOM_VIEWS } from '../game/state.js';
 import { graphicsState, saveGraphicsTier } from './graphics-quality.js';
+import { currentSessionMode } from './session.js';
 import {
   getBoard,
   getGame,
@@ -71,7 +72,8 @@ interface SlotElements {
  * High / Low profile, applied on the next reload) and Settings, which
  * switches the panel to its settings page: left-handed, high contrast,
  * reduced motion, board size, Room view (how much of the real room the
- * cosmos covers in mixed reality), and the audio settings (mute, volume, quiet).
+ * cosmos covers in mixed reality; shown only in an immersive-ar session, the
+ * only place it changes anything), and the audio settings (mute, volume, quiet).
  * They edit the runtime AppSettings that SaveSystem persists and the other
  * systems apply; Back returns to the levels. Hidden by default; the HUD
  * Levels button opens it on the levels page (show()) and closes it from
@@ -93,6 +95,7 @@ export class LevelSelectSystem extends createSystem({}) {
   private motionLabel: UIKit.Text | null = null;
   private boardSizeLabel: UIKit.Text | null = null;
   private roomViewLabel: UIKit.Text | null = null;
+  private roomViewButton: UIKit.Text | null = null;
   private graphicsLabel: UIKit.Text | null = null;
   private levelsPage: UIKit.Text | null = null;
   private settingsPage: UIKit.Text | null = null;
@@ -186,6 +189,7 @@ export class LevelSelectSystem extends createSystem({}) {
     this.motionLabel = element('motion-label');
     this.boardSizeLabel = element('board-size-label');
     this.roomViewLabel = element('room-view-label');
+    this.roomViewButton = element('room-view-button');
     this.graphicsLabel = element('graphics-label');
     this.refreshGraphicsLabel();
     this.levelsPage = element('levels-page');
@@ -199,6 +203,7 @@ export class LevelSelectSystem extends createSystem({}) {
       page: 'levels',
       buttonIds,
       shownStars: buttonIds.map(() => 0),
+      roomViewShown: true,
       show: () => this.show(),
       hide: () => this.hide(),
     };
@@ -303,6 +308,12 @@ export class LevelSelectSystem extends createSystem({}) {
 
     // Viewer position: the XR head, or the desktop camera (as HudSystem).
     const immersive = this.visibilityState.peek() !== VisibilityState.NonImmersive;
+    // Room view only changes anything over passthrough: hidden on the desktop and in VR.
+    const ar = immersive && currentSessionMode(this.world) === 'immersive-ar';
+    if (ar !== runtime.roomViewShown) {
+      this.roomViewButton?.setProperties({ display: ar ? 'flex' : 'none' });
+      runtime.roomViewShown = ar;
+    }
     if (immersive) this.player.head.getWorldPosition(this.head);
     else this.camera.getWorldPosition(this.head);
     if (this.needsPose || board.version !== this.lastBoardVersion || this.head.distanceTo(this.placedFrom) > HEAD_MOVE_EPS) {
