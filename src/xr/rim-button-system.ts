@@ -9,7 +9,7 @@ import {
   type UIKit,
   type UIKitMLAsset,
 } from '@iwsdk/core';
-import { rimButtonPose } from '../game/hud-layout.js';
+import { RIM_BUTTON_SIZE, rimButtonPose } from '../game/hud-layout.js';
 import { BoardBody } from './components.js';
 import {
   getBoard,
@@ -33,6 +33,12 @@ const UNIT_SCALE = 0.1;
  */
 const HEAD_MOVE_EPS = 0.25;
 const FORWARD: readonly [number, number, number] = [0, 0, -1];
+/**
+ * The button leans back this far (radians) from facing the head and stands
+ * on the board plane (its lower edge at rimButtonPose's point), so it sits
+ * on the rim like a dark glass tab instead of floating as a label.
+ */
+const SEAT_LEAN = (28 * Math.PI) / 180;
 
 /**
  * The near-rim Launch/Replay button: a small UIKitML panel beside the
@@ -132,6 +138,9 @@ export class RimButtonSystem extends createSystem({
       const object = entity.object3D!;
       object.position.set(pose.position[0], pose.position[1], pose.position[2]);
       object.quaternion.set(pose.quaternion[0], pose.quaternion[1], pose.quaternion[2], pose.quaternion[3]);
+      // Seated on the rim plane: lean the top back, then stand the lower edge on the pose point.
+      object.rotateX(-SEAT_LEAN);
+      object.translateY(RIM_BUTTON_SIZE.height / 2);
       this.placedFrom.copy(this.head);
       this.lastBoardVersion = board.version;
     }

@@ -12,7 +12,7 @@ import {
   type RoomView,
 } from '../game/state.js';
 import type { BoardPlacement } from '../game/placement.js';
-import type { CosmosMask } from '../game/cosmos-rules.js';
+import type { CosmosMask, IslandWindow } from '../game/cosmos-rules.js';
 import type { SpaceFx } from '../render/space-fx.js';
 import type { SpaceTextureStatus } from '../render/space-textures.js';
 import type { BoardVisual, BodyVisual, CometVisual, CosmosVisual, TargetVisual, TrailVisual } from '../render/visual-types.js';
@@ -281,6 +281,8 @@ export interface CosmosRuntime {
   /** AR fade-in progress 0..1 (1 outside AR). */
   fade: number;
   mask: CosmosMask;
+  /** The Mixed island window this frame (islandWindow of the board radius; wider in Your Table). */
+  island: IslandWindow;
   /** Restarts the AR fade-in from the room now ("the room dissolves into space"). */
   replayFade(): void;
   /** Holds the AR fade at 0 (the room only) until replayFade (the director's hook shot). */

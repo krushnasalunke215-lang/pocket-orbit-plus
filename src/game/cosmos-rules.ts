@@ -8,7 +8,7 @@ import type { RoomView } from './state.js';
 
 export type CosmosSession = 'none' | 'immersive-ar' | 'immersive-vr';
 
-/** 'island': the room shows around the board and below eye level (see islandMask). */
+/** 'island': the room shows only through a soft window over the board and table (see islandMask). */
 export type CosmosMask = 'none' | 'island';
 
 export interface CosmosInput {
@@ -32,23 +32,30 @@ export interface CosmosState {
 export const YOUR_TABLE_MAX_OPACITY = 0.45;
 
 /**
- * The island mask in degrees: the room is clear within CLEAR of the
- * head-to-board direction and fully space beyond FULL; below the horizon it
- * is clear under BELOW_CLEAR elevation and fully space above BELOW_FULL.
+ * The island window on the board plane, in meters from the board center:
+ * the room is fully clear out to the rim plus CLEAR_MARGIN (the table top,
+ * a cup, the hands over the board), fades to full space over the next FADE,
+ * and Your Table widens both by YOUR_TABLE_EXTRA so more of the table and
+ * its real objects stay visible.
  */
 export const ISLAND = {
-  clearDeg: 22,
-  fullDeg: 40,
-  belowClearDeg: -24,
-  belowFullDeg: -6,
+  clearMarginM: 0.25,
+  fadeM: 0.35,
+  yourTableExtraM: 0.15,
 } as const;
 
-const DEG = Math.PI / 180;
-/** The same values as cosines and sines, as the GLSL uses them. */
-export const ISLAND_COS_CLEAR = Math.cos(ISLAND.clearDeg * DEG);
-export const ISLAND_COS_FULL = Math.cos(ISLAND.fullDeg * DEG);
-export const ISLAND_SIN_BELOW_CLEAR = Math.sin(ISLAND.belowClearDeg * DEG);
-export const ISLAND_SIN_BELOW_FULL = Math.sin(ISLAND.belowFullDeg * DEG);
+export interface IslandWindow {
+  /** Fully clear (the room) within this distance of the board center on the board plane. */
+  readonly clearM: number;
+  /** Fully space beyond this distance. */
+  readonly fullM: number;
+}
+
+/** The island window for a board of radius `boardRadiusM` meters. */
+export function islandWindow(boardRadiusM: number, sandbox: boolean): IslandWindow {
+  const clearM = boardRadiusM + ISLAND.clearMarginM + (sandbox ? ISLAND.yourTableExtraM : 0);
+  return { clearM, fullM: clearM + ISLAND.fadeM };
+}
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 
@@ -68,16 +75,28 @@ export function cosmosOpacity({ session, roomView, sandbox, fade01 }: CosmosInpu
 }
 
 /**
- * The island mask for a view direction (any length, y up): 0 shows the
- * room, 1 shows space. It is 0 toward the board (the head-to-board
- * direction `board*`) and below eye level, 1 well away from the board and
- * above the horizon; the two fades multiply.
+ * The island mask for a view direction from the head (any length, y up):
+ * 0 shows the room, 1 shows space. The board center is `board*`, relative
+ * to the head. Two windows of the same radii must both be clear:
+ * - on the table: where the view ray meets the board's horizontal plane,
+ *   0 within `win.clearM` of the board center and 1 beyond `win.fullM`
+ *   (1 for every ray that never reaches the plane: eye level and up);
+ * - facing the eye: the same radii seen at the board's distance (an angle
+ *   cone about the head-to-board direction), so the floor under a board
+ *   that floats near eye level, or straight down, stays space too.
+ * So in Mixed only a soft window over the board and the table shows the
+ * room; the walls, the couch, the ceiling and the floor around the table
+ * are space.
  */
-export function islandMask(dirX: number, dirY: number, dirZ: number, boardX: number, boardY: number, boardZ: number): number {
-  const dl = Math.hypot(dirX, dirY, dirZ) || 1;
-  const bl = Math.hypot(boardX, boardY, boardZ) || 1;
+export function islandMask(dirX: number, dirY: number, dirZ: number, boardX: number, boardY: number, boardZ: number, win: IslandWindow): number {
+  if (dirY * boardY <= 0 || Math.abs(dirY) < 1e-6) return 1;
+  const dl = Math.hypot(dirX, dirY, dirZ);
+  const bl = Math.hypot(boardX, boardY, boardZ);
   const cos = (dirX * boardX + dirY * boardY + dirZ * boardZ) / (dl * bl);
-  const away = 1 - smoothstep(ISLAND_COS_FULL, ISLAND_COS_CLEAR, cos);
-  const above = smoothstep(ISLAND_SIN_BELOW_CLEAR, ISLAND_SIN_BELOW_FULL, dirY / dl);
-  return away * above;
+  if (cos <= 0) return 1;
+  const tan = Math.sqrt(Math.max(0, 1 - cos * cos)) / cos;
+  const facing = smoothstep(win.clearM / bl, win.fullM / bl, tan);
+  const t = boardY / dirY;
+  const onTable = smoothstep(win.clearM, win.fullM, Math.hypot(dirX * t - boardX, dirZ * t - boardZ));
+  return Math.max(facing, onTable);
 }

@@ -5,8 +5,8 @@
   RimButtonSystem scales the entity by 0.1, so 10 units = 1 cm and the button
   is 6 x 3.5 cm (RIM_BUTTON_SIZE in src/game/hud-layout.ts; keep them equal).
   The kit's 44 high, 80 wide button defaults are overridden to that size.
-  Dark glass style: a brighter blue glass button with a thin light border
-  and a white bold label.
+  Dark glass style, like the HUD and level-select panels: a near-black glass
+  button with a thin light-blue border and a light bold label.
 -->
 <style>
   .rim-root {
@@ -25,11 +25,11 @@
     padding-bottom: 0;
     justify-content: center;
     align-items: center;
-    background-color: #3068bae0;
+    background-color: #0b1220e0;
     border-width: 2;
-    border-color: #b9d3f5;
+    border-color: #8fb3e6;
     border-radius: 8;
-    color: #ffffff;
+    color: #eaf2ff;
   }
 
   .rim-label {

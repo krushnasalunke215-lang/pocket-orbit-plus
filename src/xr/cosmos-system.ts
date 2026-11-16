@@ -1,6 +1,6 @@
 import { createSystem, Quaternion, Vector3, VisibilityState } from '@iwsdk/core';
-import { COSMOS_FADE_SECONDS, COSMOS_QUALITY, SUN_DIRECTION } from '../config.js';
-import { cosmosOpacity } from '../game/cosmos-rules.js';
+import { BOARD, COSMOS_FADE_SECONDS, COSMOS_QUALITY, SUN_DIRECTION } from '../config.js';
+import { cosmosOpacity, islandWindow } from '../game/cosmos-rules.js';
 import { COSMOS_UNIFORMS, createCosmosVisual } from '../render/cosmos/cosmos-visual.js';
 import { SUN_DIR_W } from '../render/shaders/common.js';
 import { loadSpaceTextures, type SpaceTextureLoader } from '../render/space-textures.js';
@@ -16,8 +16,9 @@ const TEXTURE_START_FRAME = 3;
  * its shared opacity and mask uniforms every frame from cosmosOpacity: on
  * the desktop and in VR the cosmos is fully opaque; when an AR session
  * becomes visible it fades in over the room for COSMOS_FADE_SECONDS ("your
- * room dissolves into space"), as the Room view setting says (Mixed keeps
- * the table and the space below eye level clear, Space fills the room,
+ * room dissolves into space"), as the Room view setting says (Mixed shows
+ * the room only through a soft window over the board and the table, sized
+ * from the board radius by islandWindow; Space fills the room,
  * Room hides it: no draw calls); Your Table caps it so real objects stay
  * clear. Its decorative motion runs on motionTime (still under reduced
  * motion), and no shooting star spawns under reduced motion. It also
@@ -33,6 +34,8 @@ export class CosmosSystem extends createSystem({}) {
   private held = false;
   private replay = false;
   private frames = 0;
+  private windowRadius = -1;
+  private windowSandbox = false;
   private textures: SpaceTextureLoader | null = null;
   private readonly head = new Vector3();
   private readonly boardTurn = new Quaternion();
@@ -48,6 +51,7 @@ export class CosmosSystem extends createSystem({}) {
       opacity: 1,
       fade: 1,
       mask: 'none',
+      island: islandWindow(BOARD.fallbackRadius, false),
       solveRise: false,
       replayFade: () => {
         this.held = false;
@@ -99,6 +103,16 @@ export class CosmosSystem extends createSystem({}) {
     const state = cosmosOpacity({ session, roomView: settings.roomView, sandbox: game.mode === 'sandbox', fade01: fade });
     COSMOS_UNIFORMS.uCosmosOpacity.value = state.opacity;
     COSMOS_UNIFORMS.uMaskMode.value = state.mask === 'island' ? 1 : 0;
+    const sandbox = game.mode === 'sandbox';
+    const radius = board.pose.radius;
+    if (radius !== this.windowRadius || sandbox !== this.windowSandbox) {
+      const win = islandWindow(radius, sandbox);
+      COSMOS_UNIFORMS.uIslandClear.value = win.clearM;
+      COSMOS_UNIFORMS.uIslandFull.value = win.fullM;
+      this.runtime.island = win;
+      this.windowRadius = radius;
+      this.windowSandbox = sandbox;
+    }
     root.visible = state.visible && state.opacity > 0;
     this.runtime.visible = root.visible;
     this.runtime.opacity = state.opacity;

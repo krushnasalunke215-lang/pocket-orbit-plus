@@ -116,8 +116,10 @@ export interface GameSnapshot {
    * The cosmos: drawn, opacity, AR fade progress, mask ('island' in Mixed),
    * the Room view setting, and the island mask's largest value over the
    * board center and 8 rim points seen from the head (0: the table area is
-   * clear). motion: the first orbiting planet's position and the belt's
-   * turn; shootingStars alive now; pulses per cosmos planet.
+   * clear); sideMask at eye level 70° beside the board and floorMask toward
+   * the floor 1.2 m beside it (1: space); the island window in meters.
+   * motion: the first orbiting planet's position and the belt's turn;
+   * shootingStars alive now; pulses per cosmos planet.
    */
   cosmos: {
     visible: boolean;
@@ -126,6 +128,9 @@ export interface GameSnapshot {
     mask: string;
     roomView: string;
     boardMask: number;
+    sideMask: number;
+    floorMask: number;
+    island: { clearM: number; fullM: number };
     motion: number[];
     shootingStars: number;
     pulses: number[];
@@ -463,13 +468,18 @@ export function installDebugApi(world: World): GameDebugApi {
     const root = board.entity.object3D!;
     root.updateWorldMatrix(true, false);
     const center = root.getWorldPosition(new Vector3()).sub(head);
-    let boardMask = islandMask(center.x, center.y, center.z, center.x, center.y, center.z);
+    const island = cosmos.mask === 'island';
+    const mask = (p: Vector3) => (island ? islandMask(p.x, p.y, p.z, center.x, center.y, center.z, cosmos.island) : 1);
+    let boardMask = mask(center);
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * Math.PI * 2;
-      const p = root.localToWorld(new Vector3(Math.cos(a), 0, Math.sin(a))).sub(head);
-      boardMask = Math.max(boardMask, cosmos.mask === 'island' ? islandMask(p.x, p.y, p.z, center.x, center.y, center.z) : 1);
+      boardMask = Math.max(boardMask, mask(root.localToWorld(new Vector3(Math.cos(a), 0, Math.sin(a))).sub(head)));
     }
-    if (cosmos.mask !== 'island') boardMask = 1;
+    // Eye level, 70 degrees to the side of the board; the floor 1.2 m beside the board.
+    const yaw = Math.atan2(center.x, -center.z) + (70 * Math.PI) / 180;
+    const sideMask = mask(new Vector3(Math.sin(yaw), 0, -Math.cos(yaw)));
+    const side = new Vector3(-center.z, 0, center.x).normalize().multiplyScalar(1.2);
+    const floorMask = mask(new Vector3(center.x + side.x, -head.y, center.z + side.z));
     return {
       visible: cosmos.visible,
       opacity: cosmos.opacity,
@@ -477,6 +487,9 @@ export function installDebugApi(world: World): GameDebugApi {
       mask: cosmos.mask,
       roomView: getSettings(world).roomView,
       boardMask,
+      sideMask,
+      floorMask,
+      island: { clearM: cosmos.island.clearM, fullM: cosmos.island.fullM },
       motion: cosmos.visual.motionProbe(),
       shootingStars: cosmos.visual.activeShootingStars(SHARED_TIME.value),
       pulses: [0, 1, 2, 3].map((i) => cosmos.visual.pulseLevel(i)),

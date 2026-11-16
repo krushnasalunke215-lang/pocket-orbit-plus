@@ -910,6 +910,11 @@ const GROUP_RUNNERS = {
       m.board === 'table-plane' && m.roomView === 'mixed' && m.visible && m.opacity === 1 && m.mask === 'island' && m.boardMask === 0 && Boolean(m.shot && r.mixedAhead),
       m,
     );
+    check(
+      'cosmos: Mixed: the room shows only through the window over the board and table (eye level 70° beside the board and the floor beside the table are space: sideMask 1, floorMask 1)',
+      m.sideMask === 1 && m.floorMask === 1 && m.island && m.island.clearM > 0 && m.island.fullM > m.island.clearM,
+      { sideMask: m.sideMask, floorMask: m.floorMask, island: m.island },
+    );
     check('cosmos: Space: no mask (the room fills with space)', r.space.roomView === 'space' && r.space.visible && r.space.mask === 'none' && r.space.opacity === 1, r.space);
     check(
       'cosmos: Room: the cosmos is not drawn and costs no draw calls',
@@ -917,8 +922,8 @@ const GROUP_RUNNERS = {
       { room: r.room.maxCalls, mixed: m.maxCalls, visible: r.room.visible },
     );
     check(
-      'cosmos: Your Table over passthrough: opacity at most 0.45 with the island mask',
-      r.yourTable.mode === 'sandbox' && r.yourTable.visible && r.yourTable.opacity <= 0.45 && r.yourTable.mask === 'island',
+      'cosmos: Your Table over passthrough: opacity at most 0.45 with the island mask and a wider window than Mixed',
+      r.yourTable.mode === 'sandbox' && r.yourTable.visible && r.yourTable.opacity <= 0.45 && r.yourTable.mask === 'island' && r.yourTable.island.clearM > m.island.clearM,
       r.yourTable,
     );
     const d = r.reduced;
