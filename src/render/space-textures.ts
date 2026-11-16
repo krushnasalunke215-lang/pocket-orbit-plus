@@ -41,15 +41,24 @@ interface Slot {
   loaded: boolean;
 }
 
-/** Starts loading every space map at `size` (2048: the -2k files, otherwise the -1k files). */
-export function loadSpaceTextures(renderer: WebGLRenderer, size: number): SpaceTextureLoader {
+/** Which maps a loader starts: the planet atlas alone (at startup), the other three, or all four. */
+export type SpaceTextureGroup = 'atlas' | 'others' | 'all';
+
+/**
+ * Starts loading the space maps of `group` at `size` (2048: the -2k files,
+ * otherwise the -1k files). Each map is uploaded to the GPU as soon as it
+ * has loaded (renderer.initTexture), not on the first frame that draws it.
+ */
+export function loadSpaceTextures(renderer: WebGLRenderer, size: number, group: SpaceTextureGroup = 'all'): SpaceTextureLoader {
   const suffix = size >= 2048 ? '2k' : '1k';
-  const slots: Slot[] = [
+  const all: Slot[] = [
     { id: `tex-milky-way-${suffix}`, map: SPACE_MAPS.uMilkyWay, ready: SPACE_READY.uSkyReady, equirect: true, loaded: false },
     { id: `tex-saturn-${suffix}`, map: SPACE_MAPS.uSaturn, ready: SPACE_READY.uSaturnReady, equirect: true, loaded: false },
     { id: 'tex-saturn-ring', map: SPACE_MAPS.uRing, ready: SPACE_READY.uRingReady, equirect: false, loaded: false },
     { id: `tex-planets-${suffix}`, map: SPACE_MAPS.uAtlas, ready: SPACE_READY.uAtlasReady, equirect: false, loaded: false },
   ];
+  const isAtlas = (s: Slot) => s.map === SPACE_MAPS.uAtlas;
+  const slots = group === 'all' ? all : all.filter((s) => isAtlas(s) === (group === 'atlas'));
   const requested = slots.map((s) => s.id);
   const loaded: string[] = [];
   const failed: string[] = [];

@@ -762,6 +762,47 @@ test('render budget', async ({ page }) => {
   expect(stats.max.triangles).toBeLessThanOrEqual(RENDER_BUDGET.maxTriangles);
 });
 
+test('startup: the shader prewarm compiles the hidden programs before play, first frame with and without it', async ({ page }) => {
+  test.setTimeout(420_000);
+  const levels = { solution: {} as Placements };
+  /** One cold load: the first frame, the prewarm, then level 1 solved by mouse (flyby, solve burst) and the programs it added. */
+  const run = async (search: string) => {
+    await page.goto(`/${search}`);
+    await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 60_000 });
+    if (search === '') {
+      await expect.poll(async () => (await snapshot(page)).startup.prewarm?.doneMs ?? null, { timeout: 60_000 }).not.toBeNull();
+    } else {
+      await page.waitForTimeout(3000);
+    }
+    const ready = await snapshot(page);
+    if (!Object.keys(levels.solution).length) levels.solution = (await page.evaluate(() => window.__game!.levels()))[0].solution;
+    const solved = await solveWith(page, levels.solution);
+    await page.waitForTimeout(1500);
+    const after = await snapshot(page);
+    return {
+      search,
+      firstFrameMs: Math.round(ready.startup.firstFrameMs ?? -1),
+      prewarm: ready.startup.prewarm,
+      programsAtReady: ready.renderer.programs,
+      programsAfterSolve: after.renderer.programs,
+      addedInPlay: after.renderer.programs - ready.renderer.programs,
+      solved: solved.solved,
+    };
+  };
+  const runs = [];
+  for (const search of ['?prewarm=0', '', '?prewarm=0', '']) runs.push(await run(search));
+  console.log('startup runs', JSON.stringify(runs));
+  const on = runs.filter((r) => r.search === '');
+  const off = runs.filter((r) => r.search !== '');
+  for (const r of on) {
+    expect(r.prewarm).not.toBeNull();
+    expect(r.prewarm!.programsAfter!).toBeGreaterThan(r.prewarm!.programsBefore);
+  }
+  for (const r of off) expect(r.prewarm).toBeNull();
+  // Without the prewarm the first flyby and the solve compile programs mid-play (SpaceFx at least); with it, fewer.
+  expect(Math.max(...on.map((r) => r.addedInPlay))).toBeLessThan(Math.min(...off.map((r) => r.addedInPlay)));
+});
+
 test('graphics: Low from the level panel applies on reload with the 1k textures; ?quality=low', async ({ page }) => {
   test.setTimeout(240_000);
   /** Render counts over 1.5 s of the current view. */

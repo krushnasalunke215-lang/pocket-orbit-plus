@@ -42,6 +42,7 @@ import {
 } from '../xr/runtime.js';
 import { displayState } from '../xr/display-quality.js';
 import { graphicsState, type GraphicsState } from '../xr/graphics-quality.js';
+import { startupTiming, type StartupTiming } from '../xr/shader-prewarm-system.js';
 import { currentSessionMode, enterXR } from '../xr/session.js';
 import { createSpikeApi, type SpikeApi } from './spike.js';
 
@@ -144,6 +145,8 @@ export interface GameSnapshot {
   display: { foveation: number | null; targetFrameRate: number | null };
   /** The graphics profile this page runs (tier, why, the saved Settings choice, the profile's numbers). */
   graphics: GraphicsState;
+  /** The first frame and the shader prewarm (ms since navigation; programs before and after). */
+  startup: StartupTiming;
   /** Board light-feedback events (flyby, push, capture, solve) of the last 1.2 s, and the last 16 (oldest first). */
   spaceFx: { active: string[]; recent: string[] };
   /** HUD world position and size (meters, from the UIKit layout) and its status line. */
@@ -599,6 +602,7 @@ export function installDebugApi(world: World): GameDebugApi {
         textures: getCosmos(world)?.textures() ?? { requested: [], loaded: [], failed: [] },
         display: displayState(),
         graphics: graphicsState(),
+        startup: startupTiming(),
         spaceFx: { active: getSpaceFx(world)?.active() ?? [], recent: getSpaceFx(world)?.recent() ?? [] },
         session: {
           mode: currentSessionMode(world),

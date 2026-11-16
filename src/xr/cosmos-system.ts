@@ -6,10 +6,11 @@ import { COSMOS_UNIFORMS, createCosmosVisual } from '../render/cosmos/cosmos-vis
 import { SUN_DIR_W } from '../render/shaders/common.js';
 import { loadSpaceTextures, type SpaceTextureLoader } from '../render/space-textures.js';
 import { cosmosQuality, graphicsState, markLiveGlassesLow } from './graphics-quality.js';
+import { prewarmDisabled } from './shader-prewarm-system.js';
 import { getBoard, getGame, getSettings, motionTime, setCosmos, type CosmosRuntime } from './runtime.js';
 import { currentSessionMode } from './session.js';
 
-/** The space textures start loading on this update, after the first frames have rendered. */
+/** The other space textures start loading on this update, after the first frames have rendered (the planet atlas starts at init). */
 const TEXTURE_START_FRAME = 3;
 
 /**
@@ -42,6 +43,8 @@ export class CosmosSystem extends createSystem({}) {
   /** The XR view was checked for the glasses' form factor in this session. */
   private viewChecked = false;
   private textures: SpaceTextureLoader | null = null;
+  /** The planet atlas, requested at init so its upload lands before play (final-report #4). */
+  private atlas: SpaceTextureLoader | null = null;
   private readonly head = new Vector3();
   private readonly boardTurn = new Quaternion();
   private readonly sunBoard = new Vector3();
@@ -66,14 +69,22 @@ export class CosmosSystem extends createSystem({}) {
       holdFade: () => {
         this.held = true;
       },
-      textures: () => this.textures?.status() ?? { requested: [], loaded: [], failed: [] },
+      textures: () => {
+        const a = this.atlas?.status() ?? { requested: [], loaded: [], failed: [] };
+        const b = this.textures?.status() ?? { requested: [], loaded: [], failed: [] };
+        return { requested: [...b.requested, ...a.requested], loaded: [...a.loaded, ...b.loaded], failed: [...a.failed, ...b.failed] };
+      },
     };
     setCosmos(this.world, this.runtime);
+    if (!prewarmDisabled()) this.atlas = loadSpaceTextures(this.world.renderer, cosmosQuality().textureSize, 'atlas');
   }
 
   update(delta: number, time: number): void {
     this.frames++;
-    if (this.frames === TEXTURE_START_FRAME) this.textures = loadSpaceTextures(this.world.renderer, cosmosQuality().textureSize);
+    if (this.frames === TEXTURE_START_FRAME) {
+      this.textures = loadSpaceTextures(this.world.renderer, cosmosQuality().textureSize, this.atlas ? 'others' : 'all');
+    }
+    this.atlas?.tick(delta);
     this.textures?.tick(delta);
 
     const board = getBoard(this.world);

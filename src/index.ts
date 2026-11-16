@@ -30,6 +30,7 @@ import { RenderSyncSystem } from './xr/render-sync-system.js';
 import { RimButtonSystem } from './xr/rim-button-system.js';
 import { SandboxPanelSystem } from './xr/sandbox-panel-system.js';
 import { SaveSystem } from './xr/save-system.js';
+import { ShaderPrewarmSystem } from './xr/shader-prewarm-system.js';
 
 async function main(): Promise<void> {
   const world = await World.create(
@@ -94,7 +95,10 @@ async function main(): Promise<void> {
     .registerSystem(RimButtonSystem, { priority: 31 })
     .registerSystem(LevelSelectSystem, { priority: 32 })
     .registerSystem(SandboxPanelSystem, { priority: 33 })
-    .registerSystem(RenderStatsSystem, { priority: 40 });
+    .registerSystem(RenderStatsSystem, { priority: 40 })
+    // Compiles every program in the scene (hidden SpaceFx and constellation
+    // links too) once the level's bodies exist; notes the first frame.
+    .registerSystem(ShaderPrewarmSystem, { priority: 42 });
 
   // Tester overlay (fps, render counts, hit-test log): only with ?debug=1,
   // in production builds too.
