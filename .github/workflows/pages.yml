@@ -39,6 +39,11 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # The repo's Pages source also runs the branch-based "pages build and
+      # deployment" (raw repo root) on every push. Deploy after it, so the built
+      # site is the one that stays live. Set Settings > Pages > Source to
+      # "GitHub Actions" to remove the race, then this wait can go.
+      - run: sleep 150
       - uses: actions/configure-pages@v5
       - id: deployment
         uses: actions/deploy-pages@v4
