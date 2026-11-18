@@ -1,0 +1,45 @@
+<!--
+  Near-rim Launch/Replay button, beside the board's near rim on the player's
+  left, where a fingertip reaches it without crossing the board. Horizon kit
+  Button and ButtonLabel, authored in the kit's pixel scale like hud.uikitml:
+  RimButtonSystem scales the entity by 0.1, so 10 units = 1 cm and the button
+  is 6 x 3.5 cm (RIM_BUTTON_SIZE in src/game/hud-layout.ts; keep them equal).
+  The kit's 44 high, 80 wide button defaults are overridden to that size.
+  Dark glass style, like the HUD and level-select panels: a near-black glass
+  button with a thin light-blue border and a light bold label.
+-->
+<style>
+  .rim-root {
+    width: 60;
+    height: 35;
+  }
+
+  .rim-button {
+    width: 60;
+    height: 35;
+    min-width: 60;
+    min-height: 35;
+    padding-left: 2;
+    padding-right: 2;
+    padding-top: 0;
+    padding-bottom: 0;
+    justify-content: center;
+    align-items: center;
+    background-color: #0b1220e0;
+    border-width: 2;
+    border-color: #8fb3e6;
+    border-radius: 8;
+    color: #eaf2ff;
+  }
+
+  .rim-label {
+    font-size: 15;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+</style>
+<div class="rim-root">
+  <Button id="rim-launch-button" class="rim-button">
+    <ButtonLabel id="rim-launch-label" class="rim-label">Launch</ButtonLabel>
+  </Button>
+</div>

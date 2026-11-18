@@ -1,0 +1,306 @@
+<!--
+  Level select and Settings (LevelSelectSystem). Horizon kit, authored in
+  kit pixel units and scaled by 0.1 like the HUD (10 units = 1 cm), so the
+  panel is 46 cm wide and at most about 27 cm tall (LEVEL_SELECT_SIZE in
+  src/game/hud-layout.ts); it opens 0.45 m from the head, within poke reach.
+  It has two pages; the system shows one and sets the other to display: none.
+
+  levels-page: level buttons level-1 .. level-6 hold a label (the system
+  writes "n  Title") and three round star pips, hidden until that level is
+  solved and lit by its best stars. The pips are plain panels, which UIKit
+  draws in one instanced batch; Star icons cost one draw call each (18 per
+  eye, over the XR draw-call budget with the chapter moment). The Your Table
+  button (header) opens the sandbox (GameController.loadSandbox(0)),
+  Settings opens the settings page, and Graphics (beside it, because the
+  settings page is at its full height) toggles the saved High / Low
+  profile, which applies on the next reload.
+
+  settings-page: the accessibility settings (left-handed, high contrast,
+  reduced motion, board size) and the audio settings (mute, volume, quiet).
+  Each toggle's label shows its state ("...: on" / "...: off"); Board
+  cycles small, medium and large. Room view (header, beside Back, so the
+  page keeps its size) cycles Mixed, Space and Room; the system shows it
+  only in a mixed-reality (immersive-ar) session. Back returns to the
+  levels page. The last row credits the planet and Milky Way maps (their
+  CC BY 4.0 licence asks for it); the page stays inside LEVEL_SELECT_SIZE.
+
+  Dark glass style: a dark semi-transparent panel with a thin light border,
+  plain light titles, dark glass buttons with light borders and labels. The
+  panel border is 2 and its padding 1 more than before, so the size holds.
+-->
+<style>
+  .levels-root {
+    flex-direction: column;
+    width: 460;
+    padding-top: 13;
+    padding-bottom: 13;
+    padding-left: 15;
+    padding-right: 15;
+    gap: 8;
+    background-color: #0b1220c7;
+    border-width: 2;
+    border-color: #8fb3e6;
+    border-radius: 12;
+  }
+
+  .credits {
+    color: #9fb0c8;
+    font-size: 11;
+    line-height: 1.2;
+  }
+
+  .page {
+    flex-direction: column;
+    gap: 8;
+  }
+
+  .header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .title {
+    color: #eaf2ff;
+    font-size: 26;
+    font-weight: 700;
+    padding-left: 2;
+    padding-right: 2;
+    padding-top: 4;
+    padding-bottom: 4;
+  }
+
+  .header-buttons {
+    flex-direction: row;
+    gap: 8;
+  }
+
+  .grid-row {
+    flex-direction: row;
+    gap: 8;
+  }
+
+  .level-button {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 66;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 3;
+    background-color: #162238d9;
+    border-width: 2;
+    border-color: #8fb3e6;
+    border-radius: 12;
+    color: #eaf2ff;
+  }
+
+  .level-label {
+    font-size: 17;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+
+  .stars {
+    flex-direction: row;
+    gap: 4;
+  }
+
+  .star {
+    width: 12;
+    height: 12;
+    border-radius: 6;
+    background-color: #3a4458;
+    border-width: 1;
+    border-color: #6f8bb5;
+  }
+
+  .settings-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 8;
+  }
+
+  .small-button {
+    height: 44;
+    justify-content: center;
+    background-color: #162238d9;
+    border-width: 2;
+    border-color: #8fb3e6;
+    color: #eaf2ff;
+  }
+
+  .wide-button {
+    height: 44;
+    flex-grow: 1;
+    justify-content: center;
+    background-color: #162238d9;
+    border-width: 2;
+    border-color: #8fb3e6;
+    color: #eaf2ff;
+  }
+
+  .graphics-button {
+    height: 44;
+    flex-grow: 2;
+    flex-basis: 0;
+    justify-content: center;
+    background-color: #162238d9;
+    border-width: 2;
+    border-color: #8fb3e6;
+    color: #eaf2ff;
+  }
+
+  .toggle-button {
+    height: 52;
+    flex-grow: 1;
+    flex-basis: 0;
+    justify-content: center;
+    background-color: #1e2e4ad9;
+    border-width: 2;
+    border-color: #8fb3e6;
+    color: #eaf2ff;
+  }
+
+  .small-label {
+    font-size: 17;
+    line-height: 1.2;
+    font-weight: 700;
+  }
+
+  .value {
+    color: #dddfe3;
+    font-size: 18;
+    width: 52;
+    text-align: center;
+  }
+</style>
+
+<Panel id="levels-root" class="levels-root">
+  <div id="levels-page" class="page">
+    <div class="header">
+      <div id="levels-title" class="title">Chapter 1</div>
+      <div class="header-buttons">
+        <Button id="sandbox-button" class="small-button">
+          <ButtonLabel id="sandbox-label" class="small-label">Your Table</ButtonLabel>
+        </Button>
+        <Button id="close-levels" class="small-button">
+          <ButtonLabel id="close-levels-label" class="small-label">Close</ButtonLabel>
+        </Button>
+      </div>
+    </div>
+
+    <div class="grid-row">
+      <Button id="level-1" class="level-button">
+        <ButtonLabel id="level-1-label" class="level-label">1</ButtonLabel>
+        <div id="level-1-stars" class="stars" style="display: none">
+          <div id="level-1-star-1" class="star" />
+          <div id="level-1-star-2" class="star" />
+          <div id="level-1-star-3" class="star" />
+        </div>
+      </Button>
+      <Button id="level-2" class="level-button">
+        <ButtonLabel id="level-2-label" class="level-label">2</ButtonLabel>
+        <div id="level-2-stars" class="stars" style="display: none">
+          <div id="level-2-star-1" class="star" />
+          <div id="level-2-star-2" class="star" />
+          <div id="level-2-star-3" class="star" />
+        </div>
+      </Button>
+      <Button id="level-3" class="level-button">
+        <ButtonLabel id="level-3-label" class="level-label">3</ButtonLabel>
+        <div id="level-3-stars" class="stars" style="display: none">
+          <div id="level-3-star-1" class="star" />
+          <div id="level-3-star-2" class="star" />
+          <div id="level-3-star-3" class="star" />
+        </div>
+      </Button>
+    </div>
+
+    <div class="grid-row">
+      <Button id="level-4" class="level-button">
+        <ButtonLabel id="level-4-label" class="level-label">4</ButtonLabel>
+        <div id="level-4-stars" class="stars" style="display: none">
+          <div id="level-4-star-1" class="star" />
+          <div id="level-4-star-2" class="star" />
+          <div id="level-4-star-3" class="star" />
+        </div>
+      </Button>
+      <Button id="level-5" class="level-button">
+        <ButtonLabel id="level-5-label" class="level-label">5</ButtonLabel>
+        <div id="level-5-stars" class="stars" style="display: none">
+          <div id="level-5-star-1" class="star" />
+          <div id="level-5-star-2" class="star" />
+          <div id="level-5-star-3" class="star" />
+        </div>
+      </Button>
+      <Button id="level-6" class="level-button">
+        <ButtonLabel id="level-6-label" class="level-label">6</ButtonLabel>
+        <div id="level-6-stars" class="stars" style="display: none">
+          <div id="level-6-star-1" class="star" />
+          <div id="level-6-star-2" class="star" />
+          <div id="level-6-star-3" class="star" />
+        </div>
+      </Button>
+    </div>
+
+    <div class="settings-row">
+      <Button id="settings-button" class="wide-button">
+        <ButtonLabel id="settings-label" class="small-label">Settings</ButtonLabel>
+      </Button>
+      <Button id="graphics-button" class="graphics-button">
+        <ButtonLabel id="graphics-label" class="small-label">Graphics: High</ButtonLabel>
+      </Button>
+    </div>
+  </div>
+
+  <div id="settings-page" class="page" style="display: none">
+    <div class="header">
+      <div id="settings-title" class="title">Settings</div>
+      <div class="header-buttons">
+        <Button id="room-view-button" class="small-button">
+          <ButtonLabel id="room-view-label" class="small-label">Room view: Mixed</ButtonLabel>
+        </Button>
+        <Button id="settings-back" class="small-button">
+          <ButtonLabel id="settings-back-label" class="small-label">Back</ButtonLabel>
+        </Button>
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <Button id="left-handed-button" class="toggle-button">
+        <ButtonLabel id="left-handed-label" class="small-label">Left-handed: off</ButtonLabel>
+      </Button>
+      <Button id="contrast-button" class="toggle-button">
+        <ButtonLabel id="contrast-label" class="small-label">High contrast: off</ButtonLabel>
+      </Button>
+    </div>
+
+    <div class="settings-row">
+      <Button id="motion-button" class="toggle-button">
+        <ButtonLabel id="motion-label" class="small-label">Reduced motion: off</ButtonLabel>
+      </Button>
+      <Button id="board-size-button" class="toggle-button">
+        <ButtonLabel id="board-size-label" class="small-label">Board: medium</ButtonLabel>
+      </Button>
+    </div>
+
+    <div class="settings-row">
+      <Button id="mute-button" class="small-button">
+        <ButtonLabel id="mute-label" class="small-label">Mute</ButtonLabel>
+      </Button>
+      <Button id="volume-down" class="small-button">
+        <ButtonLabel id="volume-down-label" class="small-label">-</ButtonLabel>
+      </Button>
+      <div id="volume-label" class="value">80%</div>
+      <Button id="volume-up" class="small-button">
+        <ButtonLabel id="volume-up-label" class="small-label">+</ButtonLabel>
+      </Button>
+      <Button id="quiet-button" class="wide-button">
+        <ButtonLabel id="quiet-label" class="small-label">Quiet: off</ButtonLabel>
+      </Button>
+    </div>
+
+    <div id="credits-text" class="credits">Planet and Milky Way maps: Solar System Scope, CC BY 4.0</div>
+  </div>
+</Panel>

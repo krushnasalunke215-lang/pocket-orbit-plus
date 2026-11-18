@@ -20,16 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      # The base path comes from the repo name, so renaming the repo needs no code change.
-      - run: npm run build -- --base=/${{ github.event.repository.name }}/
+      # From Nov 18 2026 `npm ci` fails on the runner (it still passes locally),
+      # so for the competition deadline this deploys the prebuilt site/ folder,
+      # built locally with `npm run build:pages` and checked with `npm run smoke:pages`.
+      # To go back to building here: restore setup-node, `npm ci`, and
+      # `npm run build -- --base=/${{ github.event.repository.name }}/` with path dist.
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: dist
+          path: site
 
   deploy:
     needs: build

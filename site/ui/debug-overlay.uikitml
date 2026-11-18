@@ -1,0 +1,33 @@
+<!--
+  ?debug=1 tester overlay (DebugOverlaySystem), shown only in XR. Horizon kit,
+  authored in kit pixel units and scaled by 0.1 like the HUD (10 units =
+  1 cm): about 22 x 10 cm (DEBUG_OVERLAY_SIZE in src/game/hud-layout.ts).
+  It sits left of the HUD beyond the far rim and takes no input. The "-"
+  placeholders are written at runtime (2 Hz).
+-->
+<style>
+  .debug-root {
+    flex-direction: column;
+    width: 220;
+    padding-top: 10;
+    padding-bottom: 10;
+    padding-left: 12;
+    padding-right: 12;
+    gap: 5;
+  }
+  .line {
+    color: #fafaf7;
+    font-size: 14;
+    line-height: 1.25;
+  }
+  .hit {
+    color: #b9f3e0;
+    font-size: 14;
+    line-height: 1.25;
+  }
+</style>
+<Panel id="debug-root" class="debug-root">
+  <div id="fps-text" class="line">fps -</div>
+  <div id="render-text" class="line">calls -</div>
+  <div id="hit-text" class="hit">hit: none</div>
+</Panel>
