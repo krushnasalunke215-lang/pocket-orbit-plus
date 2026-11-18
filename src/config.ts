@@ -6,7 +6,7 @@
  * The only user-visible name of the app. To rename the game, change this
  * line; index.html and the HUD read it from here.
  */
-export const APP_NAME = 'Pocket Orbit+';
+export const APP_NAME = 'Comet Choir';
 
 /**
  * Per-frame render budget checked against renderer.info (in XR the counts
